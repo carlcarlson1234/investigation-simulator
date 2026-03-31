@@ -18,17 +18,17 @@
 }
 
 :root {
-  --background: #0a0b0f;
-  --foreground: #e8e9ed;
-  --surface: #13141a;
-  --surface-hover: #1a1b23;
-  --border-color: #1e2028;
-  --accent: #6366f1;
-  --accent-muted: #4f46e5;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --success: #10b981;
-  --muted: #6b7280;
+  --background: #090a08;
+  --foreground: #d4d0c8;
+  --surface: #111210;
+  --surface-hover: #1a1c18;
+  --border-color: #1e201a;
+  --accent: #c8a55a;
+  --accent-muted: #a88a3e;
+  --danger: #bf4545;
+  --warning: #c8a55a;
+  --success: #5a8a5a;
+  --muted: #6b6b5a;
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────── */
@@ -48,8 +48,8 @@ body {
 /* ─── Custom scrollbar ──────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -57,27 +57,27 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2b35;
+  background: #2a2a22;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3b45;
+  background: #3a3a32;
 }
 
-/* ─── Glass card ────────────────────────────────────────────────────────── */
+/* ─── Glass card (investigative manila folder look) ─────────────────────── */
 
 .glass-card {
-  background: linear-gradient(135deg, rgba(19, 20, 26, 0.8), rgba(26, 27, 35, 0.6));
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(99, 102, 241, 0.08);
-  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(17, 18, 16, 0.9), rgba(26, 28, 24, 0.7));
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(200, 165, 90, 0.08);
+  border-radius: 4px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glass-card:hover {
-  border-color: rgba(99, 102, 241, 0.2);
-  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.08);
+  border-color: rgba(200, 165, 90, 0.2);
+  box-shadow: 0 4px 24px rgba(200, 165, 90, 0.06);
   transform: translateY(-1px);
 }
 
@@ -87,95 +87,52 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.025em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-/* ─── Connection line (used on the board) ───────────────────────────────── */
-
-.connection-line {
-  position: absolute;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    rgba(99, 102, 241, 0.1),
-    rgba(99, 102, 241, 0.5),
-    rgba(99, 102, 241, 0.1)
-  );
-  transform-origin: left center;
-  pointer-events: none;
-}
-
-.connection-line::before {
-  content: "";
-  position: absolute;
-  top: -3px;
-  left: 0;
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
-}
-
-.connection-line::after {
-  content: "";
-  position: absolute;
-  top: -3px;
-  right: 0;
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
-}
-
-/* ─── Pulse glow animation ──────────────────────────────────────────────── */
+/* ─── Pulse glow ────────────────────────────────────────────────────────── */
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 0 0 rgba(200, 165, 90, 0.2);
   }
   50% {
-    box-shadow: 0 0 20px 4px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 16px 2px rgba(200, 165, 90, 0.1);
   }
 }
 
 .pulse-glow {
-  animation: pulse-glow 3s ease-in-out infinite;
+  animation: pulse-glow 4s ease-in-out infinite;
 }
 
-/* ─── Grid dot pattern background ───────────────────────────────────────── */
+/* ─── Grid pattern (blueprint feel) ─────────────────────────────────────── */
 
 .dot-grid {
-  background-image: radial-gradient(circle, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image:
+    linear-gradient(rgba(200, 165, 90, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(200, 165, 90, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
 /* ─── Gradient text ─────────────────────────────────────────────────────── */
 
 .gradient-text {
-  background: linear-gradient(135deg, #e8e9ed 0%, #6366f1 50%, #818cf8 100%);
+  background: linear-gradient(135deg, #d4d0c8 0%, #c8a55a 50%, #e6c97a 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* ─── Stat card micro-animation ─────────────────────────────────────────── */
+/* ─── Stat card animation ───────────────────────────────────────────────── */
 
 @keyframes counter-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .stat-animate {
@@ -186,15 +143,16 @@ body {
 .stat-animate:nth-child(3) { animation-delay: 0.2s; }
 .stat-animate:nth-child(4) { animation-delay: 0.3s; }
 
-/* ─── Nav link active indicator ─────────────────────────────────────────── */
+/* ─── Nav link ──────────────────────────────────────────────────────────── */
 
 .nav-link {
   position: relative;
   color: var(--muted);
   transition: color 0.2s ease;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .nav-link:hover {
@@ -202,7 +160,7 @@ body {
 }
 
 .nav-link-active {
-  color: var(--foreground) !important;
+  color: var(--accent) !important;
 }
 
 .nav-link-active::after {
@@ -211,77 +169,11 @@ body {
   bottom: -2px;
   left: 0;
   right: 0;
-  height: 2px;
+  height: 1px;
   background: var(--accent);
-  border-radius: 1px;
 }
 
-/* ─── Rank badge colors ─────────────────────────────────────────────────── */
-
-.rank-rookie { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
-.rank-detective { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-.rank-senior_detective { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
-.rank-inspector { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.rank-chief_inspector { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-
-/* ─── Board entity card ─────────────────────────────────────────────────── */
-
-.entity-card {
-  background: linear-gradient(135deg, #13141a 0%, #1a1b23 100%);
-  border: 1px solid rgba(99, 102, 241, 0.12);
-  border-radius: 12px;
-  transition: all 0.3s ease;
-}
-
-.entity-card:hover {
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 4px 24px rgba(99, 102, 241, 0.12);
-}
-
-.entity-card-primary {
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 0 40px rgba(99, 102, 241, 0.1);
-}
-
-/* ─── Difficulty pips ───────────────────────────────────────────────────── */
-
-.difficulty-pip {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(99, 102, 241, 0.2);
-  transition: background 0.2s ease;
-}
-
-.difficulty-pip-active {
-  background: var(--accent);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
-}
-
-/* ─── Credibility bar ───────────────────────────────────────────────────── */
-
-.credibility-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(99, 102, 241, 0.1);
-  overflow: hidden;
-}
-
-.credibility-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent-muted), var(--accent));
-  transition: width 0.6s ease;
-}
-
-/* ─── Inspector panel ───────────────────────────────────────────────────── */
-
-.inspector-panel {
-  background: linear-gradient(180deg, #13141a 0%, #0a0b0f 100%);
-  border-left: 1px solid var(--border-color);
-}
-
-/* ─── Hero gradient orb ─────────────────────────────────────────────────── */
+/* ─── Hero gradient orb (warm) ──────────────────────────────────────────── */
 
 .hero-orb {
   position: absolute;
@@ -295,7 +187,7 @@ body {
   height: 400px;
   top: -100px;
   right: -100px;
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(200, 165, 90, 0.06);
 }
 
 .hero-orb-2 {
@@ -303,20 +195,14 @@ body {
   height: 300px;
   bottom: -50px;
   left: -100px;
-  background: rgba(139, 92, 246, 0.06);
+  background: rgba(200, 130, 60, 0.04);
 }
 
-/* ─── Fade-in utility ───────────────────────────────────────────────────── */
+/* ─── Fade-in ───────────────────────────────────────────────────────────── */
 
 @keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-in {
@@ -327,3 +213,69 @@ body {
 .animate-delay-2 { animation-delay: 0.3s; }
 .animate-delay-3 { animation-delay: 0.45s; }
 .animate-delay-4 { animation-delay: 0.6s; }
+
+/* ─── Board Workspace ───────────────────────────────────────────────────── */
+
+.intake-panel {
+  background: linear-gradient(180deg, #0d0e0c 0%, #090a08 100%);
+}
+
+.context-panel {
+  background: linear-gradient(180deg, #0d0e0c 0%, #090a08 100%);
+}
+
+.board-canvas {
+  background-color: #0b0c0a;
+  min-height: 100%;
+  position: relative;
+}
+
+.board-node {
+  transition: box-shadow 0.15s ease;
+}
+
+.board-node:hover {
+  z-index: 15 !important;
+}
+
+/* ─── Board card hover ──────────────────────────────────────────────────── */
+
+.board-entity-card {
+  transition: all 0.2s ease;
+}
+
+.board-entity-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(200, 165, 90, 0.15);
+}
+
+.board-evidence-card {
+  transition: all 0.2s ease;
+}
+
+.board-evidence-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(200, 165, 90, 0.15);
+}
+
+/* ─── Classified stamp effect ───────────────────────────────────────────── */
+
+@keyframes stamp-in {
+  0% { transform: scale(2) rotate(-20deg); opacity: 0; }
+  50% { transform: scale(1.1) rotate(-12deg); opacity: 0.8; }
+  100% { transform: scale(1) rotate(-12deg); opacity: 1; }
+}
+
+.classified-stamp {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: rgba(191, 69, 69, 0.3);
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border: 3px solid rgba(191, 69, 69, 0.3);
+  padding: 4px 12px;
+  transform: rotate(-12deg);
+  animation: stamp-in 0.4s ease-out;
+  pointer-events: none;
+}

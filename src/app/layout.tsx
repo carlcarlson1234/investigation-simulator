@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Investigation Simulator — Uncover the Truth",
+  title: "Investigate The Files",
   description:
-    "A social investigation simulator where you analyze evidence, uncover connections, and compete to solve complex cases.",
+    "Search, analyze, and connect evidence from the archive. Build your investigation board.",
 };
 
 export default function RootLayout({

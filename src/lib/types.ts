@@ -1,71 +1,123 @@
-// Core domain types for Investigation Simulator
+// Core domain types for Investigation Simulator — backed by Jmail archive
 
-export type CaseStatus = "active" | "cold" | "solved" | "classified";
-export type EntityType = "suspect" | "witness" | "victim" | "person_of_interest" | "organization";
-export type EvidenceType = "document" | "photo" | "testimony" | "forensic" | "digital" | "financial" | "communication" | "physical";
-export type ConnectionType = "financial" | "communication" | "physical" | "familial" | "professional" | "suspicious" | "alibi" | "motive";
-export type InvestigatorRank = "rookie" | "detective" | "senior_detective" | "inspector" | "chief_inspector";
+// ─── Evidence Types ─────────────────────────────────────────────────────────
 
-export interface Case {
-  id: string;
-  title: string;
-  subtitle: string;
-  description: string;
-  status: CaseStatus;
-  difficulty: number; // 1-5
-  dateOpened: string;
-  location: string;
-  imageUrl?: string;
-  entityCount: number;
-  evidenceCount: number;
-  connectionCount: number;
-}
+export type EvidenceType = "email" | "document" | "photo" | "imessage";
 
-export interface Entity {
-  id: string;
-  caseId: string;
+export type ConnectionType = "manual" | "email_thread" | "photo_coappearance";
+
+// ─── Person (from jmail.people) ─────────────────────────────────────────────
+
+export interface Person {
+  id: string;          // text PK, e.g. "ghislaine-maxwell"
   name: string;
-  type: EntityType;
-  description: string;
-  imageUrl?: string;
-  age?: number;
-  occupation?: string;
-  lastKnownLocation?: string;
-  status: string;
+  slug: string | null;
+  aliases: string[];   // from JSONB
+  description: string | null;
+  imageUrl: string | null;
+  emailAddresses: string[];  // from JSONB
+  photoCount: number;        // from raw_json->>'photo_count'
+  source: string | null;     // from raw_json->>'source'
 }
 
-export interface Evidence {
+// ─── Evidence (union across 4 Jmail tables) ─────────────────────────────────
+
+export interface EvidenceBase {
   id: string;
-  caseId: string;
-  title: string;
   type: EvidenceType;
-  description: string;
-  dateCollected: string;
-  location: string;
-  linkedEntityIds: string[];
-  credibility: number; // 1-5
-  classified: boolean;
+  title: string;           // subject (email), filename (doc), id (photo), conversation (imessage)
+  snippet: string;         // truncated content_markdown / text / image_description
+  date: string | null;     // ISO date string
+  source: string | null;
+  releaseBatch: string | null;
+  starCount: number;
 }
+
+export interface EmailEvidence extends EvidenceBase {
+  type: "email";
+  sender: string;
+  senderName: string | null;
+  recipients: string[];
+  cc: string[];
+  subject: string;
+  body: string;            // content_markdown from raw_json
+  docId: string | null;
+  isPromotional: boolean;
+  epsteinIsSender: boolean;
+}
+
+export interface DocumentEvidence extends EvidenceBase {
+  type: "document";
+  filename: string;
+  volume: string | null;
+  pageCount: number;
+  path: string | null;         // from raw_json
+  sourceUrl: string | null;
+  fulltext: string | null;     // joined from document_fulltext
+}
+
+export interface PhotoEvidence extends EvidenceBase {
+  type: "photo";
+  width: number;
+  height: number;
+  imageDescription: string | null;  // from raw_json
+  sourceUrl: string | null;
+  contentType: string | null;
+}
+
+export interface IMessageEvidence extends EvidenceBase {
+  type: "imessage";
+  sender: string;         // "me" | "them"
+  body: string;            // from raw_json->>'text'
+  conversationSlug: string;
+  timestamp: string | null;  // from raw_json
+}
+
+export type Evidence = EmailEvidence | DocumentEvidence | PhotoEvidence | IMessageEvidence;
+
+// ─── Search Result (lightweight, for listing) ───────────────────────────────
+
+export interface SearchResult {
+  id: string;
+  type: EvidenceType;
+  title: string;
+  snippet: string;
+  date: string | null;
+  sender: string | null;
+  score: number;
+  starCount: number;
+}
+
+// ─── Connection (user-created, stored in investigation_simulator DB) ────────
 
 export interface Connection {
   id: string;
-  caseId: string;
-  sourceEntityId: string;
-  targetEntityId: string;
+  sourceId: string;
+  targetId: string;
+  sourceKind: "person" | "evidence";
+  targetKind: "person" | "evidence";
   type: ConnectionType;
   label: string;
-  strength: number; // 1-5
+  strength: number;     // 1-5
   verified: boolean;
 }
 
-export interface Investigator {
+// ─── Archive Stats ──────────────────────────────────────────────────────────
+
+export interface ArchiveStats {
+  emailCount: number;
+  documentCount: number;
+  photoCount: number;
+  personCount: number;
+  imessageCount: number;
+  releaseBatchCount: number;
+}
+
+// ─── Release Batch ──────────────────────────────────────────────────────────
+
+export interface ReleaseBatch {
   id: string;
   name: string;
-  rank: InvestigatorRank;
-  avatar?: string;
-  casesSolved: number;
-  accuracy: number; // 0-100
-  streak: number;
-  score: number;
-  joinedDate: string;
+  releaseDate: string | null;
+  documentCount: number | null;
 }
