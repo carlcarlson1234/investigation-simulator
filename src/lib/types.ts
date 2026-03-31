@@ -88,6 +88,28 @@ export interface SearchResult {
   starCount: number;
 }
 
+// ─── Email List Item (for inbox-style browsing) ─────────────────────────────
+
+export interface EmailListItem {
+  id: string;
+  subject: string;
+  sender: string;
+  sentAt: string | null;       // ISO datetime
+  bodyPreview: string;         // first ~120 chars of body
+  recipientCount: number;
+  hasCc: boolean;
+  epsteinIsSender: boolean;
+  starCount: number;
+}
+
+export interface EmailBrowseResult {
+  emails: EmailListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 // ─── Connection (user-created, stored in investigation_simulator DB) ────────
 
 export interface Connection {

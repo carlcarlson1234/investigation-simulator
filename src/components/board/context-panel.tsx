@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import type { Person, Evidence, EvidenceType } from "@/lib/types";
+import type { Person, Evidence, EvidenceType, EmailEvidence } from "@/lib/types";
 import type {
   BoardNode,
   BoardConnection,
@@ -20,6 +20,7 @@ interface ContextPanelProps {
   onTabChange: (tab: RightPanelTab) => void;
   people: Person[];
   selectedNode: BoardNode | null;
+  selectedEmailDetail: EmailEvidence | null;
   focusedNodeId: string | null;
   focusState: FocusState | null;
   timelineEvents: TimelineEvent[];
@@ -42,6 +43,7 @@ export function ContextPanel({
   onTabChange,
   people,
   selectedNode,
+  selectedEmailDetail,
   focusedNodeId,
   focusState,
   timelineEvents,
@@ -65,13 +67,13 @@ export function ContextPanel({
   }, [people, personSearch]);
 
   return (
-    <aside className="context-panel flex w-64 flex-shrink-0 flex-col border-l border-border overflow-hidden">
+    <aside className="context-panel flex w-72 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden">
       {/* Tab bar */}
-      <div className="flex flex-shrink-0 border-b border-border">
+      <div className="flex flex-shrink-0 border-b border-[#1a1a1a]">
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => onTabChange(tab.key)}
-            className={`flex-1 py-2.5 text-[10px] font-semibold uppercase tracking-widest transition ${
-              activeTab === tab.key ? "text-accent border-b-2 border-accent bg-accent/5" : "text-muted/50 hover:text-muted/80"
+            className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition ${
+              activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#555] hover:text-white"
             }`}>
             {tab.label}
           </button>
@@ -84,8 +86,12 @@ export function ContextPanel({
             isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode} />
         )}
         {activeTab === "details" && (
-          <DetailsTab selectedNode={selectedNode} boardConnections={boardConnections} boardNodes={boardNodes}
-            onFocusNode={onFocusNode} onSelectNode={onSelectNode} focusedNodeId={focusedNodeId} />
+          selectedEmailDetail && !selectedNode ? (
+            <EmailDetailView email={selectedEmailDetail} />
+          ) : (
+            <DetailsTab selectedNode={selectedNode} boardConnections={boardConnections} boardNodes={boardNodes}
+              onFocusNode={onFocusNode} onSelectNode={onSelectNode} focusedNodeId={focusedNodeId} />
+          )
         )}
         {activeTab === "timeline" && (
           <TimelineTab events={timelineEvents} focusState={focusState} onSelectNode={onSelectNode} />
@@ -113,11 +119,11 @@ function PersonsTab({
         </svg>
         <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search 473 people…"
-          className="w-full rounded-lg border border-border bg-surface py-1.5 pl-7 pr-3 text-[11px] text-foreground placeholder:text-muted/40 focus:border-accent/40 focus:outline-none transition"
+          className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-7 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none transition"
         />
       </div>
 
-      <div className="text-[10px] text-muted/40 mb-2">{people.length} people</div>
+      <div className="text-[11px] font-bold text-[#555] mb-2">{people.length} persons of interest</div>
 
       {people.map((person) => {
         const onBoard = isOnBoard(person.id);
@@ -129,33 +135,33 @@ function PersonsTab({
               e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
               e.dataTransfer.effectAllowed = "copy";
             }}
-            className={`group rounded-lg border p-2.5 transition ${
-              focused ? "border-accent/40 bg-accent/10" :
-              onBoard ? "border-accent/20 bg-accent/5 opacity-60" :
-              "border-border bg-surface hover:border-accent/30 cursor-grab active:cursor-grabbing"
+            className={`group rounded border p-3 transition ${
+              focused ? "border-red-500/40 bg-red-600/10" :
+              onBoard ? "border-red-500/20 bg-red-600/5 opacity-60" :
+              "border-[#2a2a2a] bg-[#141414] hover:border-red-500/30 cursor-grab active:cursor-grabbing"
             }`}>
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="h-2 w-2 rounded-full bg-purple-500" />
-              <span className="text-[8px] font-bold uppercase tracking-widest text-muted/60">Person</span>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+              <span className="text-[9px] font-black uppercase tracking-[0.15em] text-red-500/70">Person of Interest</span>
               {person.photoCount > 0 && (
-                <span className="ml-auto text-[8px] text-muted/40">📸 {person.photoCount}</span>
+                <span className="ml-auto text-[9px] font-bold text-[#555]">📸 {person.photoCount}</span>
               )}
             </div>
-            <h4 className="text-xs font-semibold text-foreground/90">{person.name}</h4>
-            {person.source && <p className="mt-0.5 text-[9px] text-muted/50">{person.source}</p>}
-            {onBoard && <span className="text-[8px] text-accent/60">✓ On board</span>}
+            <h4 className="text-sm font-bold text-white">{person.name}</h4>
+            {person.source && <p className="mt-0.5 text-[10px] text-[#666]">{person.source}</p>}
+            {onBoard && <span className="text-[9px] font-bold text-red-500/60">✓ On board</span>}
 
-            <div className="mt-1.5 flex gap-1">
+            <div className="mt-2 flex gap-1.5">
               {!onBoard && (
                 <button onClick={() => onAddPerson(person.id)}
-                  className="rounded bg-accent/10 px-2 py-0.5 text-[9px] font-medium text-accent opacity-0 group-hover:opacity-100 hover:bg-accent/20 transition">
+                  className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-red-500/70 opacity-0 group-hover:opacity-100 hover:bg-red-600/20 hover:text-red-400 transition">
                   + Add
                 </button>
               )}
               {onBoard && (
                 <button onClick={() => onFocusNode(person.id)}
-                  className={`rounded px-2 py-0.5 text-[9px] font-medium transition ${
-                    focused ? "bg-accent/20 text-accent" : "bg-accent/10 text-accent/60 opacity-0 group-hover:opacity-100"
+                  className={`rounded px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider transition ${
+                    focused ? "bg-red-600/20 text-red-400 border border-red-600/30" : "bg-red-600/10 border border-red-600/20 text-red-500/60 opacity-0 group-hover:opacity-100"
                   }`}>
                   {focused ? "Unfocus" : "Focus"}
                 </button>
@@ -164,6 +170,105 @@ function PersonsTab({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Email Detail View (full email reader) ──────────────────────────────────
+
+function EmailDetailView({ email }: { email: EmailEvidence }) {
+  function formatFullDate(dateStr: string | null): string {
+    if (!dateStr) return "Unknown date";
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Email header */}
+      <div className="flex-shrink-0 border-b border-[#1a1a1a] p-4 space-y-3">
+        {/* Subject */}
+        <h3 className="text-base font-black text-white leading-tight">
+          {email.subject}
+        </h3>
+
+        {/* Epstein badge */}
+        {email.epsteinIsSender && (
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-red-500">
+              Sent by Epstein
+            </span>
+          </div>
+        )}
+
+        {/* From */}
+        <div className="space-y-1.5">
+          <div className="flex gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">From</span>
+            <span className={`text-[12px] font-bold ${email.epsteinIsSender ? "text-red-400" : "text-white"}`}>
+              {email.sender}
+              {email.senderName && email.senderName !== email.sender && (
+                <span className="text-[#555] font-normal ml-1">({email.senderName})</span>
+              )}
+            </span>
+          </div>
+
+          {/* To */}
+          {email.recipients.length > 0 && (
+            <div className="flex gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">To</span>
+              <div className="text-[11px] text-[#aaa] break-all leading-relaxed">
+                {email.recipients.join(", ")}
+              </div>
+            </div>
+          )}
+
+          {/* CC */}
+          {email.cc.length > 0 && (
+            <div className="flex gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">CC</span>
+              <div className="text-[11px] text-[#888] break-all leading-relaxed">
+                {email.cc.join(", ")}
+              </div>
+            </div>
+          )}
+
+          {/* Date */}
+          <div className="flex gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">Date</span>
+            <span className="text-[11px] text-[#aaa] tabular-nums">
+              {formatFullDate(email.date)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Email body */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="text-[12px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+          {email.body || "No content available"}
+        </div>
+      </div>
+
+      {/* Footer metadata */}
+      <div className="flex-shrink-0 border-t border-[#1a1a1a] px-4 py-2 flex items-center gap-3 text-[9px] text-[#444]">
+        {email.docId && <span>Doc: {email.docId}</span>}
+        {email.releaseBatch && <span>Batch: {email.releaseBatch}</span>}
+        {email.isPromotional && <span className="text-yellow-600">Promotional</span>}
+        <span className="ml-auto text-[#333]">{email.id}</span>
+      </div>
     </div>
   );
 }

@@ -99,9 +99,9 @@ export const EVIDENCE_TYPE_LABEL: Record<EvidenceType, string> = {
 };
 
 export const CONNECTION_TYPE_COLOR: Record<ConnectionType, string> = {
-  manual: "#c8a55a",
-  email_thread: "#8a7a5a",
-  photo_coappearance: "#5a8a5a",
+  manual: "#dc2626",
+  email_thread: "#ef4444",
+  photo_coappearance: "#f87171",
 };
 
 // Re-export SearchResult for convenience

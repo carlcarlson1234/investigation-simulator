@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef } from "react";
-import type { Person, SearchResult, ArchiveStats } from "@/lib/types";
+import type { Person, SearchResult, ArchiveStats, EmailEvidence } from "@/lib/types";
 import type {
   BoardNode,
   BoardConnection,
@@ -11,6 +11,7 @@ import type {
 } from "@/lib/board-types";
 import { IntakePanel } from "./intake-panel";
 import { BoardCanvas } from "./board-canvas";
+import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 
 interface BoardWorkspaceProps {
@@ -33,9 +34,11 @@ export function BoardWorkspace({
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<RightPanelTab>("persons");
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  const [selectedEmailDetail, setSelectedEmailDetail] = useState<EmailEvidence | null>(null);
 
-  // Reference to the canvas container for scroll-to-center
-  const canvasRef = useRef<HTMLDivElement>(null);
+  // Reference to the canvas component's imperative handle for centering
+  const canvasRef = useRef<BoardCanvasHandle>(null);
 
   // ─── Focus computation ───────────────────────────────────────────────────
 
@@ -71,21 +74,8 @@ export function BoardWorkspace({
   // ─── Center board on focused node ────────────────────────────────────────
 
   const centerOnNode = useCallback((nodeId: string) => {
-    const node = boardNodes.find((n) => n.id === nodeId);
-    if (!node || !canvasRef.current) return;
-
-    const container = canvasRef.current;
-    const cardW = 170;
-    const cardH = node.kind === "person" ? 80 : 90;
-
-    const centerX = node.position.x + cardW / 2;
-    const centerY = node.position.y + cardH / 2;
-
-    const scrollX = centerX - container.clientWidth / 2;
-    const scrollY = centerY - container.clientHeight / 2;
-
-    container.scrollTo({ left: scrollX, top: scrollY, behavior: "smooth" });
-  }, [boardNodes]);
+    canvasRef.current?.centerOnNode(nodeId);
+  }, []);
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -221,14 +211,33 @@ export function BoardWorkspace({
     return events;
   }, [boardNodes, focusState]);
 
+  // ─── Email selection from inbox ───────────────────────────────────────────
+
+  const handleSelectEmail = useCallback(async (emailId: string) => {
+    setSelectedEmailId(emailId);
+    setRightTab("details");
+    // Fetch full email detail
+    try {
+      const res = await fetch(`/api/evidence/${emailId}?type=email`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedEmailDetail(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch email detail:", err);
+    }
+  }, []);
+
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-      {/* LEFT: Evidence Search */}
+      {/* LEFT: Email Inbox + Search */}
       <IntakePanel
         isOnBoard={isOnBoard}
         onAddEvidence={addEvidenceToBoard}
+        onSelectEmail={handleSelectEmail}
+        selectedEmailId={selectedEmailId}
       />
 
       {/* CENTER: Board Canvas */}
@@ -252,12 +261,13 @@ export function BoardWorkspace({
         stats={stats}
       />
 
-      {/* RIGHT: Persons + Context */}
+      {/* RIGHT: Persons + Email Detail + Context */}
       <ContextPanel
         activeTab={rightTab}
         onTabChange={setRightTab}
         people={people}
         selectedNode={selectedNode}
+        selectedEmailDetail={selectedEmailDetail}
         focusedNodeId={focusedNodeId}
         focusState={focusState}
         timelineEvents={timelineEvents}

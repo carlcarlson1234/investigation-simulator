@@ -18,17 +18,22 @@
 }
 
 :root {
-  --background: #090a08;
-  --foreground: #d4d0c8;
-  --surface: #111210;
-  --surface-hover: #1a1c18;
-  --border-color: #1e201a;
-  --accent: #c8a55a;
-  --accent-muted: #a88a3e;
-  --danger: #bf4545;
-  --warning: #c8a55a;
-  --success: #5a8a5a;
-  --muted: #6b6b5a;
+  --background: #0a0a0a;
+  --foreground: #f0ede8;
+  --surface: #141414;
+  --surface-hover: #1c1c1c;
+  --border-color: #252525;
+  --accent: #dc2626;
+  --accent-muted: #b91c1c;
+  --danger: #dc2626;
+  --warning: #f59e0b;
+  --success: #22c55e;
+  --muted: #888888;
+
+  --string-red: #dc2626;
+  --pin-red: #ef4444;
+  --manila: #c8b88a;
+  --highlight-yellow: #facc15;
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────── */
@@ -45,40 +50,26 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Custom scrollbar ──────────────────────────────────────────────────── */
+/* ─── Scrollbar ─────────────────────────────────────────────────────────── */
 
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #2a2a22;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #3a3a32;
-}
-
-/* ─── Glass card (investigative manila folder look) ─────────────────────── */
+/* ─── Glass card ────────────────────────────────────────────────────────── */
 
 .glass-card {
-  background: linear-gradient(135deg, rgba(17, 18, 16, 0.9), rgba(26, 28, 24, 0.7));
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(200, 165, 90, 0.08);
+  background: linear-gradient(135deg, rgba(20, 20, 20, 0.95), rgba(28, 28, 28, 0.85));
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(220, 38, 38, 0.1);
   border-radius: 4px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s ease;
 }
 
 .glass-card:hover {
-  border-color: rgba(200, 165, 90, 0.2);
-  box-shadow: 0 4px 24px rgba(200, 165, 90, 0.06);
-  transform: translateY(-1px);
+  border-color: rgba(220, 38, 38, 0.3);
+  box-shadow: 0 4px 30px rgba(220, 38, 38, 0.08);
 }
 
 /* ─── Evidence badge ────────────────────────────────────────────────────── */
@@ -87,195 +78,253 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 3px;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 /* ─── Pulse glow ────────────────────────────────────────────────────────── */
 
 @keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(200, 165, 90, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 16px 2px rgba(200, 165, 90, 0.1);
-  }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.25); }
+  50% { box-shadow: 0 0 25px 4px rgba(220, 38, 38, 0.12); }
 }
 
-.pulse-glow {
-  animation: pulse-glow 4s ease-in-out infinite;
-}
+.pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
 
-/* ─── Grid pattern (blueprint feel) ─────────────────────────────────────── */
+/* ─── Corkboard grid (the investigation board background) ───────────────── */
 
 .dot-grid {
+  background-color: #0e0e0e;
   background-image:
-    linear-gradient(rgba(200, 165, 90, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(200, 165, 90, 0.03) 1px, transparent 1px);
-  background-size: 20px 20px;
+    radial-gradient(circle, rgba(220, 38, 38, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 30px 30px, 60px 60px, 60px 60px;
 }
+
+/* ─── Red string connection (SVG lines styled in canvas) ────────────────── */
 
 /* ─── Gradient text ─────────────────────────────────────────────────────── */
 
 .gradient-text {
-  background: linear-gradient(135deg, #d4d0c8 0%, #c8a55a 50%, #e6c97a 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #dc2626 60%, #ef4444 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* ─── Stat card animation ───────────────────────────────────────────────── */
+/* ─── Stat animation ────────────────────────────────────────────────────── */
 
 @keyframes counter-rise {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.stat-animate {
-  animation: counter-rise 0.6s ease-out both;
-}
+.stat-animate { animation: counter-rise 0.5s ease-out both; }
+.stat-animate:nth-child(2) { animation-delay: 0.08s; }
+.stat-animate:nth-child(3) { animation-delay: 0.16s; }
+.stat-animate:nth-child(4) { animation-delay: 0.24s; }
 
-.stat-animate:nth-child(2) { animation-delay: 0.1s; }
-.stat-animate:nth-child(3) { animation-delay: 0.2s; }
-.stat-animate:nth-child(4) { animation-delay: 0.3s; }
-
-/* ─── Nav link ──────────────────────────────────────────────────────────── */
+/* ─── Nav ───────────────────────────────────────────────────────────────── */
 
 .nav-link {
   position: relative;
-  color: var(--muted);
+  color: #777;
   transition: color 0.2s ease;
-  font-size: 0.8rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.nav-link:hover {
-  color: var(--foreground);
-}
+.nav-link:hover { color: #fff; }
 
-.nav-link-active {
-  color: var(--accent) !important;
-}
+.nav-link-active { color: var(--accent) !important; }
 
 .nav-link-active::after {
   content: "";
   position: absolute;
-  bottom: -2px;
+  bottom: -4px;
   left: 0;
   right: 0;
-  height: 1px;
+  height: 2px;
   background: var(--accent);
+  border-radius: 1px;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.5);
 }
 
-/* ─── Hero gradient orb (warm) ──────────────────────────────────────────── */
+/* ─── Hero orbs ─────────────────────────────────────────────────────────── */
 
 .hero-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(100px);
   pointer-events: none;
 }
 
 .hero-orb-1 {
-  width: 400px;
-  height: 400px;
-  top: -100px;
-  right: -100px;
-  background: rgba(200, 165, 90, 0.06);
+  width: 500px;
+  height: 500px;
+  top: -150px;
+  right: -150px;
+  background: rgba(220, 38, 38, 0.08);
 }
 
 .hero-orb-2 {
-  width: 300px;
-  height: 300px;
-  bottom: -50px;
-  left: -100px;
-  background: rgba(200, 130, 60, 0.04);
+  width: 350px;
+  height: 350px;
+  bottom: -100px;
+  left: -150px;
+  background: rgba(220, 38, 38, 0.05);
 }
 
 /* ─── Fade-in ───────────────────────────────────────────────────────────── */
 
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-in {
-  animation: fade-in-up 0.7s ease-out both;
-}
+.animate-in { animation: fade-in-up 0.6s ease-out both; }
+.animate-delay-1 { animation-delay: 0.12s; }
+.animate-delay-2 { animation-delay: 0.24s; }
+.animate-delay-3 { animation-delay: 0.36s; }
 
-.animate-delay-1 { animation-delay: 0.15s; }
-.animate-delay-2 { animation-delay: 0.3s; }
-.animate-delay-3 { animation-delay: 0.45s; }
-.animate-delay-4 { animation-delay: 0.6s; }
-
-/* ─── Board Workspace ───────────────────────────────────────────────────── */
+/* ─── Board Workspace panels ───────────────────────────────────────────── */
 
 .intake-panel {
-  background: linear-gradient(180deg, #0d0e0c 0%, #090a08 100%);
+  background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
 }
 
 .context-panel {
-  background: linear-gradient(180deg, #0d0e0c 0%, #090a08 100%);
+  background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
 }
 
-.board-canvas {
-  background-color: #0b0c0a;
-  min-height: 100%;
-  position: relative;
-}
+/* board-canvas styles now handled inline in component */
 
 .board-node {
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, opacity 0.3s ease;
 }
 
 .board-node:hover {
   z-index: 15 !important;
 }
 
-/* ─── Board card hover ──────────────────────────────────────────────────── */
+/* ─── Board card hover (crime file feel) ────────────────────────────────── */
 
 .board-entity-card {
   transition: all 0.2s ease;
+  position: relative;
+}
+
+.board-entity-card::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pin-red);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+  z-index: 1;
 }
 
 .board-entity-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(200, 165, 90, 0.15);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(220, 38, 38, 0.2);
+  transform: translateY(-2px);
 }
 
 .board-evidence-card {
   transition: all 0.2s ease;
+  position: relative;
+}
+
+.board-evidence-card::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pin-red);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+  z-index: 1;
 }
 
 .board-evidence-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(200, 165, 90, 0.15);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(220, 38, 38, 0.2);
+  transform: translateY(-2px);
 }
 
-/* ─── Classified stamp effect ───────────────────────────────────────────── */
+/* ─── Classified stamp ──────────────────────────────────────────────────── */
 
 @keyframes stamp-in {
-  0% { transform: scale(2) rotate(-20deg); opacity: 0; }
-  50% { transform: scale(1.1) rotate(-12deg); opacity: 0.8; }
+  0% { transform: scale(2.5) rotate(-15deg); opacity: 0; }
+  40% { transform: scale(1.05) rotate(-12deg); opacity: 1; }
   100% { transform: scale(1) rotate(-12deg); opacity: 1; }
 }
 
 .classified-stamp {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  color: rgba(191, 69, 69, 0.3);
-  font-size: 1.5rem;
+  top: 16px;
+  right: 16px;
+  color: rgba(220, 38, 38, 0.4);
+  font-size: 1.8rem;
   font-weight: 900;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  border: 3px solid rgba(191, 69, 69, 0.3);
-  padding: 4px 12px;
+  border: 4px solid rgba(220, 38, 38, 0.4);
+  padding: 4px 14px;
   transform: rotate(-12deg);
-  animation: stamp-in 0.4s ease-out;
+  animation: stamp-in 0.5s ease-out;
   pointer-events: none;
+}
+
+/* ─── Scanline overlay for dramatic effect ──────────────────────────────── */
+
+@keyframes scanline {
+  0% { top: -100%; }
+  100% { top: 100%; }
+}
+
+.scanline-overlay::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 200%;
+  background: repeating-linear-gradient(
+    transparent,
+    transparent 2px,
+    rgba(220, 38, 38, 0.015) 2px,
+    rgba(220, 38, 38, 0.015) 4px
+  );
+  pointer-events: none;
+  animation: scanline 8s linear infinite;
+  z-index: 0;
+}
+
+/* ─── Highlight marker effect ───────────────────────────────────────────── */
+
+.highlight-marker {
+  background: linear-gradient(transparent 60%, rgba(250, 204, 21, 0.2) 60%);
+}
+
+/* ─── Redacted text effect ──────────────────────────────────────────────── */
+
+.redacted {
+  background: #222;
+  color: transparent;
+  user-select: none;
+  border-radius: 2px;
+  padding: 0 4px;
 }

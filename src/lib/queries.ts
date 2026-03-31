@@ -5,6 +5,7 @@ import type {
   Person,
   SearchResult,
   EmailEvidence,
+  EmailListItem,
   DocumentEvidence,
   PhotoEvidence,
   IMessageEvidence,
@@ -92,6 +93,157 @@ function mapPerson(row: Record<string, unknown>): Person {
     emailAddresses: parseJsonbArray(row.email_addresses),
     photoCount: Number(rj.photo_count ?? 0),
     source: (rj.source as string) ?? null,
+  };
+}
+
+// ─── Email Browsing (inbox-style) ───────────────────────────────────────────
+
+export type EmailSortBy = "newest" | "oldest";
+
+export async function browseEmails(opts: {
+  page?: number;
+  pageSize?: number;
+  sort?: EmailSortBy;
+  search?: string;
+  sender?: string;
+  epsteinOnly?: boolean;
+}): Promise<import("./types").EmailBrowseResult> {
+  const page = opts.page ?? 1;
+  const pageSize = Math.min(opts.pageSize ?? 30, 100);
+  const offset = (page - 1) * pageSize;
+  const sort = opts.sort ?? "newest";
+
+  // Build conditions
+  const conditions: string[] = ["sent_at IS NOT NULL"];
+  
+  // We use raw SQL because postgres tagged templates don't support dynamic WHERE easily
+  // But we can still use the tagged template with conditional fragments
+
+  let rows;
+  let countRows;
+
+  if (opts.search?.trim()) {
+    const tsQuery = opts.search
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.replace(/[^a-zA-Z0-9]/g, ""))
+      .filter(Boolean)
+      .join(" & ");
+
+    if (!tsQuery) return { emails: [], total: 0, page, pageSize, hasMore: false };
+
+    if (opts.epsteinOnly) {
+      rows = await jmail`
+        SELECT id, subject, sender, sent_at, left(body, 120) as body_preview,
+               recipients, cc, epstein_is_sender, COALESCE(star_count, 0) as star_count
+        FROM emails
+        WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+          AND sent_at IS NOT NULL
+          AND epstein_is_sender = true
+        ORDER BY ${sort === "newest" ? jmail`sent_at DESC` : jmail`sent_at ASC`}
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      countRows = await jmail`
+        SELECT count(*)::int as cnt FROM emails
+        WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+          AND sent_at IS NOT NULL AND epstein_is_sender = true
+      `;
+    } else if (opts.sender) {
+      rows = await jmail`
+        SELECT id, subject, sender, sent_at, left(body, 120) as body_preview,
+               recipients, cc, epstein_is_sender, COALESCE(star_count, 0) as star_count
+        FROM emails
+        WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+          AND sent_at IS NOT NULL
+          AND sender ILIKE ${"%" + opts.sender + "%"}
+        ORDER BY ${sort === "newest" ? jmail`sent_at DESC` : jmail`sent_at ASC`}
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      countRows = await jmail`
+        SELECT count(*)::int as cnt FROM emails
+        WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+          AND sent_at IS NOT NULL AND sender ILIKE ${"%" + opts.sender + "%"}
+      `;
+    } else {
+      rows = await jmail`
+        SELECT id, subject, sender, sent_at, left(body, 120) as body_preview,
+               recipients, cc, epstein_is_sender, COALESCE(star_count, 0) as star_count
+        FROM emails
+        WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+          AND sent_at IS NOT NULL
+        ORDER BY ${sort === "newest" ? jmail`sent_at DESC` : jmail`sent_at ASC`}
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      countRows = await jmail`
+        SELECT count(*)::int as cnt FROM emails
+        WHERE search_vector @@ to_tsquery('english', ${tsQuery}) AND sent_at IS NOT NULL
+      `;
+    }
+  } else if (opts.sender) {
+    rows = await jmail`
+      SELECT id, subject, sender, sent_at, left(body, 120) as body_preview,
+             recipients, cc, epstein_is_sender, COALESCE(star_count, 0) as star_count
+      FROM emails
+      WHERE sender ILIKE ${"%" + opts.sender + "%"}
+        AND sent_at IS NOT NULL
+      ORDER BY ${sort === "newest" ? jmail`sent_at DESC` : jmail`sent_at ASC`}
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    countRows = await jmail`
+      SELECT count(*)::int as cnt FROM emails
+      WHERE sender ILIKE ${"%" + opts.sender + "%"} AND sent_at IS NOT NULL
+    `;
+  } else if (opts.epsteinOnly) {
+    rows = await jmail`
+      SELECT id, subject, sender, sent_at, left(body, 120) as body_preview,
+             recipients, cc, epstein_is_sender, COALESCE(star_count, 0) as star_count
+      FROM emails
+      WHERE epstein_is_sender = true AND sent_at IS NOT NULL
+      ORDER BY ${sort === "newest" ? jmail`sent_at DESC` : jmail`sent_at ASC`}
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    countRows = await jmail`
+      SELECT count(*)::int as cnt FROM emails
+      WHERE epstein_is_sender = true AND sent_at IS NOT NULL
+    `;
+  } else {
+    rows = await jmail`
+      SELECT id, subject, sender, sent_at, left(body, 120) as body_preview,
+             recipients, cc, epstein_is_sender, COALESCE(star_count, 0) as star_count
+      FROM emails
+      WHERE sent_at IS NOT NULL
+      ORDER BY ${sort === "newest" ? jmail`sent_at DESC` : jmail`sent_at ASC`}
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    countRows = await jmail`
+      SELECT count(*)::int as cnt FROM emails WHERE sent_at IS NOT NULL
+    `;
+  }
+
+  const total = countRows[0]?.cnt ?? 0;
+
+  const emails = rows.map((r: Record<string, unknown>) => {
+    const recips = parseJsonbArray(r.recipients);
+    const cc = parseJsonbArray(r.cc);
+    return {
+      id: r.id as string,
+      subject: (r.subject as string) || "(No subject)",
+      sender: (r.sender as string) || "Unknown",
+      sentAt: r.sent_at ? new Date(r.sent_at as string).toISOString() : null,
+      bodyPreview: ((r.body_preview as string) ?? "").replace(/\n/g, " ").trim(),
+      recipientCount: recips.length,
+      hasCc: cc.length > 0,
+      epsteinIsSender: Boolean(r.epstein_is_sender),
+      starCount: Number(r.star_count ?? 0),
+    };
+  });
+
+  return {
+    emails,
+    total,
+    page,
+    pageSize,
+    hasMore: offset + pageSize < total,
   };
 }
 
@@ -251,8 +403,9 @@ export async function getEvidenceById(id: string, type: EvidenceType): Promise<E
 
 async function getEmailById(id: string): Promise<EmailEvidence | null> {
   const rows = await jmail`
-    SELECT id, subject, sender, sender_name, recipients, cc, bcc,
-           date, body, star_count, release_batch, source, raw_json
+    SELECT id, doc_id, subject, sender, sender_name, recipients, cc, bcc,
+           sent_at, body, body_html, star_count, release_batch, source,
+           epstein_is_sender, raw_json
     FROM emails WHERE id = ${id} LIMIT 1
   `;
   if (rows.length === 0) return null;
@@ -263,20 +416,20 @@ async function getEmailById(id: string): Promise<EmailEvidence | null> {
     id: r.id as string,
     type: "email",
     title: (r.subject as string) || "(No subject)",
-    snippet: ((rj.content_markdown as string) ?? "").slice(0, 200),
-    date: formatDate((rj.sent_at as string) ?? null),
+    snippet: ((r.body as string) ?? "").slice(0, 200),
+    date: formatDate(r.sent_at as string),
     source: r.source as string,
-    releaseBatch: r.release_batch as string,
+    releaseBatch: (r.release_batch as string) ?? (rj.email_drop_id as string) ?? null,
     starCount: Number(r.star_count ?? 0),
     sender: (r.sender as string) ?? "Unknown",
     senderName: (r.sender_name as string) ?? null,
-    recipients: parseJsonbArray(rj.to_recipients),
-    cc: parseJsonbArray(rj.cc_recipients),
+    recipients: parseJsonbArray(r.recipients),
+    cc: parseJsonbArray(r.cc),
     subject: (r.subject as string) || "(No subject)",
-    body: (rj.content_markdown as string) ?? (r.body as string) ?? "",
-    docId: (rj.doc_id as string) ?? null,
+    body: (r.body as string) ?? "",
+    docId: (r.doc_id as string) ?? (rj.doc_id as string) ?? null,
     isPromotional: Boolean(rj.is_promotional),
-    epsteinIsSender: Boolean(rj.epstein_is_sender),
+    epsteinIsSender: Boolean(r.epstein_is_sender),
   };
 }
 
