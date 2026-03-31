@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { demoCase } from "@/lib/seed-data";
+import { getCases } from "@/lib/queries";
 
 export const metadata: Metadata = {
   title: "Cases — Investigation Simulator",
@@ -20,8 +20,8 @@ function DifficultyPips({ level }: { level: number }) {
   );
 }
 
-export default function CasesPage() {
-  const cases = [demoCase]; // Single demo case for now
+export default async function CasesPage() {
+  const cases = await getCases();
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">

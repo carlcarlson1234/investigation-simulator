@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { leaderboard } from "@/lib/seed-data";
+import { getLeaderboard } from "@/lib/queries";
 import type { InvestigatorRank } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -16,7 +16,8 @@ const rankLabel: Record<InvestigatorRank, string> = {
   chief_inspector: "Chief Inspector",
 };
 
-export default function LeaderboardPage() {
+export default async function LeaderboardPage() {
+  const leaderboard = await getLeaderboard();
   const sorted = [...leaderboard].sort((a, b) => b.score - a.score);
 
   return (
@@ -47,7 +48,6 @@ export default function LeaderboardPage() {
               className={`glass-card relative flex flex-col items-center text-center p-4 ${sizes[i]}`}
             >
               <span className="text-3xl mb-2">{medals[i]}</span>
-              {/* Avatar circle */}
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-xl font-bold text-accent mb-2">
                 {inv.name
                   .split(" ")

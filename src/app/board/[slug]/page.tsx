@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import {
-  demoCase,
-  entities,
-  evidence,
-  connections,
-} from "@/lib/seed-data";
+  getCaseBySlug,
+  getEntitiesByCaseId,
+  getEvidenceByCaseId,
+  getEvidenceLinksByCaseId,
+} from "@/lib/queries";
 import type { EntityType, EvidenceType, ConnectionType } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -63,10 +64,25 @@ const connectionTypeColor: Record<ConnectionType, string> = {
 
 /* ─── Page ──────────────────────────────────────────────────────────────── */
 
-export default function BoardPage() {
+export default async function BoardPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+
+  const caseData = await getCaseBySlug(slug);
+  if (!caseData) notFound();
+
+  const [entitiesData, evidenceData, connectionsData] = await Promise.all([
+    getEntitiesByCaseId(caseData.dbId),
+    getEvidenceByCaseId(caseData.dbId),
+    getEvidenceLinksByCaseId(caseData.dbId),
+  ]);
+
   // Find the victim (central entity)
-  const centralEntity = entities.find((e) => e.type === "victim")!;
-  const surroundingEntities = entities.filter((e) => e.id !== centralEntity.id);
+  const centralEntity = entitiesData.find((e) => e.type === "victim")!;
+  const surroundingEntities = entitiesData.filter((e) => e.id !== centralEntity.id);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
@@ -77,27 +93,27 @@ export default function BoardPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" id="board-title">
-                {demoCase.title}
+                {caseData.title}
               </h1>
               <span className="evidence-badge border border-accent/20 bg-accent/5 text-accent text-xs">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
                 </span>
-                {demoCase.status.toUpperCase()}
+                {caseData.status.toUpperCase()}
               </span>
             </div>
-            <p className="mt-1 text-sm text-muted italic">{demoCase.subtitle}</p>
+            <p className="mt-1 text-sm text-muted italic">{caseData.subtitle}</p>
           </div>
           <div className="hidden sm:flex gap-2">
             <div className="glass-card px-3 py-1.5 text-xs text-muted">
-              {demoCase.entityCount} Entities
+              {entitiesData.length} Entities
             </div>
             <div className="glass-card px-3 py-1.5 text-xs text-muted">
-              {demoCase.evidenceCount} Evidence
+              {evidenceData.length} Evidence
             </div>
             <div className="glass-card px-3 py-1.5 text-xs text-muted">
-              {demoCase.connectionCount} Connections
+              {connectionsData.length} Connections
             </div>
           </div>
         </div>
@@ -109,18 +125,15 @@ export default function BoardPage() {
             className="pointer-events-none absolute inset-0 h-full w-full"
             style={{ zIndex: 0 }}
           >
-            {/* Lines from center to surrounding cards */}
             <line x1="50%" y1="35%" x2="15%" y2="10%" stroke="rgba(99,102,241,0.15)" strokeWidth="1" strokeDasharray="6 4" />
             <line x1="50%" y1="35%" x2="85%" y2="10%" stroke="rgba(99,102,241,0.15)" strokeWidth="1" strokeDasharray="6 4" />
             <line x1="50%" y1="35%" x2="8%" y2="70%" stroke="rgba(99,102,241,0.15)" strokeWidth="1" strokeDasharray="6 4" />
             <line x1="50%" y1="35%" x2="92%" y2="70%" stroke="rgba(99,102,241,0.15)" strokeWidth="1" strokeDasharray="6 4" />
-            {/* Cross connections */}
             <line x1="15%" y1="10%" x2="85%" y2="10%" stroke="rgba(239,68,68,0.08)" strokeWidth="1" strokeDasharray="4 6" />
             <line x1="85%" y1="10%" x2="92%" y2="70%" stroke="rgba(16,185,129,0.08)" strokeWidth="1" strokeDasharray="4 6" />
             <line x1="8%" y1="70%" x2="15%" y2="10%" stroke="rgba(139,92,246,0.08)" strokeWidth="1" strokeDasharray="4 6" />
           </svg>
 
-          {/* Grid: surrounding at top, center in middle */}
           <div className="relative" style={{ zIndex: 1 }}>
             {/* Top row: surrounding entities */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
@@ -183,7 +196,7 @@ export default function BoardPage() {
                 Evidence Items
               </h2>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {evidence.map((ev) => (
+                {evidenceData.map((ev) => (
                   <div
                     key={ev.id}
                     id={`evidence-${ev.id}`}
@@ -233,9 +246,9 @@ export default function BoardPage() {
         </h2>
 
         <div className="space-y-3">
-          {connections.map((conn) => {
-            const source = entities.find((e) => e.id === conn.sourceEntityId);
-            const target = entities.find((e) => e.id === conn.targetEntityId);
+          {connectionsData.map((conn) => {
+            const source = entitiesData.find((e) => e.id === conn.sourceEntityId);
+            const target = entitiesData.find((e) => e.id === conn.targetEntityId);
             if (!source || !target) return null;
 
             return (
@@ -282,7 +295,6 @@ export default function BoardPage() {
                   {conn.label}
                 </p>
 
-                {/* Strength bar */}
                 <div className="mt-2">
                   <div className="credibility-bar">
                     <div

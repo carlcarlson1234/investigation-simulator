@@ -1,13 +1,16 @@
 import Link from "next/link";
+import { getHomeStats } from "@/lib/queries";
 
-const stats = [
-  { label: "Active Cases", value: "1" },
-  { label: "Evidence Items", value: "10" },
-  { label: "Connections", value: "8" },
-  { label: "Investigators", value: "8" },
-];
+export default async function HomePage() {
+  const stats = await getHomeStats();
 
-export default function HomePage() {
+  const statItems = [
+    { label: "Active Cases", value: String(stats.activeCases) },
+    { label: "Evidence Items", value: String(stats.evidenceItems) },
+    { label: "Connections", value: String(stats.connections) },
+    { label: "Investigators", value: String(stats.investigators) },
+  ];
+
   return (
     <div className="relative overflow-hidden">
       {/* Background orbs */}
@@ -73,7 +76,7 @@ export default function HomePage() {
       {/* ─── Stats ────────────────────────────────────────────── */}
       <section className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {stats.map((stat, i) => (
+          {statItems.map((stat, i) => (
             <div
               key={stat.label}
               className={`stat-animate glass-card flex flex-col items-center gap-1 p-6`}
