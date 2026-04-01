@@ -60,9 +60,12 @@ export interface PhotoEvidence extends EvidenceBase {
   type: "photo";
   width: number;
   height: number;
+  imageUrl: string | null;          // CDN URL for the actual photo
+  thumbnailUrl: string | null;      // CDN resized thumbnail
   imageDescription: string | null;  // from raw_json
   sourceUrl: string | null;
   contentType: string | null;
+  facesDetected: string[];          // person IDs found in this photo
 }
 
 export interface IMessageEvidence extends EvidenceBase {
@@ -104,6 +107,27 @@ export interface EmailListItem {
 
 export interface EmailBrowseResult {
   emails: EmailListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
+// ─── Photo List Item (for gallery-style browsing) ───────────────────────────
+
+export interface PhotoListItem {
+  id: string;
+  thumbnailUrl: string;            // CDN resized thumbnail
+  imageUrl: string;                // full-res CDN URL
+  description: string;             // AI-generated image_description
+  width: number;
+  height: number;
+  facePeople: string[];            // person names detected in this photo
+  facePersonIds: string[];         // person IDs detected in this photo
+}
+
+export interface PhotoBrowseResult {
+  photos: PhotoListItem[];
   total: number;
   page: number;
   pageSize: number;

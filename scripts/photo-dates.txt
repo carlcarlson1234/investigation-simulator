@@ -1,0 +1,43 @@
+All raw_json keys on photos:
+  size
+  image_description
+  release_batch
+  id
+  original_filename
+  height
+  width
+  source_url
+  content_type
+  source
+
+Photos with date fields:
+
+Photos table columns:
+  id (text)
+  filename (text)
+  title (text)
+  description (text)
+  date_taken (timestamp with time zone)
+  width (integer)
+  height (integer)
+  image_url (text)
+  thumbnail_url (text)
+  volume (text)
+  release_batch (text)
+  source (text)
+  raw_json (jsonb)
+  ingested_at (timestamp with time zone)
+
+Full raw_json sample:
+{
+  "id": "EFTA00000002-0.png",
+  "size": 2091057,
+  "width": 1800,
+  "height": 1278,
+  "source": "doj",
+  "source_url": "https://www.justice.gov/epstein/files/DataSet%201/EFTA00000002.pdf",
+  "content_type": "image/png",
+  "release_batch": "VOL00001",
+  "image_description": "The image shows a building exterior with a large wooden door with a light fixture hanging above it. There are trees flanking either side of the building. There are windows on either side of the door. An ornamental facade exists above the door with sculptures. There is a smaller door to the left, with a red sign.",
+  "original_filename": "EFTA00000002-0.png"
+}

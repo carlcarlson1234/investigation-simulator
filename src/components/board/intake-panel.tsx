@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { SearchResult, EvidenceType, EmailListItem } from "@/lib/types";
+import type { SearchResult, EvidenceType, EmailListItem, PhotoListItem } from "@/lib/types";
 import {
   EVIDENCE_TYPE_ICON,
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
 
-type PanelTab = "emails" | "search";
+type PanelTab = "emails" | "photos" | "search";
 
 interface IntakePanelProps {
   isOnBoard: (id: string) => boolean;
@@ -34,6 +34,16 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
           ✉️ Inbox
         </button>
         <button
+          onClick={() => setActiveTab("photos")}
+          className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition ${
+            activeTab === "photos"
+              ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
+              : "text-[#555] hover:text-white"
+          }`}
+        >
+          📷 Photos
+        </button>
+        <button
           onClick={() => setActiveTab("search")}
           className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition ${
             activeTab === "search"
@@ -41,7 +51,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
               : "text-[#555] hover:text-white"
           }`}
         >
-          🔍 Search All
+          🔍 Search
         </button>
       </div>
 
@@ -52,6 +62,8 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
           onSelectEmail={onSelectEmail}
           selectedEmailId={selectedEmailId}
         />
+      ) : activeTab === "photos" ? (
+        <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
       ) : (
         <EvidenceSearch isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
       )}
@@ -319,6 +331,321 @@ function EmailInbox({
           </div>
         )}
       </div>
+    </>
+  );
+}
+
+// ─── PHOTO GALLERY TAB ──────────────────────────────────────────────────────
+
+function PhotoGallery({
+  isOnBoard,
+  onAddEvidence,
+}: {
+  isOnBoard: (id: string) => boolean;
+  onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+}) {
+  const [photos, setPhotos] = useState<PhotoListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [search, setSearch] = useState("");
+  const [personFilter, setPersonFilter] = useState<string | null>(null);
+  const [personFilterName, setPersonFilterName] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialLoad = useRef(false);
+  const [lightboxPhoto, setLightboxPhoto] = useState<PhotoListItem | null>(null);
+
+  const fetchPhotos = useCallback(async (p: number, q: string, pid: string | null, append: boolean) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(p),
+        pageSize: "24",
+      });
+      if (q.trim()) params.set("q", q);
+      if (pid) params.set("personId", pid);
+
+      const res = await fetch(`/api/photos?${params}`);
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+
+      if (append) {
+        setPhotos((prev) => [...prev, ...data.photos]);
+      } else {
+        setPhotos(data.photos);
+      }
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setPage(data.page);
+    } catch (err) {
+      console.error("Photo fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    if (!initialLoad.current) {
+      initialLoad.current = true;
+      fetchPhotos(1, "", null, false);
+    }
+  }, [fetchPhotos]);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchPhotos(1, search, personFilter, false);
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search, personFilter, fetchPhotos]);
+
+  const loadMore = () => {
+    if (hasMore && !loading) {
+      fetchPhotos(page + 1, search, personFilter, true);
+    }
+  };
+
+  function photoToSearchResult(photo: PhotoListItem): SearchResult {
+    return {
+      id: photo.id,
+      type: "photo",
+      title: photo.id,
+      snippet: photo.description.slice(0, 150),
+      date: null,
+      sender: photo.facePeople.length > 0 ? photo.facePeople.join(", ") : null,
+      score: 0,
+      starCount: 0,
+    };
+  }
+
+  const filterByPerson = (personId: string, personName: string) => {
+    setPersonFilter(personId);
+    setPersonFilterName(personName);
+  };
+
+  const clearPersonFilter = () => {
+    setPersonFilter(null);
+    setPersonFilterName(null);
+  };
+
+  return (
+    <>
+      {/* Search + Filters */}
+      <div className="flex-shrink-0 border-b border-[#1a1a1a] p-3 space-y-2">
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+          >
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search photo descriptions…"
+            className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-9 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none focus:ring-1 focus:ring-red-600/20 transition"
+            id="photo-search"
+          />
+        </div>
+
+        {/* Person filter chip */}
+        {personFilterName && (
+          <div className="flex items-center gap-1.5">
+            <span className="rounded-full border border-red-600/30 bg-red-600/10 px-2.5 py-0.5 text-[10px] font-bold text-red-400 flex items-center gap-1">
+              👤 {personFilterName}
+              <button
+                onClick={clearPersonFilter}
+                className="ml-0.5 text-red-400/60 hover:text-red-300 transition"
+              >
+                ✕
+              </button>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Status bar */}
+      <div className="flex-shrink-0 px-3 py-1.5 text-[10px] font-bold text-[#555] border-b border-[#1a1a1a] flex items-center justify-between">
+        {loading && photos.length === 0 ? (
+          <span className="flex items-center gap-1.5 text-red-400">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            Loading…
+          </span>
+        ) : (
+          <span>{total.toLocaleString()} photos</span>
+        )}
+        <span className="text-[#444] tabular-nums">
+          Page {page}
+        </span>
+      </div>
+
+      {/* Photo Grid */}
+      <div className="flex-1 overflow-y-auto p-2">
+        <div className="grid grid-cols-2 gap-1.5">
+          {photos.map((photo) => {
+            const onBoard = isOnBoard(photo.id);
+            return (
+              <div
+                key={photo.id}
+                draggable={!onBoard}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(
+                    "application/board-item",
+                    JSON.stringify({ id: photo.id, kind: "evidence", data: photoToSearchResult(photo) })
+                  );
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
+                className={`group relative rounded-lg overflow-hidden border transition cursor-pointer ${
+                  onBoard
+                    ? "border-red-500/20 opacity-40"
+                    : "border-[#2a2a2a] hover:border-red-500/30 active:cursor-grabbing"
+                }`}
+                onClick={() => setLightboxPhoto(photo)}
+              >
+                {/* Thumbnail image */}
+                <div className="aspect-square bg-[#0e0e0e] relative">
+                  <img
+                    src={photo.thumbnailUrl}
+                    alt={photo.description || photo.id}
+                    loading="lazy"
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      target.style.display = 'none';
+                    }}
+                  />
+
+                  {/* Hover overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+
+                  {/* Face badges */}
+                  {photo.facePeople.length > 0 && (
+                    <div className="absolute top-1 left-1 flex flex-wrap gap-0.5">
+                      {photo.facePeople.slice(0, 2).map((name, i) => (
+                        <button
+                          key={i}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            filterByPerson(photo.facePersonIds[i], name);
+                          }}
+                          className="rounded bg-black/70 backdrop-blur-sm px-1.5 py-0.5 text-[8px] font-bold text-white hover:bg-red-600/80 transition"
+                        >
+                          {name.split(" ")[0]}
+                        </button>
+                      ))}
+                      {photo.facePeople.length > 2 && (
+                        <span className="rounded bg-black/70 px-1 py-0.5 text-[8px] text-white/60">
+                          +{photo.facePeople.length - 2}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Add to board button on hover */}
+                  {!onBoard && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddEvidence(photoToSearchResult(photo));
+                      }}
+                      className="absolute bottom-1 right-1 rounded bg-red-600/90 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition shadow-lg"
+                    >
+                      + Board
+                    </button>
+                  )}
+                  {onBoard && (
+                    <span className="absolute bottom-1 right-1 rounded bg-black/70 px-2 py-1 text-[9px] font-bold text-red-400">
+                      ✓ On board
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Load more */}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loading}
+            className="w-full py-3 mt-2 text-[11px] font-bold uppercase tracking-wider text-red-500/60 hover:text-red-400 hover:bg-[#141414] rounded transition disabled:opacity-50"
+          >
+            {loading ? "Loading…" : "Load More Photos"}
+          </button>
+        )}
+
+        {!loading && photos.length === 0 && (
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm font-bold text-[#555]">No photos found</p>
+            <p className="text-[10px] text-[#444] mt-1">Try a different search</p>
+          </div>
+        )}
+      </div>
+
+      {/* Lightbox */}
+      {lightboxPhoto && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setLightboxPhoto(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[85vh] mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxPhoto.imageUrl}
+              alt={lightboxPhoto.description || lightboxPhoto.id}
+              className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain"
+            />
+            <div className="absolute top-2 right-2 flex gap-1.5">
+              {!isOnBoard(lightboxPhoto.id) && (
+                <button
+                  onClick={() => {
+                    onAddEvidence(photoToSearchResult(lightboxPhoto));
+                    setLightboxPhoto(null);
+                  }}
+                  className="rounded bg-red-600 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-red-500 transition shadow-lg"
+                >
+                  + Add to Board
+                </button>
+              )}
+              <button
+                onClick={() => setLightboxPhoto(null)}
+                className="rounded bg-black/60 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-black/80 transition"
+              >
+                ✕ Close
+              </button>
+            </div>
+            {/* Description + faces */}
+            {(lightboxPhoto.description || lightboxPhoto.facePeople.length > 0) && (
+              <div className="mt-2 rounded-lg bg-[#111]/90 border border-[#2a2a2a] p-3">
+                {lightboxPhoto.facePeople.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {lightboxPhoto.facePeople.map((name, i) => (
+                      <span
+                        key={i}
+                        className="rounded-full border border-red-600/20 bg-red-600/10 px-2 py-0.5 text-[10px] font-bold text-red-400"
+                      >
+                        👤 {name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {lightboxPhoto.description && (
+                  <p className="text-[11px] leading-relaxed text-[#888]">
+                    {lightboxPhoto.description}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -8,12 +8,25 @@ import type {
   EmailListItem,
   DocumentEvidence,
   PhotoEvidence,
+  PhotoListItem,
   IMessageEvidence,
   Evidence,
   ArchiveStats,
   ReleaseBatch,
   EvidenceType,
 } from "./types";
+
+// ─── Photo CDN ──────────────────────────────────────────────────────────────
+
+const PHOTO_CDN = "https://assets.getkino.com";
+
+function photoImageUrl(photoId: string): string {
+  return `${PHOTO_CDN}/photos/${photoId}`;
+}
+
+function photoThumbnailUrl(photoId: string, width = 400): string {
+  return `${PHOTO_CDN}/cdn-cgi/image/width=${width},quality=80,format=auto/photos-deboned/${photoId}`;
+}
 
 // ─── Archive Stats ──────────────────────────────────────────────────────────
 
@@ -83,13 +96,19 @@ export async function getPersonById(id: string): Promise<Person | null> {
 
 function mapPerson(row: Record<string, unknown>): Person {
   const rj = (row.raw_json as Record<string, unknown>) ?? {};
+  const personId = row.id as string;
+  // Use DB image_url if available, otherwise try local thumbnail (downloaded from jmail.world)
+  const dbImageUrl = (row.image_url as string) ?? null;
+  const thumbnailUrl = personId
+    ? `/people-thumbnails/${personId}.png`
+    : null;
   return {
-    id: row.id as string,
+    id: personId,
     name: row.name as string,
     slug: (row.slug as string) ?? null,
     aliases: parseJsonbArray(row.aliases),
     description: (row.description as string) ?? null,
-    imageUrl: (row.image_url as string) ?? null,
+    imageUrl: dbImageUrl || thumbnailUrl,
     emailAddresses: parseJsonbArray(row.email_addresses),
     photoCount: Number(rj.photo_count ?? 0),
     source: (rj.source as string) ?? null,
@@ -472,11 +491,20 @@ async function getPhotoById(id: string): Promise<PhotoEvidence | null> {
   if (rows.length === 0) return null;
   const r = rows[0];
   const rj = (r.raw_json as Record<string, unknown>) ?? {};
+  const photoId = r.id as string;
+
+  // Get face detections for this photo
+  const faceRows = await jmail`
+    SELECT pf.person_id, p.name FROM photo_faces pf
+    JOIN people p ON p.id = pf.person_id
+    WHERE pf.photo_id = ${photoId}
+    ORDER BY pf.confidence::float DESC
+  `;
 
   return {
-    id: r.id as string,
+    id: photoId,
     type: "photo",
-    title: (rj.original_filename as string) ?? (r.id as string),
+    title: (rj.original_filename as string) ?? photoId,
     snippet: (rj.image_description as string) ?? "",
     date: null,
     source: (rj.source as string) ?? null,
@@ -484,9 +512,12 @@ async function getPhotoById(id: string): Promise<PhotoEvidence | null> {
     starCount: 0,
     width: Number(rj.width ?? 0),
     height: Number(rj.height ?? 0),
+    imageUrl: photoImageUrl(photoId),
+    thumbnailUrl: photoThumbnailUrl(photoId),
     imageDescription: (rj.image_description as string) ?? null,
     sourceUrl: (rj.source_url as string) ?? null,
     contentType: (rj.content_type as string) ?? null,
+    facesDetected: faceRows.map((f) => f.person_id as string),
   };
 }
 
@@ -526,6 +557,118 @@ export async function getReleaseBatches(): Promise<ReleaseBatch[]> {
     releaseDate: r.release_date ? new Date(r.release_date as string).toISOString().split("T")[0] : null,
     documentCount: r.document_count as number | null,
   }));
+}
+
+// ─── Photo Browsing (gallery-style) ─────────────────────────────────────────
+
+export async function browsePhotos(opts: {
+  page?: number;
+  pageSize?: number;
+  personId?: string;
+  search?: string;
+}): Promise<import("./types").PhotoBrowseResult> {
+  const page = opts.page ?? 1;
+  const pageSize = Math.min(opts.pageSize ?? 24, 60);
+  const offset = (page - 1) * pageSize;
+
+  let rows;
+  let countRows;
+
+  if (opts.personId) {
+    // Filter by person via photo_faces
+    rows = await jmail`
+      SELECT DISTINCT p.id, p.raw_json
+      FROM photos p
+      JOIN photo_faces pf ON pf.photo_id = p.id
+      WHERE pf.person_id = ${opts.personId}
+      ORDER BY p.id
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    countRows = await jmail`
+      SELECT count(DISTINCT p.id)::int as cnt
+      FROM photos p
+      JOIN photo_faces pf ON pf.photo_id = p.id
+      WHERE pf.person_id = ${opts.personId}
+    `;
+  } else if (opts.search?.trim()) {
+    const tsQuery = opts.search
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.replace(/[^a-zA-Z0-9]/g, ""))
+      .filter(Boolean)
+      .join(" & ");
+
+    if (!tsQuery) return { photos: [], total: 0, page, pageSize, hasMore: false };
+
+    rows = await jmail`
+      SELECT id, raw_json FROM photos
+      WHERE raw_json->>'image_description' ILIKE ${"%" + opts.search + "%"}
+      ORDER BY id
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    countRows = await jmail`
+      SELECT count(*)::int as cnt FROM photos
+      WHERE raw_json->>'image_description' ILIKE ${"%" + opts.search + "%"}
+    `;
+  } else {
+    // All photos, most interesting first (ones with face detections)
+    rows = await jmail`
+      SELECT p.id, p.raw_json FROM photos p
+      LEFT JOIN (
+        SELECT photo_id, count(*)::int as face_count
+        FROM photo_faces GROUP BY photo_id
+      ) fc ON fc.photo_id = p.id
+      ORDER BY fc.face_count DESC NULLS LAST, p.id
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+    countRows = await jmail`
+      SELECT count(*)::int as cnt FROM photos
+    `;
+  }
+
+  const total = countRows[0]?.cnt ?? 0;
+  const photoIds = rows.map((r: Record<string, unknown>) => r.id as string);
+
+  // Batch fetch face detections for all photos in this page
+  let faceMap: Record<string, { personId: string; name: string }[]> = {};
+  if (photoIds.length > 0) {
+    const faceRows = await jmail`
+      SELECT pf.photo_id, pf.person_id, p.name
+      FROM photo_faces pf
+      JOIN people p ON p.id = pf.person_id
+      WHERE pf.photo_id = ANY(${photoIds})
+      ORDER BY pf.confidence::float DESC
+    `;
+    for (const fr of faceRows) {
+      const pid = fr.photo_id as string;
+      if (!faceMap[pid]) faceMap[pid] = [];
+      faceMap[pid].push({ personId: fr.person_id as string, name: fr.name as string });
+    }
+  }
+
+  const photos: PhotoListItem[] = rows.map((r: Record<string, unknown>) => {
+    const rj = (r.raw_json as Record<string, unknown>) ?? {};
+    const id = r.id as string;
+    const faces = faceMap[id] ?? [];
+    return {
+      id,
+      thumbnailUrl: photoThumbnailUrl(id, 300),
+      imageUrl: photoImageUrl(id),
+      description: (rj.image_description as string) ?? "",
+      width: Number(rj.width ?? 0),
+      height: Number(rj.height ?? 0),
+      facePeople: faces.map((f) => f.name),
+      facePersonIds: faces.map((f) => f.personId),
+    };
+  });
+
+  return {
+    photos,
+    total,
+    page,
+    pageSize,
+    hasMore: offset + pageSize < total,
+  };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

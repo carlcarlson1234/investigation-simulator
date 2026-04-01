@@ -38,6 +38,7 @@ interface BoardCanvasProps {
   onStartConnection: (fromId: string) => void;
   onCompleteConnection: (toId: string) => void;
   onOpenSubjectView: (personId: string) => void;
+  onOpenPhotoView: (photoId: string) => void;
   stats: ArchiveStats;
 }
 
@@ -59,6 +60,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onStartConnection,
     onCompleteConnection,
     onOpenSubjectView,
+    onOpenPhotoView,
     stats,
   },
   ref
@@ -546,6 +548,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (node.kind === "person") onOpenSubjectView(node.id);
+                      else if (node.kind === "evidence" && node.evidenceType === "photo") onOpenPhotoView(node.id);
                       else onFocusNode(node.id);
                     }}
                   >
@@ -688,11 +691,26 @@ function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, e
       {/* Photo area */}
       <div className="relative aspect-[4/3] rounded-t-xl overflow-hidden bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a]">
         {data.imageUrl ? (
-          <img
-            src={data.imageUrl}
-            alt={data.name}
-            className="w-full h-full object-cover"
-          />
+          <>
+            <img
+              src={data.imageUrl}
+              alt={data.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                // Hide broken image and show fallback silhouette
+                const target = e.currentTarget;
+                target.style.display = 'none';
+                const fallback = target.nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = 'flex';
+              }}
+            />
+            <div className="items-center justify-center h-full hidden">
+              <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-red-900/25">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+          </>
         ) : (
           <div className="flex items-center justify-center h-full">
             <svg
@@ -796,9 +814,101 @@ function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, e
 
 // ─── Evidence Card (evidence file look) ─────────────────────────────────────
 
+const PHOTO_CDN = "https://assets.getkino.com";
+
 function EvidenceCard({ data, evidenceType, isSelected, onConnect, onFocus }: {
   data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onConnect: () => void; onFocus: () => void;
 }) {
+  const [imgError, setImgError] = useState(false);
+
+  // Photo evidence gets a big image card
+  if (evidenceType === "photo") {
+    const thumbnailUrl = `${PHOTO_CDN}/cdn-cgi/image/width=500,quality=80,format=auto/photos-deboned/${data.id}`;
+    return (
+      <div className={`board-evidence-card w-[280px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
+        isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
+      }`}>
+        {/* Photo image */}
+        <div className="relative bg-[#0a0a0a]" style={{ minHeight: imgError ? 80 : 200 }}>
+          {!imgError ? (
+            <img
+              src={thumbnailUrl}
+              alt={data.snippet || data.title}
+              loading="lazy"
+              className="w-full object-cover"
+              style={{ maxHeight: 320 }}
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-20">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-[#333]">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </div>
+          )}
+
+          {/* Type badge */}
+          <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-[#0a0a0a]/80 border border-[#333]/50 px-2 py-0.5 backdrop-blur-sm">
+            <span className="text-sm">📸</span>
+            <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#999]">
+              Photo
+            </span>
+          </div>
+
+          {/* Connection pin */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-red-500 bg-[#141414] z-10" />
+
+          {/* Face badges from sender field (person names) */}
+          {data.sender && (
+            <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
+              {data.sender.split(", ").slice(0, 3).map((name, i) => (
+                <span
+                  key={i}
+                  className="rounded bg-black/70 backdrop-blur-sm px-1.5 py-0.5 text-[9px] font-bold text-white"
+                >
+                  👤 {name}
+                </span>
+              ))}
+              {data.sender.split(", ").length > 3 && (
+                <span className="rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-white/60">
+                  +{data.sender.split(", ").length - 3}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Caption area */}
+        <div className="px-3 py-2.5">
+          <h4 className="text-[11px] font-bold leading-tight text-[#888] truncate">{data.title}</h4>
+          {data.snippet && (
+            <p className="mt-1 text-[10px] leading-relaxed text-[#555] line-clamp-2">{data.snippet}</p>
+          )}
+
+          {data.starCount > 0 && (
+            <div className="mt-1 text-[9px] font-bold text-yellow-500/60">★ {data.starCount.toLocaleString()}</div>
+          )}
+
+          <div className="mt-2 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
+            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+              Link
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+              Focus
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Non-photo evidence (email, document, imessage)
   return (
     <div className={`board-evidence-card w-[190px] rounded-lg bg-[#141414] border border-[#2a2a2a] p-3.5 pt-5 cursor-grab active:cursor-grabbing ${
       isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50"

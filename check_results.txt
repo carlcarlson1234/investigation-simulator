@@ -1,0 +1,20 @@
+STATS: {"total":473,"with_image":0}
+PEOPLE WITH image_url:
+TOP 5 BY PHOTO COUNT:
+  Ghislaine Maxwell (slug=null) keys=[id, name, source, photo_count]
+    photo_count=127 image_url=undefined
+  Bill Clinton (slug=null) keys=[id, name, source, photo_count]
+    photo_count=38 image_url=undefined
+  Steve Bannon (slug=null) keys=[id, name, source, photo_count]
+    photo_count=14 image_url=undefined
+  Jean-Luc Brunel (slug=null) keys=[id, name, source, photo_count]
+    photo_count=11 image_url=undefined
+  Del Kathryn Barton (slug=null) keys=[id, name, source, photo_count]
+    photo_count=11 image_url=undefined
+GHISLAINE MAXWELL raw_json:
+{
+  "id": "ghislaine-maxwell",
+  "name": "Ghislaine Maxwell",
+  "source": "rekognition",
+  "photo_count": 127
+}

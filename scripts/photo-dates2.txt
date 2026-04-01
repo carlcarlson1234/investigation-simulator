@@ -1,0 +1,12 @@
+Photos with date_taken: 0
+Photos with release_batch: 16779
+
+Release batches:
+  VOL00001 -> 3157
+  VOL00002 -> 695
+  VOL00003 -> 1669
+  VOL00010 -> 11258
+
+Volumes:
+
+Photos with dates:

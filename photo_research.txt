@@ -1,0 +1,65 @@
+PHOTOS TABLE COLUMNS:
+  id (text)
+  filename (text)
+  title (text)
+  description (text)
+  date_taken (timestamp with time zone)
+  width (integer)
+  height (integer)
+  image_url (text)
+  thumbnail_url (text)
+  volume (text)
+  release_batch (text)
+  source (text)
+  raw_json (jsonb)
+  ingested_at (timestamp with time zone)
+PHOTO_FACES TABLE COLUMNS:
+  id (integer)
+  photo_id (text)
+  person_id (text)
+  confidence (text)
+  bounding_box (jsonb)
+  raw_json (jsonb)
+  ingested_at (timestamp with time zone)
+SAMPLE PHOTOS:
+  id=EFTA00000002-0.png
+  raw_json keys: id, size, width, height, source, source_url, content_type, release_batch, image_description, original_filename
+  source_url=https://www.justice.gov/epstein/files/DataSet%201/EFTA00000002.pdf
+  filename=EFTA00000002-0.png
+  ---
+  id=EFTA00000003-0.png
+  raw_json keys: id, size, width, height, source, source_url, content_type, release_batch, image_description, original_filename
+  source_url=https://www.justice.gov/epstein/files/DataSet%201/EFTA00000003.pdf
+  filename=EFTA00000003-0.png
+  ---
+SAMPLE PHOTO_FACES:
+  {"id":1,"photo_id":"EFTA00000032-0.png","person_id":"edgar-faure","confidence":"98.613594","bounding_box":null,"raw_json":{"gender":"Male","age_low":46,"age_high":54,"bbox_top":0.10952898,"photo_id":"EFTA00000032-0.png","bbox_left":0.96931785,"person_id":"edgar-faure","bbox_width":0.030629747,"confidence":98.613594,"bbox_height":0.05826325,"person_name":"Edgar Faure","celebrity_confidence":89.22995},"ingested_at":"2026-03-31T05:15:12.416Z"}
+  {"id":2,"photo_id":"EFTA00000035-0.png","person_id":"fritz-haber","confidence":"98.51355","bounding_box":null,"raw_json":{"gender":"Male","age_low":54,"age_high":60,"bbox_top":0.14054555,"photo_id":"EFTA00000035-0.png","bbox_left":0.19557285,"person_id":"fritz-haber","bbox_width":0.029978367,"confidence":98.51355,"bbox_height":0.056447323,"person_name":"Fritz Haber","celebrity_confidence":87.12985},"ingested_at":"2026-03-31T05:15:12.416Z"}
+  {"id":3,"photo_id":"EFTA00000039-0.png","person_id":"la-parka","confidence":"73.794525","bounding_box":null,"raw_json":{"gender":"Male","age_low":27,"age_high":35,"bbox_top":0.24901444,"photo_id":"EFTA00000039-0.png","bbox_left":0.42576608,"person_id":"la-parka","bbox_width":0.015892964,"confidence":73.794525,"bbox_height":0.00910331,"person_name":"La Parka","celebrity_confidence":76.11638},"ingested_at":"2026-03-31T05:15:12.416Z"}
+  {"id":4,"photo_id":"EFTA00000048-0.png","person_id":"billy-joe-dupree","confidence":"63.83973","bounding_box":null,"raw_json":{"gender":"Male","age_low":23,"age_high":29,"bbox_top":0.5096881,"photo_id":"EFTA00000048-0.png","bbox_left":0.47429386,"person_id":"billy-joe-dupree","bbox_width":0.011004441,"confidence":63.83973,"bbox_height":0.009616984,"person_name":"Billy Joe DuPree","celebrity_confidence":81.63415},"ingested_at":"2026-03-31T05:15:12.416Z"}
+  {"id":5,"photo_id":"EFTA00000055-0.png","person_id":"del-kathryn-barton","confidence":"94.80935","bounding_box":null,"raw_json":{"gender":"Female","age_low":24,"age_high":32,"bbox_top":0.2321907,"photo_id":"EFTA00000055-0.png","bbox_left":0.35881135,"person_id":"del-kathryn-barton","bbox_width":0.044287752,"confidence":94.80935,"bbox_height":0.08495329,"person_name":"Del Kathryn Barton","celebrity_confidence":93.7096},"ingested_at":"2026-03-31T05:15:12.416Z"}
+MAXWELL FACE LINKS:
+  person=Ghislaine Maxwell photo_id=EFTA00001933-0.png
+  photo source_url=https://www.justice.gov/epstein/files/DataSet%201/EFTA00001933.pdf
+  photo image_url=undefined
+  photo url=undefined
+  photo keys=id, size, width, height, source, source_url, content_type, release_batch, image_description, original_filename
+  ---
+  person=Ghislaine Maxwell photo_id=EFTA00001947-0.png
+  photo source_url=https://www.justice.gov/epstein/files/DataSet%201/EFTA00001947.pdf
+  photo image_url=undefined
+  photo url=undefined
+  photo keys=id, size, width, height, source, source_url, content_type, release_batch, image_description, original_filename
+  ---
+  person=Ghislaine Maxwell photo_id=EFTA00003164-0.png
+  photo source_url=https://www.justice.gov/epstein/files/DataSet%202/EFTA00003164.pdf
+  photo image_url=undefined
+  photo url=undefined
+  photo keys=id, size, width, height, source, source_url, content_type, release_batch, image_description, original_filename
+  ---
+PEOPLE WITH MANY PHOTOS:
+  Ghislaine Maxwell id=ghislaine-maxwell slug=null photos=127
+  Bill Clinton id=bill-clinton slug=null photos=38
+  Steve Bannon id=steve-bannon slug=null photos=14
+  Del Kathryn Barton id=del-kathryn-barton slug=null photos=11
+  Jean-Luc Brunel id=jean-luc-brunel slug=null photos=11

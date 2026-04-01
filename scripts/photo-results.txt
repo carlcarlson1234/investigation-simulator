@@ -1,0 +1,42 @@
+Total photos: 18308
+Total face detections: 975
+
+Sample photos:
+  {"id":"EFTA00000002-0.png","filename":null,"image_url":null,"thumbnail_url":null}
+  {"id":"EFTA00000003-0.png","filename":null,"image_url":null,"thumbnail_url":null}
+  {"id":"EFTA00000004-0.png","filename":null,"image_url":null,"thumbnail_url":null}
+
+Photo sources:
+  doj -> 18148
+  house_oversight -> 160
+
+Photos with descriptions:
+  EFTA00000002-0.png | EFTA00000002-0.png | The image shows a building exterior with a large wooden door with a light fixtur
+  EFTA00000003-0.png | EFTA00000003-0.png | The image shows a building exterior with trees obscuring parts of the facade. Th
+  EFTA00000004-0.png | EFTA00000004-0.png | The image shows a stone wall with the letters "JE" in bronze, adjacent to a wood
+  EFTA00000005-0.png | EFTA00000005-0.png | - Building number: 9
+- Doorbell and intercom system visible.
+- Door: Wooden, bro
+  EFTA00000006-0.png | EFTA00000006-0.png | - Image ID/text: 
+- Subject: pair of wooden doors with central vertical seam sho
+
+Photo source URLs:
+  EFTA00000002-0.png -> https://www.justice.gov/epstein/files/DataSet%201/EFTA00000002.pdf (image/png)
+  EFTA00000003-0.png -> https://www.justice.gov/epstein/files/DataSet%201/EFTA00000003.pdf (image/png)
+  EFTA00000004-0.png -> https://www.justice.gov/epstein/files/DataSet%201/EFTA00000004.pdf (image/png)
+
+Top people by face detections:
+  Ghislaine Maxwell -> 135 photos
+  Bill Clinton -> 38 photos
+  Steve Bannon -> 14 photos
+  Jonathan Cyprien -> 13 photos
+  Jean-Luc Brunel -> 12 photos
+  Del Kathryn Barton -> 11 photos
+  La Parka -> 11 photos
+  Bill Kenney -> 11 photos
+  Walter Cronkite -> 10 photos
+  Dontrelle Inman -> 8 photos
+
+Jmail photo CDN patterns to test:
+  https://jmail.world/photos/EFTA00000002-0.png
+  https://jmail.world/photo-images/EFTA00000002-0.png

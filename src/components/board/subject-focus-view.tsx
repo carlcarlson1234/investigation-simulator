@@ -206,15 +206,43 @@ export function SubjectFocusView({
             <div className="subject-photo-container relative mb-5">
               <div className="subject-photo-glow" />
               {person.imageUrl ? (
-                <img
-                  src={person.imageUrl}
-                  alt={person.name}
-                  className={`rounded-xl object-cover border-2 border-red-900/30 shadow-2xl shadow-red-950/40 relative z-10 transition-all duration-500 ${
-                    panelOpen
-                      ? "h-48 w-48"
-                      : "h-72 w-72 lg:h-80 lg:w-80"
-                  }`}
-                />
+                <>
+                  <img
+                    src={person.imageUrl}
+                    alt={person.name}
+                    className={`rounded-xl object-cover border-2 border-red-900/30 shadow-2xl shadow-red-950/40 relative z-10 transition-all duration-500 ${
+                      panelOpen
+                        ? "h-48 w-48"
+                        : "h-72 w-72 lg:h-80 lg:w-80"
+                    }`}
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      target.style.display = 'none';
+                      const fallback = target.nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                  />
+                  <div
+                    className={`rounded-xl border-2 border-red-900/30 bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a] items-center justify-center relative z-10 shadow-2xl shadow-red-950/40 transition-all duration-500 hidden ${
+                      panelOpen
+                        ? "h-48 w-48"
+                        : "h-72 w-72 lg:h-80 lg:w-80"
+                    }`}
+                  >
+                    <svg
+                      width={panelOpen ? 60 : 100}
+                      height={panelOpen ? 60 : 100}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="0.6"
+                      className="text-red-900/30 transition-all duration-500"
+                    >
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                      <circle cx="12" cy="7" r="4" />
+                    </svg>
+                  </div>
+                </>
               ) : (
                 <div
                   className={`rounded-xl border-2 border-red-900/30 bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a] flex items-center justify-center relative z-10 shadow-2xl shadow-red-950/40 transition-all duration-500 ${

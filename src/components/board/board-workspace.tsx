@@ -14,6 +14,7 @@ import { BoardCanvas } from "./board-canvas";
 import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
+import { PhotoFocusView } from "./photo-focus-view";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -38,6 +39,7 @@ export function BoardWorkspace({
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [selectedEmailDetail, setSelectedEmailDetail] = useState<EmailEvidence | null>(null);
   const [subjectFocusPersonId, setSubjectFocusPersonId] = useState<string | null>(null);
+  const [photoFocusId, setPhotoFocusId] = useState<string | null>(null);
 
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
@@ -152,6 +154,14 @@ export function BoardWorkspace({
 
   const closeSubjectView = useCallback(() => {
     setSubjectFocusPersonId(null);
+  }, []);
+
+  const openPhotoView = useCallback((photoId: string) => {
+    setPhotoFocusId(photoId);
+  }, []);
+
+  const closePhotoView = useCallback(() => {
+    setPhotoFocusId(null);
   }, []);
 
   const startConnection = useCallback((fromId: string) => {
@@ -269,6 +279,7 @@ export function BoardWorkspace({
         onStartConnection={startConnection}
         onCompleteConnection={completeConnection}
         onOpenSubjectView={openSubjectView}
+        onOpenPhotoView={openPhotoView}
         stats={stats}
       />
 
@@ -333,6 +344,21 @@ export function BoardWorkspace({
           />
         );
       })()}
+
+      {/* Photo Focus View overlay */}
+      {photoFocusId && (
+        <PhotoFocusView
+          photoId={photoFocusId}
+          boardNodes={boardNodes}
+          boardConnections={boardConnections}
+          people={people}
+          isOnBoard={isOnBoard}
+          onClose={closePhotoView}
+          onAddEvidence={addEvidenceToBoard}
+          onAddPerson={addPersonToBoard}
+          onFocusNode={focusNode}
+        />
+      )}
     </div>
   );
 }
