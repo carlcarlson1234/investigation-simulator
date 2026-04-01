@@ -13,6 +13,7 @@ import { IntakePanel } from "./intake-panel";
 import { BoardCanvas } from "./board-canvas";
 import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
+import { SubjectFocusView } from "./subject-focus-view";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -36,6 +37,7 @@ export function BoardWorkspace({
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [selectedEmailDetail, setSelectedEmailDetail] = useState<EmailEvidence | null>(null);
+  const [subjectFocusPersonId, setSubjectFocusPersonId] = useState<string | null>(null);
 
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
@@ -143,6 +145,14 @@ export function BoardWorkspace({
       return newId;
     });
   }, [centerOnNode]);
+
+  const openSubjectView = useCallback((personId: string) => {
+    setSubjectFocusPersonId(personId);
+  }, []);
+
+  const closeSubjectView = useCallback(() => {
+    setSubjectFocusPersonId(null);
+  }, []);
 
   const startConnection = useCallback((fromId: string) => {
     setConnectingFrom(fromId);
@@ -258,6 +268,7 @@ export function BoardWorkspace({
         onAddPerson={addPersonToBoard}
         onStartConnection={startConnection}
         onCompleteConnection={completeConnection}
+        onOpenSubjectView={openSubjectView}
         stats={stats}
       />
 
@@ -278,6 +289,50 @@ export function BoardWorkspace({
         onFocusNode={focusNode}
         onSelectNode={selectNode}
       />
+
+      {/* Subject Focus View overlay */}
+      {subjectFocusPersonId && (() => {
+        const personNode = boardNodes.find(n => n.id === subjectFocusPersonId && n.kind === "person");
+        if (!personNode || personNode.kind !== "person") return null;
+        return (
+          <SubjectFocusView
+            person={personNode.data}
+            boardNodes={boardNodes}
+            boardConnections={boardConnections}
+            onClose={closeSubjectView}
+            onAddEvidence={addEvidenceToBoard}
+            onFocusNode={focusNode}
+            onCreateConnection={(targetId: string) => {
+              // Create a connection between this person and the target
+              const exists = boardConnections.some(
+                (c) =>
+                  (c.sourceId === subjectFocusPersonId && c.targetId === targetId) ||
+                  (c.sourceId === targetId && c.targetId === subjectFocusPersonId)
+              );
+              if (!exists) {
+                setBoardConnections((prev) => [
+                  ...prev,
+                  {
+                    id: `manual-${Date.now()}`,
+                    sourceId: subjectFocusPersonId,
+                    targetId: targetId,
+                    type: "manual" as const,
+                    label: "Manual connection",
+                    strength: 3,
+                    verified: false,
+                  },
+                ]);
+              }
+            }}
+            onRemoveConnection={(connId: string) => {
+              setBoardConnections((prev) => prev.filter(c => c.id !== connId));
+            }}
+            isOnBoard={isOnBoard}
+            people={people}
+            onAddPerson={addPersonToBoard}
+          />
+        );
+      })()}
     </div>
   );
 }

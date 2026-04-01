@@ -1,7 +1,7 @@
 "use client";
 
-import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle } from "react";
-import type { BoardNode, BoardConnection, FocusState } from "@/lib/board-types";
+import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
+import type { BoardNode, BoardEvidenceNode, BoardConnection, FocusState } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType } from "@/lib/types";
 import {
   EVIDENCE_TYPE_ICON,
@@ -37,6 +37,7 @@ interface BoardCanvasProps {
   onAddPerson: (personId: string, x?: number, y?: number) => void;
   onStartConnection: (fromId: string) => void;
   onCompleteConnection: (toId: string) => void;
+  onOpenSubjectView: (personId: string) => void;
   stats: ArchiveStats;
 }
 
@@ -57,6 +58,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onAddPerson,
     onStartConnection,
     onCompleteConnection,
+    onOpenSubjectView,
     stats,
   },
   ref
@@ -75,6 +77,74 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [dragState, setDragState] = useState<{
     nodeId: string; offsetX: number; offsetY: number;
   } | null>(null);
+
+  /* ── Collapsed evidence groups ─────────────────────────────────────────── */
+  // Key = "personId:evidenceType", value = whether collapsed
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleCollapse = useCallback((personId: string, evType: EvidenceType) => {
+    const key = `${personId}:${evType}`;
+    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  /* ── Compute evidence grouping per person ───────────────────────────────── */
+  type EvidenceGroup = { type: EvidenceType; nodes: BoardEvidenceNode[] };
+  const personEvidenceGroups = useMemo((): Record<string, EvidenceGroup[]> => {
+    const groups: Record<string, EvidenceGroup[]> = {};
+    // For each person node, find connected evidence nodes grouped by type
+    const personNodes = nodes.filter(n => n.kind === "person");
+    for (const pn of personNodes) {
+      const connectedEvidenceIds = new Set(
+        connections
+          .filter(c => c.sourceId === pn.id || c.targetId === pn.id)
+          .map(c => c.sourceId === pn.id ? c.targetId : c.sourceId)
+      );
+      const evidenceNodes = nodes.filter(
+        (n): n is BoardEvidenceNode => n.kind === "evidence" && connectedEvidenceIds.has(n.id)
+      );
+      // Group by type
+      const byType: Record<string, BoardEvidenceNode[]> = {};
+      for (const en of evidenceNodes) {
+        if (!byType[en.evidenceType]) byType[en.evidenceType] = [];
+        byType[en.evidenceType].push(en);
+      }
+      groups[pn.id] = Object.entries(byType).map(([type, nodes]) => ({
+        type: type as EvidenceType,
+        nodes,
+      }));
+    }
+    return groups;
+  }, [nodes, connections]);
+
+  // Which evidence node IDs are currently hidden (collapsed into their group)
+  const hiddenNodeIds = useMemo(() => {
+    const hidden = new Set<string>();
+    for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
+      for (const group of groups) {
+        const key = `${personId}:${group.type}`;
+        if (collapsedGroups[key] && group.nodes.length >= 2) {
+          for (const n of group.nodes) hidden.add(n.id);
+        }
+      }
+    }
+    return hidden;
+  }, [personEvidenceGroups, collapsedGroups]);
+
+  // Connected evidence counts per person (for display on card)
+  const personEvidenceCounts = useMemo(() => {
+    const counts: Record<string, { emails: number; documents: number; photos: number; total: number }> = {};
+    for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
+      const c = { emails: 0, documents: 0, photos: 0, total: 0 };
+      for (const g of groups) {
+        if (g.type === "email") c.emails = g.nodes.length;
+        else if (g.type === "document") c.documents = g.nodes.length;
+        else if (g.type === "photo") c.photos = g.nodes.length;
+        c.total += g.nodes.length;
+      }
+      counts[personId] = c;
+    }
+    return counts;
+  }, [personEvidenceGroups]);
   const [dropHighlight, setDropHighlight] = useState(false);
 
   // ─── Focus visibility ──────────────────────────────────────────────────
@@ -99,8 +169,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const vp = viewportRef.current;
     if (!node || !vp) return;
 
-    const cardW = 190;
-    const cardH = node.kind === "person" ? 120 : 140;
+    const cardW = node.kind === "person" ? 260 : 190;
+    const cardH = node.kind === "person" ? 260 : 140;
 
     // The centre of the card in world-space, then scaled
     const scaledX = (node.position.x + cardW / 2) * zoom;
@@ -452,16 +522,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               </svg>
 
               {/* Nodes */}
-              {nodes.map((node) => {
+              {nodes.filter(n => !hiddenNodeIds.has(n.id)).map((node) => {
                 const vis = getNodeVis(node.id);
                 const opc = vis === "dimmed" ? "opacity-15" : vis === "second" ? "opacity-45" : "opacity-100";
                 return (
                   <div
                     key={node.id}
                     className={`board-node absolute select-none ${opc} ${
-                      selectedNodeId === node.id ? "ring-2 ring-red-500/50" : ""
-                    } ${vis === "focused" ? "ring-2 ring-red-500 shadow-xl shadow-red-600/20" : ""} ${
-                      connectingFrom && connectingFrom !== node.id ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-500/60" : ""
+                      selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
+                    } ${vis === "focused" ? "ring-2 ring-red-500 shadow-xl shadow-red-600/20 rounded-xl" : ""} ${
+                      connectingFrom && connectingFrom !== node.id ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-500/60 rounded-xl" : ""
                     }`}
                     style={{
                       left: node.position.x, top: node.position.y,
@@ -473,10 +543,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       if (connectingFrom) onCompleteConnection(node.id);
                       else onSelectNode(node.id);
                     }}
-                    onDoubleClick={(e) => { e.stopPropagation(); onFocusNode(node.id); }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (node.kind === "person") onOpenSubjectView(node.id);
+                      else onFocusNode(node.id);
+                    }}
                   >
                     {node.kind === "person" ? (
                       <PersonCard data={node.data} isSelected={selectedNodeId === node.id}
+                        connectedEvidence={personEvidenceCounts[node.id]}
+                        evidenceGroups={
+                          (personEvidenceGroups[node.id] || []).map(g => ({ type: g.type, count: g.nodes.length }))
+                        }
+                        collapsedGroups={collapsedGroups}
+                        onToggleCollapse={(evType) => toggleCollapse(node.id, evType)}
                         onConnect={() => onStartConnection(node.id)} onFocus={() => onFocusNode(node.id)} />
                     ) : (
                       <EvidenceCard data={node.data} evidenceType={node.evidenceType} isSelected={selectedNodeId === node.id}
@@ -485,6 +565,32 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   </div>
                 );
               })}
+
+              {/* Collapsed evidence group nodes */}
+              {Object.entries(personEvidenceGroups).map(([personId, groups]) =>
+                groups.map(group => {
+                  const key = `${personId}:${group.type}`;
+                  if (!collapsedGroups[key] || group.nodes.length < 2) return null;
+                  // Position the group card at the average position of the collapsed nodes
+                  const avgX = group.nodes.reduce((s, n) => s + n.position.x, 0) / group.nodes.length;
+                  const avgY = group.nodes.reduce((s, n) => s + n.position.y, 0) / group.nodes.length;
+                  return (
+                    <div
+                      key={key}
+                      className="board-node absolute select-none"
+                      style={{ left: avgX, top: avgY, zIndex: 12 }}
+                    >
+                      <EvidenceGroupCard
+                        evidenceType={group.type}
+                        count={group.nodes.length}
+                        isSelected={false}
+                        onExpand={() => toggleCollapse(personId, group.type)}
+                        onConnect={() => onStartConnection(group.nodes[0].id)}
+                      />
+                    </div>
+                  );
+                })
+              )}
 
               {/* Empty state */}
               {nodes.length === 0 && (
@@ -566,39 +672,123 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   );
 });
 
-// ─── Person Card (suspect card look) ────────────────────────────────────────
+// ─── Person Card (large suspect dossier card) ──────────────────────────────
 
-function PersonCard({ data, isSelected, onConnect, onFocus }: {
+function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse }: {
   data: Person; isSelected: boolean; onConnect: () => void; onFocus: () => void;
+  connectedEvidence?: { emails: number; documents: number; photos: number; total: number };
+  evidenceGroups?: { type: EvidenceType; count: number }[];
+  collapsedGroups?: Record<string, boolean>;
+  onToggleCollapse?: (evType: EvidenceType) => void;
 }) {
   return (
-    <div className={`board-entity-card w-[190px] rounded bg-[#141414] border border-[#2a2a2a] p-4 pt-5 cursor-grab active:cursor-grabbing ${
-      isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50"
+    <div className={`board-entity-card w-[260px] rounded-xl bg-[#111] border-2 cursor-grab active:cursor-grabbing transition-all ${
+      isSelected ? "shadow-2xl shadow-red-600/20 border-red-500/40" : "shadow-xl shadow-black/60 border-[#222] hover:border-[#333]"
     }`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-        <span className="text-[9px] font-black uppercase tracking-[0.15em] text-red-500/70">
-          Person of Interest
-        </span>
-      </div>
-      <h4 className="text-sm font-black leading-tight text-white">{data.name}</h4>
-      {data.photoCount > 0 && (
-        <p className="mt-1 text-[10px] font-bold text-[#666]">
-          📸 {data.photoCount} photos on file
-        </p>
-      )}
+      {/* Photo area */}
+      <div className="relative aspect-[4/3] rounded-t-xl overflow-hidden bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a]">
+        {data.imageUrl ? (
+          <img
+            src={data.imageUrl}
+            alt={data.name}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <svg
+              width="72"
+              height="72"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="0.5"
+              className="text-red-900/25"
+            >
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+        )}
 
-      <div className="mt-3 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
-        <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-          Link
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-          Focus
-        </button>
+        {/* Red gradient overlay at bottom */}
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111] to-transparent" />
+
+        {/* Label badge */}
+        <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-[#0a0a0a]/80 border border-red-900/30 px-2 py-0.5 backdrop-blur-sm">
+          <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-[8px] font-black uppercase tracking-[0.15em] text-red-500/80">
+            POI
+          </span>
+        </div>
+
+        {/* Photo count */}
+        {data.photoCount > 0 && (
+          <div className="absolute top-2 right-2 rounded bg-[#0a0a0a]/80 border border-[#333] px-1.5 py-0.5 backdrop-blur-sm flex items-center gap-1">
+            <span className="text-[10px]">📸</span>
+            <span className="text-[9px] font-bold text-[#999]">{data.photoCount}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Info area */}
+      <div className="px-3.5 py-3">
+        <h4 className="text-[15px] font-black leading-tight text-white tracking-wide">{data.name}</h4>
+        {data.source && (
+          <p className="mt-0.5 text-[9px] text-[#555]">{data.source}</p>
+        )}
+
+        {/* Evidence group badges with collapse toggle */}
+        {evidenceGroups && evidenceGroups.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {evidenceGroups.filter(g => g.count >= 2).map(g => {
+              const key = `${data.id}:${g.type}`;
+              const isCollapsed = collapsedGroups?.[key];
+              const icons: Record<string, string> = { email: "✉️", document: "📄", photo: "📸", imessage: "💬" };
+              const labels: Record<string, string> = { email: "Emails", document: "Docs", photo: "Photos", imessage: "Msgs" };
+              return (
+                <button
+                  key={g.type}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleCollapse?.(g.type); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[9px] font-bold transition ${
+                    isCollapsed
+                      ? "border-red-600/20 bg-red-950/20 text-red-400/80"
+                      : "border-[#2a2a2a] bg-[#0e0e0e] text-[#666] hover:border-[#444] hover:text-white"
+                  }`}
+                >
+                  <span>{icons[g.type] || "📄"}</span>
+                  <span>{g.count} {labels[g.type] || g.type}</span>
+                  <span className="text-[8px] ml-0.5 opacity-60">
+                    {isCollapsed ? "▸" : "▾"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Simple evidence count for groups with only 1 item */}
+        {connectedEvidence && connectedEvidence.total > 0 && (
+          <div className="mt-1.5 flex gap-2 text-[9px] font-bold text-[#444]">
+            {connectedEvidence.emails === 1 && <span>✉️ 1 email</span>}
+            {connectedEvidence.documents === 1 && <span>📄 1 doc</span>}
+            {connectedEvidence.photos === 1 && <span>📸 1 photo</span>}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="mt-2.5 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
+          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+            Link
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+            Focus
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -610,7 +800,7 @@ function EvidenceCard({ data, evidenceType, isSelected, onConnect, onFocus }: {
   data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onConnect: () => void; onFocus: () => void;
 }) {
   return (
-    <div className={`board-evidence-card w-[190px] rounded bg-[#141414] border border-[#2a2a2a] p-3.5 pt-5 cursor-grab active:cursor-grabbing ${
+    <div className={`board-evidence-card w-[190px] rounded-lg bg-[#141414] border border-[#2a2a2a] p-3.5 pt-5 cursor-grab active:cursor-grabbing ${
       isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50"
     }`}>
       <div className="flex items-center gap-1.5 mb-1.5">
@@ -643,3 +833,60 @@ function EvidenceCard({ data, evidenceType, isSelected, onConnect, onFocus }: {
     </div>
   );
 }
+
+// ─── Evidence Group Card (collapsed evidence stack) ─────────────────────────
+
+function EvidenceGroupCard({ 
+  evidenceType, 
+  count, 
+  isSelected, 
+  onExpand,
+  onConnect,
+}: {
+  evidenceType: EvidenceType;
+  count: number;
+  isSelected: boolean;
+  onExpand: () => void;
+  onConnect: () => void;
+}) {
+  return (
+    <div className={`board-evidence-group w-[140px] rounded-lg cursor-grab active:cursor-grabbing relative ${
+      isSelected ? "shadow-xl shadow-red-600/15" : "shadow-lg shadow-black/50"
+    }`}>
+      {/* Stacked card effect */}
+      <div className="absolute -top-1 left-1 right-1 h-2 rounded-t-lg bg-[#181818] border border-[#2a2a2a] border-b-0" />
+      <div className="absolute -top-2 left-2 right-2 h-2 rounded-t-lg bg-[#1c1c1c] border border-[#2a2a2a] border-b-0" />
+
+      {/* Main card */}
+      <div className={`relative bg-[#141414] border p-3 rounded-lg ${
+        isSelected ? "border-red-500/30" : "border-[#2a2a2a]"
+      }`}>
+        <div className="flex items-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#1a1a1a] border border-[#333] text-xl flex-shrink-0">
+            {EVIDENCE_TYPE_ICON[evidenceType]}
+          </div>
+          <div>
+            <p className="text-[15px] font-black text-white tabular-nums">{count}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">
+              {EVIDENCE_TYPE_LABEL[evidenceType]}{count !== 1 ? "s" : ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-2.5 flex gap-1 opacity-0 [.board-node:hover_&]:opacity-100 transition">
+          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onExpand(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="flex-1 rounded bg-[#1a1a1a] border border-[#333] px-2 py-1 text-[8px] font-black uppercase tracking-wider text-[#888] hover:text-white hover:bg-[#222] transition">
+            Expand
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="rounded bg-red-600/10 border border-red-600/20 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+            Link
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

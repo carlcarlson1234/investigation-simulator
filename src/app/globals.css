@@ -328,3 +328,92 @@ body {
   border-radius: 2px;
   padding: 0 4px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Subject Focus View — Investigation Dossier Overlay
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Cinematic vignette */
+.subject-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    rgba(0, 0, 0, 0.7) 100%
+  );
+  pointer-events: none;
+}
+
+/* Scanline overlay */
+.scanline-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 0, 0, 0.01) 2px,
+    rgba(255, 0, 0, 0.01) 4px
+  );
+  pointer-events: none;
+  animation: scanline 8s linear infinite;
+}
+
+/* Photo glow effect */
+.subject-photo-container {
+  position: relative;
+}
+
+.subject-photo-glow {
+  position: absolute;
+  inset: -12px;
+  background: radial-gradient(
+    circle,
+    rgba(220, 38, 38, 0.12) 0%,
+    transparent 70%
+  );
+  animation: subject-glow-pulse 4s ease-in-out infinite;
+  z-index: 0;
+}
+
+@keyframes subject-glow-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* Subject overlay entrance */
+.subject-overlay {
+  animation: subject-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes subject-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+    filter: brightness(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: brightness(1);
+  }
+}
+
+/* Panel slide-in from right */
+.animate-slide-in-right {
+  animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slide-in-right {
+  0% {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
