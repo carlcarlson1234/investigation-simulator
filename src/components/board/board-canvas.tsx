@@ -40,6 +40,8 @@ interface BoardCanvasProps {
   onOpenSubjectView: (personId: string) => void;
   onOpenPhotoView: (photoId: string) => void;
   stats: ArchiveStats;
+  firstPlacementMode?: boolean;
+  onFirstPlacement?: (nodeId: string) => void;
 }
 
 export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(function BoardCanvas(
@@ -62,6 +64,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onOpenSubjectView,
     onOpenPhotoView,
     stats,
+    firstPlacementMode,
+    onFirstPlacement,
   },
   ref
 ) {
@@ -380,14 +384,26 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         const vp = viewportRef.current;
         if (!vp) return;
         const rect = vp.getBoundingClientRect();
-        const x = Math.max(0, (e.clientX - rect.left + vp.scrollLeft) / zoom - 90);
-        const y = Math.max(0, (e.clientY - rect.top + vp.scrollTop) / zoom - 45);
+        let x = Math.max(0, (e.clientX - rect.left + vp.scrollLeft) / zoom - 90);
+        let y = Math.max(0, (e.clientY - rect.top + vp.scrollTop) / zoom - 45);
 
-        if (parsed.kind === "person") onAddPerson(parsed.id, x, y);
-        else if (parsed.kind === "evidence" && parsed.data) onAddEvidence(parsed.data as SearchResult, x, y);
+        // In first-placement mode, snap person to center of world
+        if (firstPlacementMode && parsed.kind === "person") {
+          x = WORLD_W / 2 - 130;
+          y = WORLD_H / 2 - 130;
+        }
+
+        if (parsed.kind === "person") {
+          onAddPerson(parsed.id, x, y);
+          if (firstPlacementMode && onFirstPlacement) {
+            onFirstPlacement(parsed.id);
+          }
+        } else if (parsed.kind === "evidence" && parsed.data) {
+          onAddEvidence(parsed.data as SearchResult, x, y);
+        }
       } catch { /* ignore */ }
     },
-    [zoom, onAddEvidence, onAddPerson]
+    [zoom, onAddEvidence, onAddPerson, firstPlacementMode, onFirstPlacement]
   );
 
   function getNodeCenter(nodeId: string): { cx: number; cy: number } | null {
@@ -522,6 +538,29 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   );
                 })}
               </svg>
+              {/* First-placement center drop zone */}
+              {firstPlacementMode && nodes.length === 0 && (
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: WORLD_W / 2 - 150,
+                    top: WORLD_H / 2 - 150,
+                    width: 300,
+                    height: 300,
+                  }}
+                >
+                  <div className="w-full h-full rounded-full border-2 border-dashed border-red-500/20 animate-pulse flex items-center justify-center">
+                    <div className="w-48 h-48 rounded-full border border-red-500/10 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="text-red-500/30 text-3xl mb-2">⬇</div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-red-500/25">
+                          Drop Here
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Nodes */}
               {nodes.filter(n => !hiddenNodeIds.has(n.id)).map((node) => {

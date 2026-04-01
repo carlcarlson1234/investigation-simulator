@@ -1,0 +1,16 @@
+{
+  "id": "ghislaine-maxwell",
+  "name": "Ghislaine Maxwell",
+  "slug": null,
+  "aliases": null,
+  "description": null,
+  "image_url": null,
+  "email_addresses": null,
+  "raw_json": {
+    "id": "ghislaine-maxwell",
+    "name": "Ghislaine Maxwell",
+    "source": "rekognition",
+    "photo_count": 127
+  },
+  "ingested_at": "2026-03-31T05:15:09.377Z"
+}

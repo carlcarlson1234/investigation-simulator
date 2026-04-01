@@ -30,6 +30,7 @@ interface ContextPanelProps {
   onAddPerson: (personId: string) => void;
   onFocusNode: (id: string | null) => void;
   onSelectNode: (id: string | null) => void;
+  suggestedPeople?: Person[];
 }
 
 const TABS: { key: RightPanelTab; label: string }[] = [
@@ -53,6 +54,7 @@ export function ContextPanel({
   onAddPerson,
   onFocusNode,
   onSelectNode,
+  suggestedPeople,
 }: ContextPanelProps) {
   const [personSearch, setPersonSearch] = useState("");
 
@@ -83,7 +85,8 @@ export function ContextPanel({
       <div className="flex-1 overflow-y-auto">
         {activeTab === "persons" && (
           <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
-            isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode} />
+            isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
+            suggestedPeople={suggestedPeople} />
         )}
         {activeTab === "details" && (
           selectedEmailDetail && !selectedNode ? (
@@ -104,14 +107,51 @@ export function ContextPanel({
 // ─── Persons Tab ────────────────────────────────────────────────────────────
 
 function PersonsTab({
-  people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode,
+  people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople,
 }: {
   people: Person[]; search: string; onSearchChange: (v: string) => void;
   isOnBoard: (id: string) => boolean; onAddPerson: (id: string) => void;
   focusedNodeId: string | null; onFocusNode: (id: string | null) => void;
+  suggestedPeople?: Person[];
 }) {
   return (
     <div className="p-3 space-y-2">
+      {/* Suggested People (investigation mode) */}
+      {suggestedPeople && suggestedPeople.length > 0 && (
+        <div className="mb-3 rounded-lg border border-red-500/20 bg-red-950/10 p-2.5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+            </span>
+            <span className="text-[9px] font-black uppercase tracking-[0.15em] text-red-500/60">
+              👤 Suggested People
+            </span>
+          </div>
+          <div className="space-y-1">
+            {suggestedPeople.map(person => (
+              <div key={person.id} className="flex items-center gap-2 rounded-lg border border-red-500/10 bg-[#111] p-2 hover:border-red-500/30 transition">
+                <div className="h-8 w-8 rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0 border border-[#333]">
+                  {person.imageUrl ? (
+                    <img src={person.imageUrl} alt={person.name} className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-[#444] text-xs">👤</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-bold text-white truncate">{person.name}</p>
+                  {person.photoCount > 0 && <p className="text-[8px] text-[#555]">📸 {person.photoCount} photos</p>}
+                </div>
+                {isOnBoard(person.id) ? (
+                  <span className="text-[8px] font-bold text-green-500/60 uppercase">Added</span>
+                ) : (
+                  <button onClick={() => onAddPerson(person.id)} className="text-[8px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition">+ Add</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="relative mb-3">
         <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted/40"
           width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

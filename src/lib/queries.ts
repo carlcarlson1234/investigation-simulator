@@ -99,8 +99,11 @@ function mapPerson(row: Record<string, unknown>): Person {
   const personId = row.id as string;
   // Use DB image_url if available, otherwise try local thumbnail (downloaded from jmail.world)
   const dbImageUrl = (row.image_url as string) ?? null;
+  // Some thumbnails are avif (e.g., epstein), most are png
+  const AVIF_PEOPLE = new Set(["jeffrey-epstein"]);
+  const ext = AVIF_PEOPLE.has(personId) ? "avif" : "png";
   const thumbnailUrl = personId
-    ? `/people-thumbnails/${personId}.png`
+    ? `/people-thumbnails/${personId}.${ext}`
     : null;
   return {
     id: personId,

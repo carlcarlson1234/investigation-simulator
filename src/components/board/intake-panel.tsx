@@ -14,9 +14,10 @@ interface IntakePanelProps {
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   onSelectEmail: (emailId: string) => void;
   selectedEmailId: string | null;
+  starterLeads?: SearchResult[];
 }
 
-export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId }: IntakePanelProps) {
+export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads }: IntakePanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>("emails");
 
   return (
@@ -54,6 +55,59 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
           🔍 Search
         </button>
       </div>
+
+      {/* Starter Leads section (investigation mode) */}
+      {starterLeads && starterLeads.length > 0 && (
+        <div className="flex-shrink-0 border-b border-[#1a1a1a] p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+            </span>
+            <span className="text-[9px] font-black uppercase tracking-[0.15em] text-red-500/60">
+              🎯 Starter Leads
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {starterLeads.map(lead => (
+              <div
+                key={lead.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(
+                    "application/board-item",
+                    JSON.stringify({ kind: "evidence", data: lead })
+                  );
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
+                className={`rounded-lg border p-2.5 cursor-grab active:cursor-grabbing transition-all ${
+                  isOnBoard(lead.id)
+                    ? "border-green-600/20 bg-green-950/10 opacity-60"
+                    : "border-red-500/20 bg-red-950/10 hover:border-red-500/40 hover:bg-red-950/15"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold text-white truncate">{lead.title}</p>
+                    <p className="text-[9px] text-[#666] truncate mt-0.5">{lead.snippet}</p>
+                  </div>
+                  {isOnBoard(lead.id) ? (
+                    <span className="text-[8px] font-bold text-green-500/60 uppercase tracking-wider">On Board</span>
+                  ) : (
+                    <button
+                      onClick={() => onAddEvidence(lead)}
+                      className="text-[8px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition"
+                    >
+                      + Add
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {activeTab === "emails" ? (
         <EmailInbox

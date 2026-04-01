@@ -40,15 +40,23 @@ export default async function HomePage() {
 
         <div className="animate-in animate-delay-3 mt-10 flex flex-col items-center gap-4">
           <Link
-            href="/board/archive"
+            href="/board/investigate"
             id="hero-cta"
             className="inline-flex h-14 items-center gap-3 rounded bg-red-600 px-10 text-base font-black uppercase tracking-widest text-white shadow-xl shadow-red-600/25 transition hover:bg-red-700 hover:shadow-red-600/40 hover:scale-105 active:scale-100"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-              <polyline points="14 2 14 8 20 8" />
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            Open Case Files
+            Start Investigation
+          </Link>
+          <Link
+            href="/board/investigate?mode=free"
+            id="hero-cta-free"
+            className="inline-flex h-10 items-center gap-2 rounded border border-[#333] px-6 text-sm font-bold uppercase tracking-widest text-[#888] transition hover:border-[#555] hover:text-white hover:scale-105"
+          >
+            Free Explore
           </Link>
           <p className="text-xs text-[#555] uppercase tracking-widest">
             Build your investigation board
@@ -93,7 +101,7 @@ export default async function HomePage() {
             All evidence files are available for investigation.
           </p>
           <Link
-            href="/board/archive"
+            href="/board/investigate"
             id="footer-cta"
             className="mt-6 inline-flex h-12 items-center gap-2 rounded bg-red-600 px-8 text-sm font-black uppercase tracking-widest text-white transition hover:bg-red-700 hover:scale-105"
           >

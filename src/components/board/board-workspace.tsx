@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { Person, SearchResult, ArchiveStats, EmailEvidence } from "@/lib/types";
 import type {
   BoardNode,
@@ -15,6 +15,9 @@ import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
+import { InvestigationModeChooser } from "./investigation-mode-chooser";
+import { InvestigationOverlay } from "./investigation-overlay";
+import { useInvestigation } from "@/hooks/use-investigation";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -43,6 +46,19 @@ export function BoardWorkspace({
 
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
+
+  // ─── Investigation Flow ─────────────────────────────────────────────────
+  const investigation = useInvestigation(boardNodes, boardConnections, people);
+  const { autoDetectCompletion } = investigation as ReturnType<typeof useInvestigation> & { autoDetectCompletion: boolean };
+
+  // Auto-advance when step conditions are met
+  useEffect(() => {
+    if (autoDetectCompletion && investigation.isStartMode) {
+      // Small delay so the user sees the confirmation
+      const t = setTimeout(() => investigation.advanceStep(), 800);
+      return () => clearTimeout(t);
+    }
+  }, [autoDetectCompletion, investigation.isStartMode]);
 
   // ─── Focus computation ───────────────────────────────────────────────────
 
@@ -80,6 +96,11 @@ export function BoardWorkspace({
   const centerOnNode = useCallback((nodeId: string) => {
     canvasRef.current?.centerOnNode(nodeId);
   }, []);
+
+  // First-placement callback - center and flash the node
+  const handleFirstPlacement = useCallback((nodeId: string) => {
+    requestAnimationFrame(() => centerOnNode(nodeId));
+  }, [centerOnNode]);
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -250,6 +271,27 @@ export function BoardWorkspace({
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
+  // People lookup for investigation overlay
+  const firstPerson = people.find(p => p.id === investigation.starterPacket.firstPerson.personId);
+
+  // Investigation-mode suggested people (for right panel)
+  const suggestedPeople = useMemo(() => {
+    if (!investigation.isStartMode) return undefined;
+    return people.filter(p => investigation.suggestedPeopleIds.includes(p.id));
+  }, [investigation.isStartMode, investigation.suggestedPeopleIds, people]);
+
+  // Show mode chooser if no mode selected
+  if (investigation.mode === null) {
+    return (
+      <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
+        <InvestigationModeChooser
+          onChoose={investigation.setMode}
+          stats={stats}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
       {/* LEFT: Email Inbox + Search */}
@@ -258,6 +300,7 @@ export function BoardWorkspace({
         onAddEvidence={addEvidenceToBoard}
         onSelectEmail={handleSelectEmail}
         selectedEmailId={selectedEmailId}
+        starterLeads={investigation.isStartMode ? investigation.starterEvidence : undefined}
       />
 
       {/* CENTER: Board Canvas */}
@@ -281,7 +324,31 @@ export function BoardWorkspace({
         onOpenSubjectView={openSubjectView}
         onOpenPhotoView={openPhotoView}
         stats={stats}
+        firstPlacementMode={investigation.isStartMode && investigation.step === "place-first-person"}
+        onFirstPlacement={handleFirstPlacement}
       />
+
+      {/* Investigation Overlay (only in start mode) */}
+      {investigation.isStartMode && investigation.step !== "open-investigation" && (
+        <InvestigationOverlay
+          step={investigation.step}
+          stepConfig={investigation.stepConfig}
+          completedSteps={investigation.completedSteps}
+          autoDetected={autoDetectCompletion}
+          onAdvance={investigation.advanceStep}
+          onSkip={investigation.skipStep}
+          onSwitchToFree={investigation.switchToFree}
+          firstPerson={firstPerson}
+          onAddPerson={addPersonToBoard}
+          expansionChoices={investigation.expansionChoices}
+          onChooseExpansion={investigation.chooseExpansion}
+          clusterComplete={investigation.clusterComplete}
+          nudges={investigation.nudges}
+          nodeCount={boardNodes.filter(n => n.kind === "person").length}
+          connectionCount={boardConnections.length}
+          evidenceCount={boardNodes.filter(n => n.kind === "evidence").length}
+        />
+      )}
 
       {/* RIGHT: Persons + Email Detail + Context */}
       <ContextPanel
@@ -299,6 +366,7 @@ export function BoardWorkspace({
         onAddPerson={addPersonToBoard}
         onFocusNode={focusNode}
         onSelectNode={selectNode}
+        suggestedPeople={suggestedPeople}
       />
 
       {/* Subject Focus View overlay */}
