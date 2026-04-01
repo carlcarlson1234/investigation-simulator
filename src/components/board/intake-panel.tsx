@@ -26,7 +26,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
       <div className="flex flex-shrink-0 border-b border-[#1a1a1a]">
         <button
           onClick={() => setActiveTab("emails")}
-          className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition ${
+          className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
             activeTab === "emails"
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
@@ -36,7 +36,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </button>
         <button
           onClick={() => setActiveTab("photos")}
-          className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition ${
+          className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
             activeTab === "photos"
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
@@ -46,7 +46,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </button>
         <button
           onClick={() => setActiveTab("search")}
-          className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition ${
+          className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
             activeTab === "search"
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
@@ -64,7 +64,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
             </span>
-            <span className="text-[9px] font-black uppercase tracking-[0.15em] text-red-500/60">
+            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-red-500/60">
               🎯 Starter Leads
             </span>
           </div>
@@ -87,17 +87,17 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm">{lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}</span>
+                  <span className="text-base">{lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold text-white truncate">{lead.title}</p>
-                    <p className="text-[9px] text-[#666] truncate mt-0.5">{lead.snippet}</p>
+                    <p className="text-xs font-bold text-white truncate">{lead.title}</p>
+                    <p className="text-[10px] text-[#666] truncate mt-0.5">{lead.snippet}</p>
                   </div>
                   {isOnBoard(lead.id) ? (
-                    <span className="text-[8px] font-bold text-green-500/60 uppercase tracking-wider">On Board</span>
+                    <span className="text-[9px] font-bold text-green-500/60 uppercase tracking-wider">On Board</span>
                   ) : (
                     <button
                       onClick={() => onAddEvidence(lead)}
-                      className="text-[8px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition"
+                      className="text-[9px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition"
                     >
                       + Add
                     </button>

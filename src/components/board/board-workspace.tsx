@@ -286,7 +286,6 @@ export function BoardWorkspace({
       <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
         <InvestigationModeChooser
           onChoose={investigation.setMode}
-          stats={stats}
         />
       </div>
     );

@@ -450,3 +450,17 @@ body {
     transform: translateY(0);
   }
 }
+
+/* Bounce arrow left — investigation overlay */
+@keyframes bounce-left {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-12px);
+  }
+}
+
+.animate-bounce-left {
+  animation: bounce-left 1.2s ease-in-out infinite;
+}

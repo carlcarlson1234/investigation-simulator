@@ -22,7 +22,7 @@ export function SiteNav() {
             </svg>
           </span>
           <span className="text-sm font-black uppercase tracking-[0.12em] text-white hidden sm:inline">
-            Investigate<span className="text-red-500">The</span>Files
+            Investigate<span className="text-red-500">Epstein</span>
           </span>
         </Link>
 

@@ -24,7 +24,7 @@ export default async function HomePage() {
         <h1 className="animate-in animate-delay-1 text-5xl font-black tracking-tight sm:text-7xl lg:text-8xl leading-[0.9]">
           <span className="gradient-text">INVESTIGATE</span>
           <br />
-          <span className="text-white">THE FILES</span>
+          <span className="text-white">EPSTEIN</span>
         </h1>
 
         <p className="animate-in animate-delay-2 mx-auto mt-6 max-w-lg text-lg leading-relaxed text-[#999]">

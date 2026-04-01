@@ -421,7 +421,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       {/* Header bar */}
       <div className="flex-shrink-0 border-b border-[#1a1a1a] bg-[#0e0e0e] px-5 py-2.5">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-black uppercase tracking-[0.1em] text-white" id="board-title">
+          <h1 className="text-lg font-black uppercase tracking-[0.1em] text-white" id="board-title">
             {archiveTitle}
           </h1>
           <span className="evidence-badge border border-red-600/30 bg-red-600/10 text-red-500 text-[10px]">
@@ -431,7 +431,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             </span>
             LIVE
           </span>
-          <span className="ml-auto text-[10px] font-bold text-[#555] tabular-nums tracking-wider">
+          <span className="ml-auto text-xs font-bold text-[#555] tabular-nums tracking-wider">
             {stats.emailCount.toLocaleString()} emails · {stats.documentCount.toLocaleString()} docs · {stats.photoCount.toLocaleString()} photos
           </span>
         </div>
