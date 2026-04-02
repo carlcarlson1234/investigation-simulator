@@ -421,7 +421,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       {/* Header bar */}
       <div className="flex-shrink-0 border-b border-[#1a1a1a] bg-[#0e0e0e] px-5 py-2.5">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-black uppercase tracking-[0.1em] text-white" id="board-title">
+          <h1 className="font-[family-name:var(--font-display)] text-xl uppercase tracking-[0.08em] text-white" id="board-title">
             {archiveTitle}
           </h1>
           <span className="evidence-badge border border-red-600/30 bg-red-600/10 text-red-500 text-[10px]">
@@ -431,7 +431,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             </span>
             LIVE
           </span>
-          <span className="ml-auto text-xs font-bold text-[#555] tabular-nums tracking-wider">
+          <span className="ml-auto font-[family-name:var(--font-mono)] text-[11px] text-[#555] tabular-nums tracking-wider">
             {stats.emailCount.toLocaleString()} emails · {stats.documentCount.toLocaleString()} docs · {stats.photoCount.toLocaleString()} photos
           </span>
         </div>
@@ -706,7 +706,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         </div>
 
         {/* ── Pan hint ───────────────────────────────────────────────────────── */}
-        <div className="absolute bottom-4 left-4 z-40 text-[9px] font-bold text-[#444] uppercase tracking-wider pointer-events-none select-none">
+        <div className="absolute bottom-4 left-4 z-40 font-[family-name:var(--font-mono)] text-[10px] text-[#444] uppercase tracking-[0.15em] pointer-events-none select-none">
           Drag to pan · Ctrl+Scroll to zoom
         </div>
       </div>
@@ -773,7 +773,7 @@ function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, e
         {/* Label badge */}
         <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-[#0a0a0a]/80 border border-red-900/30 px-2 py-0.5 backdrop-blur-sm">
           <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-[8px] font-black uppercase tracking-[0.15em] text-red-500/80">
+          <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.15em] text-red-500/80">
             POI
           </span>
         </div>
@@ -789,7 +789,7 @@ function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, e
 
       {/* Info area */}
       <div className="px-3.5 py-3">
-        <h4 className="text-[15px] font-black leading-tight text-white tracking-wide">{data.name}</h4>
+        <h4 className="font-[family-name:var(--font-display)] text-lg leading-tight text-white tracking-wide">{data.name}</h4>
         {data.source && (
           <p className="mt-0.5 text-[9px] text-[#555]">{data.source}</p>
         )}

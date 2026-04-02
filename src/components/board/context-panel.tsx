@@ -74,7 +74,7 @@ export function ContextPanel({
       <div className="flex flex-shrink-0 border-b border-[#1a1a1a]">
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => onTabChange(tab.key)}
-            className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
+            className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
               activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#555] hover:text-white"
             }`}>
             {tab.label}
@@ -163,7 +163,7 @@ function PersonsTab({
         />
       </div>
 
-      <div className="text-xs font-bold text-[#555] mb-2">{people.length} persons of interest</div>
+      <div className="font-[family-name:var(--font-mono)] text-[11px] text-[#555] mb-2">{people.length} persons of interest</div>
 
       {people.map((person) => {
         const onBoard = isOnBoard(person.id);
@@ -182,19 +182,19 @@ function PersonsTab({
             }`}>
             <div className="flex items-center gap-1.5 mb-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-red-500/70">Person of Interest</span>
+              <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70">Person of Interest</span>
               {person.photoCount > 0 && (
                 <span className="ml-auto text-[10px] font-bold text-[#555]">📸 {person.photoCount}</span>
               )}
             </div>
-            <h4 className="text-base font-bold text-white">{person.name}</h4>
+            <h4 className="font-[family-name:var(--font-display)] text-lg text-white tracking-wide leading-none">{person.name}</h4>
             {person.source && <p className="mt-0.5 text-[11px] text-[#666]">{person.source}</p>}
             {onBoard && <span className="text-[10px] font-bold text-red-500/60">✓ On board</span>}
 
             <div className="mt-2 flex gap-1.5">
               {!onBoard && (
                 <button onClick={() => onAddPerson(person.id)}
-                  className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-500/70 opacity-0 group-hover:opacity-100 hover:bg-red-600/20 hover:text-red-400 transition">
+                  className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70 opacity-0 group-hover:opacity-100 hover:bg-red-600/20 hover:text-red-400 transition">
                   + Add
                 </button>
               )}

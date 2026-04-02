@@ -26,7 +26,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
       <div className="flex flex-shrink-0 border-b border-[#1a1a1a]">
         <button
           onClick={() => setActiveTab("emails")}
-          className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
+          className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
             activeTab === "emails"
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
@@ -36,7 +36,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </button>
         <button
           onClick={() => setActiveTab("photos")}
-          className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
+          className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
             activeTab === "photos"
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
@@ -46,7 +46,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </button>
         <button
           onClick={() => setActiveTab("search")}
-          className={`flex-1 py-2.5 text-xs font-black uppercase tracking-widest transition ${
+          className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
             activeTab === "search"
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
