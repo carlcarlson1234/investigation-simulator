@@ -3,6 +3,7 @@
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
 import type { BoardNode, BoardEvidenceNode, BoardConnection, FocusState } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType } from "@/lib/types";
+import type { InvestigationStep } from "@/lib/investigation-types";
 import {
   EVIDENCE_TYPE_ICON,
   EVIDENCE_TYPE_LABEL,
@@ -42,6 +43,7 @@ interface BoardCanvasProps {
   stats: ArchiveStats;
   firstPlacementMode?: boolean;
   onFirstPlacement?: (nodeId: string) => void;
+  investigationStep?: InvestigationStep | null;
 }
 
 export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(function BoardCanvas(
@@ -66,6 +68,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     stats,
     firstPlacementMode,
     onFirstPlacement,
+    investigationStep,
   },
   ref
 ) {
@@ -424,14 +427,18 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           <h1 className="font-[family-name:var(--font-display)] text-xl uppercase tracking-[0.08em] text-white" id="board-title">
             {archiveTitle}
           </h1>
-          <span className="evidence-badge border border-red-600/30 bg-red-600/10 text-red-500 text-[10px]">
+          <span className={`evidence-badge border border-red-600/30 bg-red-600/10 text-red-500 text-[10px] transition-opacity duration-300 ${
+            investigationStep ? "opacity-30" : ""
+          }`}>
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
             </span>
             LIVE
           </span>
-          <span className="ml-auto font-[family-name:var(--font-mono)] text-[11px] text-[#555] tabular-nums tracking-wider">
+          <span className={`ml-auto font-[family-name:var(--font-mono)] text-[11px] text-[#555] tabular-nums tracking-wider transition-opacity duration-300 ${
+            investigationStep ? "opacity-20" : ""
+          }`}>
             {stats.emailCount.toLocaleString()} emails · {stats.documentCount.toLocaleString()} docs · {stats.photoCount.toLocaleString()} photos
           </span>
         </div>

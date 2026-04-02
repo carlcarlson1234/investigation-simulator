@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import type { Person, Evidence, EvidenceType, EmailEvidence } from "@/lib/types";
+import type { InvestigationStep } from "@/lib/investigation-types";
 import type {
   BoardNode,
   BoardConnection,
@@ -31,6 +32,7 @@ interface ContextPanelProps {
   onFocusNode: (id: string | null) => void;
   onSelectNode: (id: string | null) => void;
   suggestedPeople?: Person[];
+  investigationStep?: InvestigationStep | null;
 }
 
 const TABS: { key: RightPanelTab; label: string }[] = [
@@ -55,8 +57,10 @@ export function ContextPanel({
   onFocusNode,
   onSelectNode,
   suggestedPeople,
+  investigationStep,
 }: ContextPanelProps) {
   const [personSearch, setPersonSearch] = useState("");
+  const isOnboarding = investigationStep != null;
 
   const filteredPeople = useMemo(() => {
     if (!personSearch.trim()) return people;
@@ -69,9 +73,13 @@ export function ContextPanel({
   }, [people, personSearch]);
 
   return (
-    <aside className="context-panel flex w-80 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex flex-shrink-0 border-b border-[#1a1a1a]">
+    <aside className={`context-panel flex w-80 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden transition-all duration-300 ${
+      isOnboarding ? "bg-[#080808]" : ""
+    }`}>
+      {/* Tab bar — muted during onboarding */}
+      <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
+        isOnboarding ? "opacity-40" : ""
+      }`}>
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => onTabChange(tab.key)}
             className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
@@ -86,7 +94,7 @@ export function ContextPanel({
         {activeTab === "persons" && (
           <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
             isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
-            suggestedPeople={suggestedPeople} />
+            suggestedPeople={suggestedPeople} investigationStep={investigationStep} />
         )}
         {activeTab === "details" && (
           selectedEmailDetail && !selectedNode ? (
@@ -107,31 +115,55 @@ export function ContextPanel({
 // ─── Persons Tab ────────────────────────────────────────────────────────────
 
 function PersonsTab({
-  people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople,
+  people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep,
 }: {
   people: Person[]; search: string; onSearchChange: (v: string) => void;
   isOnBoard: (id: string) => boolean; onAddPerson: (id: string) => void;
   focusedNodeId: string | null; onFocusNode: (id: string | null) => void;
   suggestedPeople?: Person[];
+  investigationStep?: InvestigationStep | null;
 }) {
+  const [peopleExpanded, setPeopleExpanded] = useState(false);
+  const isOnboarding = investigationStep != null;
+  const showFullList = !isOnboarding || peopleExpanded;
+
   return (
     <div className="p-3 space-y-2">
-      {/* Suggested People (investigation mode) */}
+      {/* ── SUGGESTED PEOPLE — MUCH LARGER during onboarding ── */}
       {suggestedPeople && suggestedPeople.length > 0 && (
-        <div className="mb-3 rounded-lg border border-red-500/20 bg-red-950/10 p-2.5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="relative flex h-1.5 w-1.5">
+        <div className={`rounded-lg border border-red-500/20 bg-red-950/10 ${isOnboarding ? "p-4 mb-4" : "p-2.5 mb-3"}`}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
             </span>
-            <span className="text-[9px] font-black uppercase tracking-[0.15em] text-red-500/60">
+            <span className={`font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-red-500/80 ${
+              isOnboarding ? "text-xs" : "text-[9px]"
+            }`}>
               👤 Suggested People
             </span>
           </div>
-          <div className="space-y-1">
+          <div className={isOnboarding ? "space-y-3" : "space-y-1"}>
             {suggestedPeople.map(person => (
-              <div key={person.id} className="flex items-center gap-2 rounded-lg border border-red-500/10 bg-[#111] p-2 hover:border-red-500/30 transition">
-                <div className="h-8 w-8 rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0 border border-[#333]">
+              <div
+                key={person.id}
+                draggable={!isOnBoard(person.id)}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
+                className={`flex items-center gap-3 rounded-lg border transition ${
+                  isOnBoard(person.id)
+                    ? "border-green-600/20 bg-green-950/10 opacity-50"
+                    : isOnboarding
+                    ? "border-red-500/25 bg-[#111] hover:border-red-500/40 cursor-grab active:cursor-grabbing shadow-md shadow-red-900/10 pulse-glow"
+                    : "border-red-500/10 bg-[#111] hover:border-red-500/30"
+                } ${isOnboarding ? "p-3" : "p-2"}`}
+              >
+                {/* Photo — larger in onboarding */}
+                <div className={`rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0 border border-[#333] ${
+                  isOnboarding ? "h-14 w-14" : "h-8 w-8"
+                }`}>
                   {person.imageUrl ? (
                     <img src={person.imageUrl} alt={person.name} className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                   ) : (
@@ -139,77 +171,112 @@ function PersonsTab({
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold text-white truncate">{person.name}</p>
-                  {person.photoCount > 0 && <p className="text-[8px] text-[#555]">📸 {person.photoCount} photos</p>}
+                  <p className={`font-bold text-white truncate ${isOnboarding ? "font-[family-name:var(--font-display)] text-base tracking-wide" : "text-[11px]"}`}>{person.name}</p>
+                  {person.photoCount > 0 && <p className={`text-[#555] ${isOnboarding ? "text-[10px]" : "text-[8px]"}`}>📸 {person.photoCount} photos</p>}
                 </div>
                 {isOnBoard(person.id) ? (
-                  <span className="text-[8px] font-bold text-green-500/60 uppercase">Added</span>
+                  <span className={`font-[family-name:var(--font-mono)] font-bold text-green-500/60 uppercase ${isOnboarding ? "text-[10px]" : "text-[8px]"}`}>Added</span>
                 ) : (
-                  <button onClick={() => onAddPerson(person.id)} className="text-[8px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition">+ Add</button>
+                  <button
+                    onClick={() => onAddPerson(person.id)}
+                    className={`font-[family-name:var(--font-mono)] font-bold uppercase tracking-wider transition ${
+                      isOnboarding
+                        ? "text-[11px] rounded-md bg-red-600/15 border border-red-600/30 px-3 py-1.5 text-red-400 hover:bg-red-600/25 hover:text-red-300"
+                        : "text-[8px] text-red-500/60 hover:text-red-400"
+                    }`}
+                  >
+                    + Add
+                  </button>
                 )}
               </div>
             ))}
           </div>
         </div>
       )}
-      <div className="relative mb-3">
-        <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted/40"
-          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-        </svg>
-        <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search 473 people…"
-          className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-7 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none transition"
-        />
-      </div>
 
-      <div className="font-[family-name:var(--font-mono)] text-[11px] text-[#555] mb-2">{people.length} persons of interest</div>
-
-      {people.map((person) => {
-        const onBoard = isOnBoard(person.id);
-        const focused = focusedNodeId === person.id;
-        return (
-          <div key={person.id}
-            draggable={!onBoard}
-            onDragStart={(e) => {
-              e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
-              e.dataTransfer.effectAllowed = "copy";
-            }}
-            className={`group rounded border p-3 transition ${
-              focused ? "border-red-500/40 bg-red-600/10" :
-              onBoard ? "border-red-500/20 bg-red-600/5 opacity-60" :
-              "border-[#2a2a2a] bg-[#141414] hover:border-red-500/30 cursor-grab active:cursor-grabbing"
-            }`}>
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-              <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70">Person of Interest</span>
-              {person.photoCount > 0 && (
-                <span className="ml-auto text-[10px] font-bold text-[#555]">📸 {person.photoCount}</span>
-              )}
-            </div>
-            <h4 className="font-[family-name:var(--font-display)] text-lg text-white tracking-wide leading-none">{person.name}</h4>
-            {person.source && <p className="mt-0.5 text-[11px] text-[#666]">{person.source}</p>}
-            {onBoard && <span className="text-[10px] font-bold text-red-500/60">✓ On board</span>}
-
-            <div className="mt-2 flex gap-1.5">
-              {!onBoard && (
-                <button onClick={() => onAddPerson(person.id)}
-                  className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70 opacity-0 group-hover:opacity-100 hover:bg-red-600/20 hover:text-red-400 transition">
-                  + Add
-                </button>
-              )}
-              {onBoard && (
-                <button onClick={() => onFocusNode(person.id)}
-                  className={`rounded px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider transition ${
-                    focused ? "bg-red-600/20 text-red-400 border border-red-600/30" : "bg-red-600/10 border border-red-600/20 text-red-500/60 opacity-0 group-hover:opacity-100"
-                  }`}>
-                  {focused ? "Unfocus" : "Focus"}
-                </button>
-              )}
-            </div>
+      {/* ── FULL PEOPLE LIST: collapsed during onboarding ── */}
+      {isOnboarding && !showFullList ? (
+        <div className="flex flex-col items-center px-2 py-4">
+          <button
+            onClick={() => setPeopleExpanded(true)}
+            className="w-full rounded-lg border border-[#222] bg-[#111] px-4 py-3 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-[#555] hover:text-[#999] hover:border-[#444] hover:bg-[#161616] transition text-center"
+          >
+            Browse All People ↓
+          </button>
+          <p className="mt-2 font-[family-name:var(--font-mono)] text-[10px] text-[#333] text-center">
+            {people.length} persons of interest
+          </p>
+        </div>
+      ) : (
+        <>
+          {isOnboarding && peopleExpanded && (
+            <button
+              onClick={() => setPeopleExpanded(false)}
+              className="w-full mb-2 py-1.5 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#444] hover:text-white transition text-center"
+            >
+              ↑ Collapse
+            </button>
+          )}
+          <div className="relative mb-3">
+            <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted/40"
+              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search 473 people…"
+              className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-7 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none transition"
+            />
           </div>
-        );
-      })}
+
+          <div className="font-[family-name:var(--font-mono)] text-[11px] text-[#555] mb-2">{people.length} persons of interest</div>
+
+          {people.map((person) => {
+            const onBoard = isOnBoard(person.id);
+            const focused = focusedNodeId === person.id;
+            return (
+              <div key={person.id}
+                draggable={!onBoard}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
+                className={`group rounded border p-3 transition ${
+                  focused ? "border-red-500/40 bg-red-600/10" :
+                  onBoard ? "border-red-500/20 bg-red-600/5 opacity-60" :
+                  "border-[#2a2a2a] bg-[#141414] hover:border-red-500/30 cursor-grab active:cursor-grabbing"
+                }`}>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                  <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70">Person of Interest</span>
+                  {person.photoCount > 0 && (
+                    <span className="ml-auto text-[10px] font-bold text-[#555]">📸 {person.photoCount}</span>
+                  )}
+                </div>
+                <h4 className="font-[family-name:var(--font-display)] text-lg text-white tracking-wide leading-none">{person.name}</h4>
+                {person.source && <p className="mt-0.5 text-[11px] text-[#666]">{person.source}</p>}
+                {onBoard && <span className="text-[10px] font-bold text-red-500/60">✓ On board</span>}
+
+                <div className="mt-2 flex gap-1.5">
+                  {!onBoard && (
+                    <button onClick={() => onAddPerson(person.id)}
+                      className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70 opacity-0 group-hover:opacity-100 hover:bg-red-600/20 hover:text-red-400 transition">
+                      + Add
+                    </button>
+                  )}
+                  {onBoard && (
+                    <button onClick={() => onFocusNode(person.id)}
+                      className={`rounded px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider transition ${
+                        focused ? "bg-red-600/20 text-red-400 border border-red-600/30" : "bg-red-600/10 border border-red-600/20 text-red-500/60 opacity-0 group-hover:opacity-100"
+                      }`}>
+                      {focused ? "Unfocus" : "Focus"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

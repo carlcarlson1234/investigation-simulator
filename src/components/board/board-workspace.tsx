@@ -300,6 +300,7 @@ export function BoardWorkspace({
         onSelectEmail={handleSelectEmail}
         selectedEmailId={selectedEmailId}
         starterLeads={investigation.isStartMode ? investigation.starterEvidence : undefined}
+        investigationStep={investigation.isStartMode ? investigation.step : null}
       />
 
       {/* CENTER: Board Canvas */}
@@ -325,6 +326,7 @@ export function BoardWorkspace({
         stats={stats}
         firstPlacementMode={investigation.isStartMode && investigation.step === "place-first-person"}
         onFirstPlacement={handleFirstPlacement}
+        investigationStep={investigation.isStartMode ? investigation.step : null}
       />
 
       {/* Investigation Overlay (only in start mode) */}
@@ -366,6 +368,7 @@ export function BoardWorkspace({
         onFocusNode={focusNode}
         onSelectNode={selectNode}
         suggestedPeople={suggestedPeople}
+        investigationStep={investigation.isStartMode ? investigation.step : null}
       />
 
       {/* Subject Focus View overlay */}

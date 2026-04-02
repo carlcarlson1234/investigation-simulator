@@ -36,6 +36,48 @@ const STEP_ORDER: InvestigationStep[] = [
   "open-investigation",
 ];
 
+/* ──────────────────────────────────────────────────────────────────────────
+ *  STEP-SPECIFIC DESCRIPTIONS — bigger, clearer, human-readable
+ * ──────────────────────────────────────────────────────────────────────── */
+const STEP_HEADLINES: Record<InvestigationStep, { headline: string; sub: string }> = {
+  "place-first-person": {
+    headline: "PLACE YOUR FIRST SUBJECT",
+    sub: "Drag the person card onto the board to begin your investigation.",
+  },
+  "place-second-person": {
+    headline: "ADD A SECOND PERSON",
+    sub: "Drag a suggested person from the right panel onto the board.",
+  },
+  "create-link": {
+    headline: "CONNECT TWO PEOPLE",
+    sub: "Click one person, then click another to create a connection.",
+  },
+  "add-evidence": {
+    headline: "ATTACH EVIDENCE",
+    sub: "Drag an email or document from the left panel onto the board.",
+  },
+  "link-evidence": {
+    headline: "LINK EVIDENCE TO A PERSON",
+    sub: "Drag the evidence onto a person card to create a connection.",
+  },
+  "add-note": {
+    headline: "ADD A NOTE",
+    sub: "Click a connection line and type a note to record your observations.",
+  },
+  "classify-strength": {
+    headline: "CLASSIFY STRENGTH",
+    sub: "Rate the connection strength to indicate how strong the evidence is.",
+  },
+  "choose-expansion": {
+    headline: "CHOOSE YOUR NEXT LEAD",
+    sub: "Pick a direction to expand your investigation.",
+  },
+  "open-investigation": {
+    headline: "INVESTIGATION OPEN",
+    sub: "You now have full access. Follow leads and build your case.",
+  },
+};
+
 export function InvestigationOverlay({
   step,
   stepConfig,
@@ -73,6 +115,7 @@ export function InvestigationOverlay({
 
   const stepIdx = STEP_ORDER.indexOf(step);
   const totalSteps = STEP_ORDER.length - 1;
+  const headlines = STEP_HEADLINES[step];
 
   // ─── Open Investigation (nudges only) ─────────────────────────────────
   if (step === "open-investigation") {
@@ -111,12 +154,14 @@ export function InvestigationOverlay({
   if (step === "choose-expansion") {
     return (
       <div className="absolute inset-0 z-30 flex items-center justify-center" style={{ pointerEvents: "none" }}>
-        <div className="rounded-2xl border border-[#2a2a2a] bg-[#0e0e0e]/95 backdrop-blur-md p-8 shadow-2xl max-w-lg w-full" style={{ pointerEvents: "auto" }}>
+        {/* Scrim to focus attention */}
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
+        <div className="relative rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md p-8 shadow-2xl max-w-lg w-full" style={{ pointerEvents: "auto" }}>
           <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-red-500/60">
             Step {stepIdx + 1}/{totalSteps}
           </span>
-          <h3 className="font-[family-name:var(--font-display)] text-3xl text-white mt-2 mb-1 tracking-wide">{stepConfig.title}</h3>
-          <p className="text-sm text-[#888] mb-6">{stepConfig.instruction}</p>
+          <h3 className="font-[family-name:var(--font-display)] text-4xl text-white mt-2 mb-1 tracking-wide">{headlines.headline}</h3>
+          <p className="text-sm text-[#888] mb-6">{headlines.sub}</p>
 
           <div className="space-y-3">
             {expansionChoices.map(choice => (
@@ -148,43 +193,41 @@ export function InvestigationOverlay({
   }
 
   // ─── PLACE FIRST PERSON ───────────────────────────────────────────────
-  // Card floats as a fixed element, NOT overlapping the panel
   if (step === "place-first-person" && firstPerson) {
     return (
       <div className="absolute inset-0 z-30" style={{ pointerEvents: "none" }}>
+        {/* ── Light scrim over the board to focus attention ── */}
+        <div className="absolute inset-0 bg-black/20 pointer-events-none" />
+
         {/* ── Center: Obvious drop target ── */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center gap-6" style={{ pointerEvents: "none" }}>
             {/* Pulsing target ring */}
             <div className="relative">
-              <div className="w-48 h-48 rounded-full border-2 border-dashed border-red-500/20 flex items-center justify-center animate-pulse">
-                <div className="w-32 h-32 rounded-full border-2 border-dashed border-red-500/10 flex items-center justify-center">
-                  <div className="w-4 h-4 rounded-full bg-red-500/20" />
+              <div className="w-56 h-56 rounded-full border-2 border-dashed border-red-500/25 flex items-center justify-center animate-pulse">
+                <div className="w-36 h-36 rounded-full border-2 border-dashed border-red-500/15 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-red-500/25" />
                 </div>
               </div>
               {/* Crosshair lines */}
-              <div className="absolute top-1/2 left-0 w-full h-px bg-red-500/8" />
-              <div className="absolute top-0 left-1/2 w-px h-full bg-red-500/8" />
+              <div className="absolute top-1/2 left-0 w-full h-px bg-red-500/10" />
+              <div className="absolute top-0 left-1/2 w-px h-full bg-red-500/10" />
             </div>
 
             {/* Drop zone label */}
             <div className="text-center">
-              <h2 className="font-[family-name:var(--font-display)] text-4xl text-white/20 tracking-wider">
-                DROP TARGET
+              <h2 className="font-[family-name:var(--font-display)] text-5xl text-white/15 tracking-wider">
+                DROP HERE
               </h2>
-              <p className="font-[family-name:var(--font-mono)] text-[11px] text-white/10 uppercase tracking-[0.2em] mt-2">
-                Drag person card here to begin
-              </p>
             </div>
           </div>
         </div>
 
         {/* ── Right side: Floating card with arrow ── */}
-        {/* Positioned absolutely, to the left of the right panel */}
         <div
           className="absolute flex items-center gap-5"
           style={{
-            right: "340px", /* Right panel is w-80 (320px) + 20px gap */
+            right: "340px",
             top: "50%",
             transform: "translateY(-50%)",
             pointerEvents: "auto",
@@ -192,7 +235,7 @@ export function InvestigationOverlay({
         >
           {/* Animated arrow pointing left */}
           <div className="flex flex-col items-center gap-1.5 animate-bounce-left">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="text-red-500 drop-shadow-[0_0_8px_rgba(220,38,38,0.4)]">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" className="text-red-500 drop-shadow-[0_0_12px_rgba(220,38,38,0.5)]">
               <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.2em] text-red-500/60">
@@ -252,97 +295,153 @@ export function InvestigationOverlay({
           </div>
         </div>
 
-        {/* ── Step indicator — bottom center ── */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3" style={{ pointerEvents: "auto" }}>
-          <div className="rounded-lg border border-[#222] bg-[#0a0a0a]/90 backdrop-blur-sm px-5 py-3 flex items-center gap-3">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-[#666]">
-              Step 1/{totalSteps}
-            </span>
-            <span className="text-[#333]">|</span>
-            <span className="text-sm text-[#999]">
-              Drag the card onto the board
-            </span>
-          </div>
-          <button
-            onClick={onSwitchToFree}
-            className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[#333] hover:text-[#888] transition"
-            style={{ pointerEvents: "auto" }}
-          >
-            Switch to Free Explore →
-          </button>
-        </div>
+        {/* ── LARGE instruction overlay — PRIMARY command on screen ── */}
+        <StepInstructionOverlay
+          stepIdx={stepIdx}
+          totalSteps={totalSteps}
+          headline={headlines.headline}
+          sub={headlines.sub}
+          showAdvanceBtn={showAdvanceBtn}
+          onAdvance={() => { setShowAdvanceBtn(false); onAdvance(); }}
+          onSwitchToFree={onSwitchToFree}
+          justCompleted={justCompleted}
+          completedSteps={completedSteps}
+          step={step}
+        />
       </div>
     );
   }
 
-  // ─── Standard step prompt ─────────────────────────────────────────────
+  // ─── Standard step (steps 2-7) ────────────────────────────────────────
+  return (
+    <div className="absolute inset-0 z-30" style={{ pointerEvents: "none" }}>
+      {/* Light scrim over the board during non-panel steps */}
+      {(step === "create-link" || step === "link-evidence" || step === "add-note" || step === "classify-strength") && (
+        <div className="absolute inset-0 bg-black/15 pointer-events-none" />
+      )}
+
+      <StepInstructionOverlay
+        stepIdx={stepIdx}
+        totalSteps={totalSteps}
+        headline={headlines.headline}
+        sub={headlines.sub}
+        showAdvanceBtn={showAdvanceBtn}
+        onAdvance={() => { setShowAdvanceBtn(false); onAdvance(); }}
+        onSwitchToFree={onSwitchToFree}
+        onSkip={(step === "add-note" || step === "classify-strength") && !showAdvanceBtn ? onSkip : undefined}
+        justCompleted={justCompleted}
+        completedSteps={completedSteps}
+        step={step}
+      />
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ *  StepInstructionOverlay — the LARGE, primary step instruction card
+ *  This is the main visual command on screen during each onboarding step.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+function StepInstructionOverlay({
+  stepIdx,
+  totalSteps,
+  headline,
+  sub,
+  showAdvanceBtn,
+  onAdvance,
+  onSwitchToFree,
+  onSkip,
+  justCompleted,
+  completedSteps,
+  step,
+}: {
+  stepIdx: number;
+  totalSteps: number;
+  headline: string;
+  sub: string;
+  showAdvanceBtn: boolean;
+  onAdvance: () => void;
+  onSwitchToFree: () => void;
+  onSkip?: (() => void) | undefined;
+  justCompleted: boolean;
+  completedSteps: Set<InvestigationStep>;
+  step: InvestigationStep;
+}) {
   return (
     <div
-      className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30"
+      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-[560px] max-w-[90vw]"
       style={{ pointerEvents: "auto" }}
     >
-      <div className="rounded-xl border border-[#222] bg-[#0a0a0a]/95 backdrop-blur-md px-6 py-5 shadow-2xl max-w-md">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="relative flex h-2 w-2">
+      <div className="relative rounded-2xl border border-[#1a1a1a] bg-[#060606]/98 backdrop-blur-xl px-8 py-7 shadow-2xl shadow-black/50">
+        {/* Ambient red glow at top */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-px bg-gradient-to-r from-transparent via-red-500/40 to-transparent" />
+
+        {/* Step indicator row */}
+        <div className="flex items-center gap-3 mb-4">
+          <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
           </span>
-          <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-red-500/60">
-            Step {stepIdx + 1}/{totalSteps}
+          <span className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.2em] text-red-500/70">
+            Step {stepIdx + 1} of {totalSteps}
           </span>
-        </div>
-
-        <h3 className="font-[family-name:var(--font-display)] text-2xl text-white tracking-wide leading-none">{stepConfig.title}</h3>
-        <p className="mt-2 text-sm text-[#888] leading-relaxed">{stepConfig.instruction}</p>
-
-        {stepConfig.hint && (
-          <p className="mt-2 font-[family-name:var(--font-mono)] text-[10px] text-[#444] tracking-wide">{stepConfig.hint}</p>
-        )}
-
-        {/* Progress + Actions */}
-        <div className="mt-4 flex items-center gap-3">
-          <div className="flex gap-1.5">
+          {/* Progress dots */}
+          <div className="ml-auto flex gap-1.5">
             {STEP_ORDER.slice(0, -1).map((s) => (
               <div
                 key={s}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
+                className={`rounded-full transition-all duration-300 ${
                   completedSteps.has(s)
-                    ? "w-5 bg-red-500"
+                    ? "w-4 h-1.5 bg-red-500"
                     : s === step
-                    ? "w-5 bg-red-500/40"
-                    : "w-1.5 bg-[#2a2a2a]"
+                    ? "w-4 h-1.5 bg-red-500/40"
+                    : "w-1.5 h-1.5 bg-[#2a2a2a]"
                 }`}
               />
             ))}
           </div>
+        </div>
 
-          <div className="ml-auto flex gap-2">
-            {showAdvanceBtn && (
-              <button
-                onClick={() => { setShowAdvanceBtn(false); onAdvance(); }}
-                className="rounded-lg bg-red-600/20 border border-red-600/30 px-4 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-400 hover:bg-red-600/30 hover:text-red-300 transition animate-in"
-              >
-                Continue →
-              </button>
-            )}
-            {(step === "add-note" || step === "classify-strength") && !showAdvanceBtn && (
-              <button
-                onClick={onSkip}
-                className="rounded-lg border border-[#333] px-4 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:border-[#555] transition"
-              >
-                Skip
-              </button>
-            )}
-          </div>
+        {/* HEADLINE — the primary command */}
+        <h2 className="font-[family-name:var(--font-display)] text-[clamp(1.5rem,4vw,2.25rem)] text-white tracking-wide leading-[1.1]">
+          {headline}
+        </h2>
+
+        {/* Instruction */}
+        <p className="mt-3 text-base text-[#999] leading-relaxed">
+          {sub}
+        </p>
+
+        {/* Action buttons */}
+        <div className="mt-5 flex items-center gap-3">
+          {showAdvanceBtn && (
+            <button
+              onClick={onAdvance}
+              className="rounded-lg bg-red-600 px-5 py-2.5 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-white shadow-lg shadow-red-600/20 hover:bg-red-500 hover:shadow-red-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Continue →
+            </button>
+          )}
+          {onSkip && (
+            <button
+              onClick={onSkip}
+              className="rounded-lg border border-[#333] px-5 py-2.5 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-[#555] hover:text-white hover:border-[#555] transition"
+            >
+              Skip
+            </button>
+          )}
+          <button
+            onClick={onSwitchToFree}
+            className="ml-auto font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[#333] hover:text-[#888] transition"
+          >
+            Free Explore →
+          </button>
         </div>
       </div>
 
+      {/* Completion flash */}
       {justCompleted && (
-        <div className="absolute inset-0 rounded-xl border-2 border-green-500/50 animate-ping pointer-events-none" />
+        <div className="absolute inset-0 rounded-2xl border-2 border-green-500/50 animate-ping pointer-events-none" />
       )}
     </div>
   );

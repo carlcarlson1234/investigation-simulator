@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { SearchResult, EvidenceType, EmailListItem, PhotoListItem } from "@/lib/types";
+import type { InvestigationStep } from "@/lib/investigation-types";
 import {
   EVIDENCE_TYPE_ICON,
   EVIDENCE_TYPE_LABEL,
@@ -15,15 +16,25 @@ interface IntakePanelProps {
   onSelectEmail: (emailId: string) => void;
   selectedEmailId: string | null;
   starterLeads?: SearchResult[];
+  investigationStep?: InvestigationStep | null;
 }
 
-export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads }: IntakePanelProps) {
+export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep }: IntakePanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>("emails");
+  const [inboxExpanded, setInboxExpanded] = useState(false);
+
+  const isOnboarding = investigationStep != null;
+  // Show full inbox by default in Free Explore, collapsed in investigation
+  const showFullContent = !isOnboarding || inboxExpanded;
 
   return (
-    <aside className="intake-panel flex w-80 flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex flex-shrink-0 border-b border-[#1a1a1a]">
+    <aside className={`intake-panel flex w-80 flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
+      isOnboarding ? "bg-[#080808]" : ""
+    }`}>
+      {/* Tab bar — muted during onboarding */}
+      <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
+        isOnboarding && !inboxExpanded ? "opacity-40" : ""
+      }`}>
         <button
           onClick={() => setActiveTab("emails")}
           className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
@@ -56,19 +67,21 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </button>
       </div>
 
-      {/* Starter Leads section (investigation mode) */}
+      {/* ── STARTER LEADS (always visible, MUCH LARGER in investigation mode) ── */}
       {starterLeads && starterLeads.length > 0 && (
-        <div className="flex-shrink-0 border-b border-[#1a1a1a] p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="relative flex h-1.5 w-1.5">
+        <div className={`flex-shrink-0 border-b border-[#1a1a1a] ${isOnboarding ? "p-4" : "p-3"}`}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
             </span>
-            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-red-500/60">
-              🎯 Starter Leads
+            <span className={`font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-red-500/80 ${
+              isOnboarding ? "text-xs" : "text-[10px]"
+            }`}>
+              🎯 Starter Evidence
             </span>
           </div>
-          <div className="space-y-1.5">
+          <div className={isOnboarding ? "space-y-3" : "space-y-1.5"}>
             {starterLeads.map(lead => (
               <div
                 key={lead.id}
@@ -80,24 +93,32 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                   );
                   e.dataTransfer.effectAllowed = "copy";
                 }}
-                className={`rounded-lg border p-2.5 cursor-grab active:cursor-grabbing transition-all ${
+                className={`rounded-lg border cursor-grab active:cursor-grabbing transition-all ${
                   isOnBoard(lead.id)
-                    ? "border-green-600/20 bg-green-950/10 opacity-60"
+                    ? "border-green-600/20 bg-green-950/10 opacity-50"
+                    : isOnboarding
+                    ? "border-red-500/30 bg-red-950/15 hover:border-red-500/50 hover:bg-red-950/20 shadow-lg shadow-red-900/10 pulse-glow"
                     : "border-red-500/20 bg-red-950/10 hover:border-red-500/40 hover:bg-red-950/15"
-                }`}
+                } ${isOnboarding ? "p-4" : "p-2.5"}`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-base">{lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}</span>
+                <div className="flex items-center gap-3">
+                  <span className={isOnboarding ? "text-2xl" : "text-base"}>
+                    {lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{lead.title}</p>
-                    <p className="text-[10px] text-[#666] truncate mt-0.5">{lead.snippet}</p>
+                    <p className={`font-bold text-white truncate ${isOnboarding ? "text-sm" : "text-xs"}`}>{lead.title}</p>
+                    <p className={`text-[#777] truncate mt-0.5 ${isOnboarding ? "text-xs" : "text-[10px]"}`}>{lead.snippet}</p>
                   </div>
                   {isOnBoard(lead.id) ? (
-                    <span className="text-[9px] font-bold text-green-500/60 uppercase tracking-wider">On Board</span>
+                    <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-green-500/60 uppercase tracking-wider">On Board</span>
                   ) : (
                     <button
                       onClick={() => onAddEvidence(lead)}
-                      className="text-[9px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition"
+                      className={`font-[family-name:var(--font-mono)] font-bold uppercase tracking-wider transition ${
+                        isOnboarding
+                          ? "text-[11px] rounded-md bg-red-600/15 border border-red-600/30 px-3 py-1.5 text-red-400 hover:bg-red-600/25 hover:text-red-300"
+                          : "text-[9px] text-red-500/60 hover:text-red-400"
+                      }`}
                     >
                       + Add
                     </button>
@@ -109,20 +130,46 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </div>
       )}
 
-      {activeTab === "emails" ? (
-        <EmailInbox
-          isOnBoard={isOnBoard}
-          onAddEvidence={onAddEvidence}
-          onSelectEmail={onSelectEmail}
-          selectedEmailId={selectedEmailId}
-        />
-      ) : activeTab === "photos" ? (
-        <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+      {/* ── FULL CONTENT: collapsed during onboarding, expanded in free explore ── */}
+      {isOnboarding && !showFullContent ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-4">
+          <button
+            onClick={() => setInboxExpanded(true)}
+            className="w-full rounded-lg border border-[#222] bg-[#111] px-4 py-3 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-[#555] hover:text-[#999] hover:border-[#444] hover:bg-[#161616] transition text-center"
+          >
+            Browse Full Inbox ↓
+          </button>
+          <p className="mt-2 font-[family-name:var(--font-mono)] text-[10px] text-[#333] text-center">
+            1.7M+ emails available
+          </p>
+        </div>
       ) : (
-        <EvidenceSearch isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+        <>
+          {isOnboarding && inboxExpanded && (
+            <button
+              onClick={() => setInboxExpanded(false)}
+              className="flex-shrink-0 w-full border-b border-[#1a1a1a] py-1.5 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#444] hover:text-white transition text-center"
+            >
+              ↑ Collapse
+            </button>
+          )}
+          {activeTab === "emails" ? (
+            <EmailInbox
+              isOnBoard={isOnBoard}
+              onAddEvidence={onAddEvidence}
+              onSelectEmail={onSelectEmail}
+              selectedEmailId={selectedEmailId}
+            />
+          ) : activeTab === "photos" ? (
+            <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+          ) : (
+            <EvidenceSearch isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+          )}
+        </>
       )}
     </aside>
   );
+
 }
 
 // ─── EMAIL INBOX TAB ────────────────────────────────────────────────────────
