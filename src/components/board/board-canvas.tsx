@@ -33,6 +33,7 @@ interface BoardCanvasProps {
   onSelectNode: (id: string | null) => void;
   onFocusNode: (id: string | null) => void;
   onMoveNode: (id: string, x: number, y: number) => void;
+  onBatchMoveNodes?: (moves: Record<string, { x: number; y: number }>) => void;
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   onAddPerson: (personId: string, x?: number, y?: number) => void;
   onStartConnection: (fromId: string) => void;
@@ -61,6 +62,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onSelectNode,
     onFocusNode,
     onMoveNode,
+    onBatchMoveNodes,
     onAddEvidence,
     onAddPerson,
     onStartConnection,
@@ -284,6 +286,70 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     });
   }, [nodes]);
 
+  /* ── Auto-arrange (force-directed layout) ──────────────────────────────── */
+  const [isArranging, setIsArranging] = useState(false);
+
+  const autoArrange = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+
+    // Build adjacency for grouping connected nodes
+    const neighbors: Record<string, Set<string>> = {};
+    for (const n of nodes) neighbors[n.id] = new Set();
+    for (const c of connections) {
+      if (neighbors[c.sourceId]) neighbors[c.sourceId].add(c.targetId);
+      if (neighbors[c.targetId]) neighbors[c.targetId].add(c.sourceId);
+    }
+
+    // BFS from most-connected node to order nodes so connected ones are adjacent
+    const ordered: string[] = [];
+    const visited = new Set<string>();
+    const byConnections = [...nodes].sort((a, b) =>
+      (neighbors[b.id]?.size ?? 0) - (neighbors[a.id]?.size ?? 0)
+    );
+
+    for (const start of byConnections) {
+      if (visited.has(start.id)) continue;
+      const queue = [start.id];
+      visited.add(start.id);
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        ordered.push(id);
+        // Add unvisited neighbors, sorted by connection count
+        const nbs = [...(neighbors[id] || [])].filter(n => !visited.has(n));
+        nbs.sort((a, b) => (neighbors[b]?.size ?? 0) - (neighbors[a]?.size ?? 0));
+        for (const nb of nbs) { visited.add(nb); queue.push(nb); }
+      }
+    }
+
+    const CELL_W = 300;
+    const CELL_H = 380;
+    const GAP_X = 80;
+    const GAP_Y = 80;
+    const cols = Math.max(2, Math.ceil(Math.sqrt(ordered.length)));
+
+    const startX = 100;
+    const startY = 80;
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    ordered.forEach((id, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      pos[id] = {
+        x: startX + col * (CELL_W + GAP_X),
+        y: startY + row * (CELL_H + GAP_Y),
+      };
+    });
+
+    // Animate to new positions
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => {
+      setIsArranging(false);
+      // Fit view after arrange
+      zoomFit();
+    }, 350);
+  }, [nodes, connections, onBatchMoveNodes, zoomFit]);
+
   /* ── Wheel-to-zoom (Ctrl+scroll) ────────────────────────────────────────── */
   useEffect(() => {
     const vp = viewportRef.current;
@@ -404,11 +470,42 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         Math.max(0, worldY - dragState.offsetY)
       );
     };
-    const onUp = () => setDragState(null);
+    const onUp = () => {
+      // Nudge if overlapping another card
+      const dragged = nodes.find(n => n.id === dragState.nodeId);
+      if (dragged) {
+        const PAD = 20;
+        const dw = dragged.kind === "person" ? 260 : 190;
+        const dh = dragged.kind === "person" ? 300 : 160;
+        let { x, y } = dragged.position;
+        let nudged = false;
+        for (const other of nodes) {
+          if (other.id === dragState.nodeId) continue;
+          const ow = other.kind === "person" ? 260 : 190;
+          const oh = other.kind === "person" ? 300 : 160;
+          if (x < other.position.x + ow + PAD && x + dw + PAD > other.position.x &&
+              y < other.position.y + oh + PAD && y + dh + PAD > other.position.y) {
+            // Push in the shortest direction
+            const overlapR = (x + dw + PAD) - other.position.x;
+            const overlapL = (other.position.x + ow + PAD) - x;
+            const overlapD = (y + dh + PAD) - other.position.y;
+            const overlapU = (other.position.y + oh + PAD) - y;
+            const minOverlap = Math.min(overlapR, overlapL, overlapD, overlapU);
+            if (minOverlap === overlapR) x -= overlapR;
+            else if (minOverlap === overlapL) x += overlapL;
+            else if (minOverlap === overlapD) y -= overlapD;
+            else y += overlapU;
+            nudged = true;
+          }
+        }
+        if (nudged) onMoveNode(dragState.nodeId, Math.max(0, x), Math.max(0, y));
+      }
+      setDragState(null);
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [dragState, zoom, onMoveNode]);
+  }, [dragState, zoom, onMoveNode, nodes]);
 
   // ─── ESC ──────────────────────────────────────────────────────────────
 
@@ -698,13 +795,32 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const lineColor = isNew ? "#4ade80" : isSelected ? "#f87171" : "#ef4444";
                   const dotColor = isNew ? "#4ade80" : "#ef4444";
                   const lineFilter = isNew ? "url(#string-glow-green)" : isSelected ? "url(#string-glow-strong)" : isHighlight ? "url(#string-glow)" : "url(#string-glow)";
+
+                  // Curved path: arc upward, stronger curve when nodes are on similar Y
+                  const dx = to.cx - from.cx;
+                  const dy = to.cy - from.cy;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  // Only curve when nodes are nearly perfectly aligned vertically or horizontally
+                  const absDx = Math.abs(dx);
+                  const absDy = Math.abs(dy);
+                  const isNearlyVertical = dist > 0 && absDx < 40;
+                  const isNearlyHorizontal = dist > 0 && absDy < 40;
+                  const curveOffsetX = isNearlyVertical ? Math.max(40, dist * 0.15) : 0;
+                  const curveOffsetY = isNearlyHorizontal ? Math.max(40, dist * 0.15) : 0;
+                  const mx = (from.cx + to.cx) / 2 + curveOffsetX;
+                  const my = (from.cy + to.cy) / 2 - curveOffsetY;
+                  const curvePath = isNearlyVertical || isNearlyHorizontal
+                    ? `M ${from.cx} ${from.cy} Q ${mx} ${my} ${to.cx} ${to.cy}`
+                    : `M ${from.cx} ${from.cy} L ${to.cx} ${to.cy}`;
+
                   return (
                     <g key={conn.id}>
                       {/* Invisible fat hit area for clicking */}
-                      <line
-                        x1={from.cx} y1={from.cy} x2={to.cx} y2={to.cy}
+                      <path
+                        d={curvePath}
                         stroke="transparent"
                         strokeWidth={20}
+                        fill="none"
                         style={{ pointerEvents: "stroke", cursor: "pointer" }}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -712,12 +828,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                           onSelectNode(null);
                         }}
                       />
-                      {/* Visible line — bright and thick */}
-                      <line
-                        x1={from.cx} y1={from.cy} x2={to.cx} y2={to.cy}
+                      {/* Visible curved line */}
+                      <path
+                        d={curvePath}
                         stroke={lineColor}
                         strokeWidth={isNew ? 5 : isSelected ? 4 : isHighlight ? 3.5 : 3}
                         strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
+                        fill="none"
                         filter={lineFilter}
                         strokeLinecap="round"
                         className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`}
@@ -725,11 +842,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       {/* Endpoint dots */}
                       <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
                       <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
-                      {/* Note indicator dot at midpoint */}
+                      {/* Note indicator dot at curve midpoint */}
                       {conn.note && (
                         <circle
-                          cx={(from.cx + to.cx) / 2}
-                          cy={(from.cy + to.cy) / 2}
+                          cx={(from.cx + to.cx + mx) / 3}
+                          cy={(from.cy + to.cy + my) / 3}
                           r={5}
                           fill="#f87171"
                           className="pointer-events-none"
@@ -742,15 +859,22 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 {connectDrag && (() => {
                   const from = getNodeCenter(connectDrag.sourceId);
                   if (!from) return null;
+                  const cdx = connectDrag.mouseX - from.cx;
+                  const cdy = connectDrag.mouseY - from.cy;
+                  const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
+                  const cNearV = cdist > 0 && Math.abs(cdx) < 40;
+                  const cNearH = cdist > 0 && Math.abs(cdy) < 40;
+                  const cmx = (from.cx + connectDrag.mouseX) / 2 + (cNearV ? Math.max(40, cdist * 0.15) : 0);
+                  const cmy = (from.cy + connectDrag.mouseY) / 2 - (cNearH ? Math.max(40, cdist * 0.15) : 0);
                   return (
-                    <line
-                      x1={from.cx} y1={from.cy}
-                      x2={connectDrag.mouseX} y2={connectDrag.mouseY}
+                    <path
+                      d={`M ${from.cx} ${from.cy} Q ${cmx} ${cmy} ${connectDrag.mouseX} ${connectDrag.mouseY}`}
                       stroke="#f87171"
                       strokeWidth={3}
                       strokeOpacity={0.8}
                       strokeDasharray="8 4"
                       strokeLinecap="round"
+                      fill="none"
                       filter="url(#string-glow)"
                       className="pointer-events-none"
                     />
@@ -814,7 +938,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   <div
                     key={node.id}
                     className={`board-node absolute select-none ${opc} ${
-                      dragState?.nodeId === node.id ? "board-node--dragging" : ""
+                      dragState?.nodeId === node.id ? "board-node--dragging" : isArranging ? "board-node--arranging" : ""
                     } ${selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
                     } ${vis === "focused" ? "ring-2 ring-red-500 shadow-xl shadow-red-600/20 rounded-xl" : ""} ${
                       isConnectSource ? "ring-2 ring-red-400 shadow-xl shadow-red-500/30 rounded-xl" : ""
@@ -987,6 +1111,24 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
             </svg>
           </button>
+
+          <div className="mx-0.5 h-5 w-px bg-[#333]" />
+
+          <button
+            onClick={autoArrange}
+            disabled={nodes.length < 2 || isArranging}
+            className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Auto-arrange nodes"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Organize</span>
+          </button>
+
         </div>
 
         {/* ── Pan hint ───────────────────────────────────────────────────────── */}

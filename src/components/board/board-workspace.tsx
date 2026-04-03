@@ -114,29 +114,58 @@ export function BoardWorkspace({
     [boardNodes]
   );
 
+  // Keep a ref to current nodes for overlap checks (avoids stale closure)
+  const boardNodesRef = useRef(boardNodes);
+  boardNodesRef.current = boardNodes;
+
+  // Nudge a drop position so the new card doesn't overlap existing nodes
+  const findClearPosition = useCallback((x: number, y: number, w: number, h: number): { x: number; y: number } => {
+    const PAD = 20;
+    const currentNodes = boardNodesRef.current;
+    const overlaps = (tx: number, ty: number) =>
+      currentNodes.some(n => {
+        const nw = n.kind === "person" ? 260 : 190;
+        const nh = n.kind === "person" ? 300 : 160;
+        return tx < n.position.x + nw + PAD && tx + w + PAD > n.position.x &&
+               ty < n.position.y + nh + PAD && ty + h + PAD > n.position.y;
+      });
+    if (!overlaps(x, y)) return { x, y };
+    // Spiral outward checking 12 angles per ring
+    for (let r = 1; r <= 12; r++) {
+      const dist = (w + PAD) * r * 0.6;
+      for (let a = 0; a < 12; a++) {
+        const angle = (a / 12) * Math.PI * 2;
+        const nx = Math.max(0, x + Math.cos(angle) * dist);
+        const ny = Math.max(0, y + Math.sin(angle) * dist);
+        if (!overlaps(nx, ny)) return { x: nx, y: ny };
+      }
+    }
+    return { x: x + w + PAD, y };
+  }, []);
+
   const addPersonToBoard = useCallback(
     (personId: string, dropX?: number, dropY?: number) => {
       if (isOnBoard(personId)) return;
       const person = people.find((p) => p.id === personId);
       if (!person) return;
 
-      const x = dropX ?? 200 + Math.random() * 400;
-      const y = dropY ?? 100 + Math.random() * 300;
+      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
+      const { x, y } = findClearPosition(raw.x, raw.y, 260, 300);
 
       setBoardNodes((prev) => [
         ...prev,
         { kind: "person", id: personId, data: person, position: { x, y } },
       ]);
     },
-    [people, isOnBoard]
+    [people, isOnBoard, findClearPosition]
   );
 
   const addEvidenceToBoard = useCallback(
     (result: SearchResult, dropX?: number, dropY?: number) => {
       if (isOnBoard(result.id)) return;
 
-      const x = dropX ?? 200 + Math.random() * 400;
-      const y = dropY ?? 100 + Math.random() * 300;
+      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
+      const { x, y } = findClearPosition(raw.x, raw.y, 190, 160);
 
       setBoardNodes((prev) => [
         ...prev,
@@ -149,7 +178,7 @@ export function BoardWorkspace({
         },
       ]);
     },
-    [isOnBoard]
+    [isOnBoard, findClearPosition]
   );
 
   const moveNode = useCallback((id: string, x: number, y: number) => {
@@ -158,19 +187,19 @@ export function BoardWorkspace({
     );
   }, []);
 
+  const batchMoveNodes = useCallback((moves: Record<string, { x: number; y: number }>) => {
+    setBoardNodes((prev) =>
+      prev.map((n) => moves[n.id] ? { ...n, position: moves[n.id] } : n)
+    );
+  }, []);
+
   const selectNode = useCallback((id: string | null) => {
     setSelectedNodeId(id);
-    if (id) {
-      setRightTab("details");
-    } else {
-      setRightTab((prev) => prev === "details" ? "persons" : prev);
-    }
   }, []);
 
   const focusNode = useCallback((id: string | null) => {
     setFocusedNodeId((prev) => {
       const newId = prev === id ? null : id;
-      // Center the board view on the newly focused node
       if (newId) {
         requestAnimationFrame(() => centerOnNode(newId));
       }
@@ -344,6 +373,7 @@ export function BoardWorkspace({
             onSelectNode={selectNode}
             onFocusNode={focusNode}
             onMoveNode={moveNode}
+            onBatchMoveNodes={batchMoveNodes}
             onAddEvidence={addEvidenceToBoard}
             onAddPerson={addPersonToBoard}
             onStartConnection={startConnection}
