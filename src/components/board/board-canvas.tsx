@@ -805,8 +805,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const absDy = Math.abs(dy);
                   const isNearlyVertical = dist > 0 && absDx < 40;
                   const isNearlyHorizontal = dist > 0 && absDy < 40;
-                  const curveOffsetX = isNearlyVertical ? Math.max(40, dist * 0.15) : 0;
-                  const curveOffsetY = isNearlyHorizontal ? Math.max(40, dist * 0.15) : 0;
+                  const curveOffsetX = isNearlyVertical ? dist * 0.02 : 0;
+                  const curveOffsetY = isNearlyHorizontal ? dist * 0.02 : 0;
                   const mx = (from.cx + to.cx) / 2 + curveOffsetX;
                   const my = (from.cy + to.cy) / 2 - curveOffsetY;
                   const curvePath = isNearlyVertical || isNearlyHorizontal
@@ -864,8 +864,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
                   const cNearV = cdist > 0 && Math.abs(cdx) < 40;
                   const cNearH = cdist > 0 && Math.abs(cdy) < 40;
-                  const cmx = (from.cx + connectDrag.mouseX) / 2 + (cNearV ? Math.max(40, cdist * 0.15) : 0);
-                  const cmy = (from.cy + connectDrag.mouseY) / 2 - (cNearH ? Math.max(40, cdist * 0.15) : 0);
+                  const cmx = (from.cx + connectDrag.mouseX) / 2 + (cNearV ? cdist * 0.02 : 0);
+                  const cmy = (from.cy + connectDrag.mouseY) / 2 - (cNearH ? cdist * 0.02 : 0);
                   return (
                     <path
                       d={`M ${from.cx} ${from.cy} Q ${cmx} ${cmy} ${connectDrag.mouseX} ${connectDrag.mouseY}`}

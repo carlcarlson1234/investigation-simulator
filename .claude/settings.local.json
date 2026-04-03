@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(npm install:*)",
+      "Read(//c/Users/13603/investigation-simulator/.claude/**)",
+      "Bash(ls -la .env*)",
+      "Bash(npx next:*)"
+    ]
+  }
+}

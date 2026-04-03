@@ -82,11 +82,14 @@ export function InvestigationOverlay({
   // ─── CREATE CONNECTION ──────────────────────────────────────────────
   if (step === "create-connection") {
     return (
-      <StepCard
-        headline="CONNECT THE DOTS"
-        sub="Drag from the glowing red handle on one card to another"
-        score={score}
-      />
+      <>
+        <HandleArrow targetId="jeffrey-epstein" />
+        <StepCard
+          headline="CONNECT THE DOTS"
+          sub="Drag from the glowing red handle on one card to another"
+          score={score}
+        />
+      </>
     );
   }
 
@@ -236,5 +239,53 @@ function StepCard({
         </div>
       </div>
     </>
+  );
+}
+
+/* ─── Arrow that points at a node's connection handle ─────────────────────── */
+
+function HandleArrow({ targetId }: { targetId: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const handle = document.querySelector(`[data-connect-handle="${targetId}"]`);
+      if (!handle) return;
+      const rect = handle.getBoundingClientRect();
+      setPos({ x: rect.left + rect.width / 2, y: rect.top - 10 });
+    };
+    update();
+    const interval = setInterval(update, 500);
+    return () => clearInterval(interval);
+  }, [targetId]);
+
+  if (!pos) return null;
+
+  return (
+    <div
+      className="fixed z-50 pointer-events-none"
+      style={{
+        left: pos.x - 40,
+        top: pos.y - 110,
+      }}
+    >
+      {/* Downward pointing arrow */}
+      <svg
+        width="80"
+        height="100"
+        viewBox="0 0 80 100"
+        fill="none"
+        className="animate-bounce"
+        style={{ filter: "drop-shadow(0 0 16px rgba(239,68,68,0.7))" }}
+      >
+        <path
+          d="M40 10v60M20 50l20 25 20-25"
+          stroke="#ef4444"
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
   );
 }
