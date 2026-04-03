@@ -61,7 +61,7 @@ export interface BoardConnection {
 
 // ─── Right Panel ────────────────────────────────────────────────────────────
 
-export type RightPanelTab = "persons" | "details" | "timeline";
+export type RightPanelTab = "persons" | "details";
 
 // ─── Timeline ───────────────────────────────────────────────────────────────
 

@@ -6,7 +6,6 @@ import type {
   BoardNode,
   BoardConnection,
   RightPanelTab,
-  TimelineEvent,
   FocusState,
 } from "@/lib/board-types";
 import { IntakePanel } from "./intake-panel";
@@ -18,6 +17,7 @@ import { PhotoFocusView } from "./photo-focus-view";
 import { InvestigationModeChooser } from "./investigation-mode-chooser";
 import { InvestigationOverlay } from "./investigation-overlay";
 import { useInvestigation } from "@/hooks/use-investigation";
+import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -30,9 +30,12 @@ export function BoardWorkspace({
   people,
   stats,
 }: BoardWorkspaceProps) {
+  // ─── Restore saved state (lazy initializers — run once on mount) ────────
+  const [saved] = useState(() => loadBoardState());
+
   // ─── Board State ─────────────────────────────────────────────────────────
-  const [boardNodes, setBoardNodes] = useState<BoardNode[]>([]);
-  const [boardConnections, setBoardConnections] = useState<BoardConnection[]>([]);
+  const [boardNodes, setBoardNodes] = useState<BoardNode[]>(() => saved?.nodes ?? []);
+  const [boardConnections, setBoardConnections] = useState<BoardConnection[]>(() => saved?.connections ?? []);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<RightPanelTab>("persons");
@@ -46,7 +49,7 @@ export function BoardWorkspace({
   const canvasRef = useRef<BoardCanvasHandle>(null);
 
   // ─── Investigation Flow ─────────────────────────────────────────────────
-  const investigation = useInvestigation(boardNodes, boardConnections, people);
+  const investigation = useInvestigation(boardNodes, boardConnections, people, saved?.mode);
   const { autoDetectCompletion } = investigation as ReturnType<typeof useInvestigation> & { autoDetectCompletion: boolean };
 
   // Auto-advance when step conditions are met
@@ -57,6 +60,9 @@ export function BoardWorkspace({
       return () => clearTimeout(t);
     }
   }, [autoDetectCompletion, investigation.isStartMode]);
+
+  // ─── Persist board state to sessionStorage ──────────────────────────────
+  useBoardPersistence(boardNodes, boardConnections, investigation.mode);
 
   // ─── Focus computation ───────────────────────────────────────────────────
 
@@ -271,32 +277,6 @@ export function BoardWorkspace({
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
 
-  // ─── Timeline (from board evidence nodes that have dates) ────────────────
-
-  const timelineEvents = useMemo<TimelineEvent[]>(() => {
-    const events: TimelineEvent[] = [];
-
-    for (const node of boardNodes) {
-      if (node.kind === "evidence" && node.data.date) {
-        const isRelated = focusState
-          ? focusState.nodeId === node.id || focusState.directIds.has(node.id)
-          : true;
-
-        events.push({
-          date: node.data.date,
-          title: node.data.title,
-          description: node.data.snippet.slice(0, 100),
-          itemId: node.id,
-          kind: "evidence",
-          isRelatedToFocus: isRelated,
-        });
-      }
-    }
-
-    events.sort((a, b) => a.date.localeCompare(b.date));
-    return events;
-  }, [boardNodes, focusState]);
-
   // ─── Email selection from inbox ───────────────────────────────────────────
 
   const handleSelectEmail = useCallback(async (emailId: string) => {
@@ -430,7 +410,6 @@ export function BoardWorkspace({
             selectedEmailDetail={selectedEmailDetail}
             focusedNodeId={focusedNodeId}
             focusState={focusState}
-            timelineEvents={timelineEvents}
             boardConnections={boardConnections}
             boardNodes={boardNodes}
             isOnBoard={isOnBoard}

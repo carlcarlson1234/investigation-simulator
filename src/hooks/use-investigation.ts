@@ -55,13 +55,18 @@ export function useInvestigation(
   boardNodes: BoardNode[],
   boardConnections: BoardConnection[],
   people: Person[],
+  savedMode?: InvestigationMode | null,
 ): UseInvestigationReturn {
   const searchParams = useSearchParams();
   const urlMode = searchParams.get("mode");
-  const initialMode: InvestigationMode = urlMode === "free" ? "free" : "start";
+  // Priority: saved session > URL param > default
+  const initialMode: InvestigationMode = savedMode ?? (urlMode === "free" ? "free" : "start");
 
   const [mode, setMode] = useState<InvestigationMode>(initialMode);
-  const [step, setStep] = useState<InvestigationStep>("welcome");
+  // If restoring a session with existing nodes, skip to open investigation
+  const [step, setStep] = useState<InvestigationStep>(() =>
+    savedMode && boardNodes.length > 0 ? "open-investigation" : "welcome"
+  );
   const [completedSteps, setCompletedSteps] = useState<Set<InvestigationStep>>(new Set());
   const [chosenExpansionId, setChosenExpansionId] = useState<string | null>(null);
   const [score, setScore] = useState(0);

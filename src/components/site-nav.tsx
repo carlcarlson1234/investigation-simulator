@@ -1,15 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+
+const STORAGE_KEY = "board-state";
 
 const links = [
   { href: "/", label: "Home" },
   { href: "/board/investigate", label: "Board" },
+  { href: "/timeline", label: "Timeline" },
 ];
 
 export function SiteNav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleReset = () => {
+    if (!confirm("Reset your investigation? All board progress will be cleared.")) return;
+    try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+    router.push("/board/investigate");
+    router.refresh();
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-md">
@@ -26,30 +37,39 @@ export function SiteNav() {
           </span>
         </Link>
 
-        <ul className="flex items-center gap-6">
-          {links.map((link) => {
-            const isActive =
-              link.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(link.href);
+        <div className="flex items-center gap-6">
+          <ul className="flex items-center gap-6">
+            {links.map((link) => {
+              const isActive =
+                link.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(link.href);
 
-            return (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  id={`nav-${link.label.toLowerCase()}`}
-                  className={`font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.2em] transition-colors ${
-                    isActive
-                      ? "text-red-500"
-                      : "text-[#555] hover:text-white"
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    id={`nav-${link.label.toLowerCase()}`}
+                    className={`font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.2em] transition-colors ${
+                      isActive
+                        ? "text-red-500"
+                        : "text-[#888] hover:text-white"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          <button
+            onClick={handleReset}
+            className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-red-400 transition-colors border border-[#333] hover:border-red-600/30 rounded px-2.5 py-1"
+            title="Reset investigation"
+          >
+            Reset
+          </button>
+        </div>
       </nav>
     </header>
   );

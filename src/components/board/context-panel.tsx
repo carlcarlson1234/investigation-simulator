@@ -24,7 +24,6 @@ interface ContextPanelProps {
   selectedEmailDetail: EmailEvidence | null;
   focusedNodeId: string | null;
   focusState: FocusState | null;
-  timelineEvents: TimelineEvent[];
   boardConnections: BoardConnection[];
   boardNodes: BoardNode[];
   isOnBoard: (id: string) => boolean;
@@ -38,7 +37,6 @@ interface ContextPanelProps {
 const TABS: { key: RightPanelTab; label: string }[] = [
   { key: "persons", label: "Persons" },
   { key: "details", label: "Details" },
-  { key: "timeline", label: "Timeline" },
 ];
 
 export function ContextPanel({
@@ -49,7 +47,6 @@ export function ContextPanel({
   selectedEmailDetail,
   focusedNodeId,
   focusState,
-  timelineEvents,
   boardConnections,
   boardNodes,
   isOnBoard,
@@ -103,9 +100,6 @@ export function ContextPanel({
             <DetailsTab selectedNode={selectedNode} boardConnections={boardConnections} boardNodes={boardNodes}
               onFocusNode={onFocusNode} onSelectNode={onSelectNode} focusedNodeId={focusedNodeId} />
           )
-        )}
-        {activeTab === "timeline" && (
-          <TimelineTab events={timelineEvents} focusState={focusState} onSelectNode={onSelectNode} />
         )}
       </div>
     </aside>

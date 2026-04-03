@@ -1,9 +1,56 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { getArchiveStats } from "@/lib/queries";
 
-export default async function HomePage() {
+async function StatsGrid() {
   const stats = await getArchiveStats();
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {[
+        { label: "Emails", value: stats.emailCount.toLocaleString(), icon: "✉️" },
+        { label: "Documents", value: stats.documentCount.toLocaleString(), icon: "📄" },
+        { label: "Photos", value: stats.photoCount.toLocaleString(), icon: "📸" },
+        { label: "Persons", value: String(stats.personCount), icon: "🔍" },
+      ].map((stat, i) => (
+        <div
+          key={stat.label}
+          className="stat-animate glass-card flex flex-col items-center gap-1.5 p-5"
+          style={{ animationDelay: `${i * 0.08}s` }}
+        >
+          <span className="text-2xl">{stat.icon}</span>
+          <span className="text-2xl font-black tabular-nums text-white">
+            {stat.value}
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#666]">
+            {stat.label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
+function StatsFallback() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {["Emails", "Documents", "Photos", "Persons"].map((label, i) => (
+        <div
+          key={label}
+          className="stat-animate glass-card flex flex-col items-center gap-1.5 p-5"
+          style={{ animationDelay: `${i * 0.08}s` }}
+        >
+          <span className="text-2xl opacity-30">⏳</span>
+          <span className="text-2xl font-black tabular-nums text-[#333]">—</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#666]">
+            {label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function HomePage() {
   return (
     <div className="relative overflow-hidden scanline-overlay">
       <div className="hero-orb hero-orb-1" />
@@ -27,15 +74,10 @@ export default async function HomePage() {
           <span className="text-white">EPSTEIN</span>
         </h1>
 
-        <p className="animate-in animate-delay-2 mx-auto mt-6 max-w-lg text-lg leading-relaxed text-[#999]">
-          <span className="text-white font-bold">{stats.emailCount.toLocaleString()}</span> emails.&ensp;
-          <span className="text-white font-bold">{stats.documentCount.toLocaleString()}</span> documents.&ensp;
-          <span className="text-white font-bold">{stats.photoCount.toLocaleString()}</span> photos.
-        </p>
-
-        <p className="animate-in animate-delay-2 mx-auto mt-1 max-w-md text-sm text-[#666]">
-          <span className="text-white font-bold">{stats.personCount}</span> persons of interest.&ensp;
-          <span className="text-white font-bold">{stats.imessageCount.toLocaleString()}</span> iMessages.
+        <p className="animate-in animate-delay-2 mx-auto mt-6 max-w-lg text-base leading-relaxed text-[#999]">
+          An open citizens investigation. Examine the evidence, map the
+          connections, and compare findings with other investigators.
+          Every link you uncover strengthens the collective picture.
         </p>
 
         <div className="animate-in animate-delay-3 mt-10 flex flex-col items-center gap-4">
@@ -58,36 +100,14 @@ export default async function HomePage() {
           >
             Free Explore
           </Link>
-          <p className="text-xs text-[#555] uppercase tracking-widest">
-            Build your investigation board
-          </p>
         </div>
       </section>
 
       {/* ─── Stats ────────────────────────────────────────────── */}
       <section className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: "Emails", value: stats.emailCount.toLocaleString(), icon: "✉️" },
-            { label: "Documents", value: stats.documentCount.toLocaleString(), icon: "📄" },
-            { label: "Photos", value: stats.photoCount.toLocaleString(), icon: "📸" },
-            { label: "Persons", value: String(stats.personCount), icon: "🔍" },
-          ].map((stat, i) => (
-            <div
-              key={stat.label}
-              className="stat-animate glass-card flex flex-col items-center gap-1.5 p-5"
-              style={{ animationDelay: `${i * 0.08}s` }}
-            >
-              <span className="text-2xl">{stat.icon}</span>
-              <span className="text-2xl font-black tabular-nums text-white">
-                {stat.value}
-              </span>
-              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#666]">
-                {stat.label}
-              </span>
-            </div>
-          ))}
-        </div>
+        <Suspense fallback={<StatsFallback />}>
+          <StatsGrid />
+        </Suspense>
       </section>
 
       {/* ─── CTA ──────────────────────────────────────────────── */}
