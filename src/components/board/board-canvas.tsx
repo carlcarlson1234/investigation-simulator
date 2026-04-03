@@ -306,6 +306,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   // Default path focus (5 core columns) and full focus (includes indirect)
   const pathDefaultFocusRef = useRef<FocusState | null>(null);
   const pathFullFocusRef = useRef<FocusState | null>(null);
+  // Saved positions before drill-down so we can restore them
+  const pathSavedPositionsRef = useRef<Record<string, { x: number; y: number }> | null>(null);
   // Measure actual card dimensions from the DOM
   const getCardSize = useCallback((nodeId: string) => {
     const el = viewportRef.current?.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null;
@@ -1626,15 +1628,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         d={curvePath}
                         stroke={lineColor}
                         strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 3.5 : 3}
-                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
+                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? (pathFocus ? 0 : 0.08) : 0.7}
                         fill="none"
                         filter={lineFilter}
                         strokeLinecap="round"
                         className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`}
                       />
                       {/* Endpoint dots */}
-                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
-                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
                       {/* Note indicator dot at curve midpoint */}
                       {conn.note && (
                         <circle
@@ -1724,7 +1726,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               {/* Nodes */}
               {nodes.filter(n => !hiddenNodeIds.has(n.id)).map((node) => {
                 const vis = getNodeVis(node.id);
-                const opc = vis === "dimmed" ? "opacity-15" : vis === "second" ? "opacity-45" : "opacity-100";
+                const opc = vis === "dimmed" ? (pathFocus ? "opacity-0 pointer-events-none" : "opacity-15") : vis === "second" ? "opacity-45" : "opacity-100";
                 const isConnectSource = connectDrag?.sourceId === node.id;
                 const isConnectTarget = connectDrag && connectDrag.sourceId !== node.id;
                 return (
@@ -1754,11 +1756,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         const isOnPath = node.id === fullFocus.nodeId || fullFocus.directIds.has(node.id);
                         if (isOnPath) {
                           if (pathDrillNode === node.id) {
-                            // Clicking same node again — restore default (5-column) view
+                            // Clicking same node again — restore default 5-column view
                             setPathFocus(defaultFocus);
                             setPathDrillNode(null);
                           } else {
-                            // Drill into this node: show it + ALL its connections from the full path set
+                            // Drill: show this node + its connections, hide everything else
                             const drillDirect = new Set<string>();
                             const drillEdges = new Set<string>();
                             for (const c of connections) {
