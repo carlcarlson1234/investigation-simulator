@@ -68,16 +68,27 @@ export default function HomePage() {
           </span>
         </div>
 
-        <h1 className="animate-in animate-delay-1 text-5xl font-black tracking-tight sm:text-7xl lg:text-8xl leading-[0.9]">
-          <span className="gradient-text">INVESTIGATE</span>
-          <br />
-          <span className="text-white">EPSTEIN</span>
+        <h1 className="animate-in animate-delay-1 leading-none">
+          <span className="block text-5xl font-black tracking-tight text-white sm:text-7xl lg:text-8xl">
+            INVESTIGATE
+          </span>
+          <span className="block mt-1 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.4em] text-[#666] sm:text-sm">
+            the
+          </span>
+          <span
+            className="block text-5xl font-black tracking-tight sm:text-7xl lg:text-8xl"
+            style={{
+              color: "#dc2626",
+              textShadow: "0 0 30px rgba(185, 28, 28, 0.5), 0 0 60px rgba(127, 29, 29, 0.3)",
+            }}
+          >
+            EPSTEIN FILES
+          </span>
         </h1>
 
         <p className="animate-in animate-delay-2 mx-auto mt-6 max-w-lg text-base leading-relaxed text-[#999]">
-          An open citizens investigation. Examine the evidence, map the
-          connections, and compare findings with other investigators.
-          Every link you uncover strengthens the collective picture.
+          Explore the photos, videos, emails, documents, and flight logs.
+          Map the connections and become a top citizens investigator.
         </p>
 
         <div className="animate-in animate-delay-3 mt-10 flex flex-col items-center gap-4">
@@ -110,25 +121,6 @@ export default function HomePage() {
         </Suspense>
       </section>
 
-      {/* ─── CTA ──────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6">
-        <div className="glass-card pulse-glow relative p-10 overflow-hidden">
-          <div className="classified-stamp">CLASSIFIED</div>
-          <h2 className="text-2xl font-black uppercase tracking-wider text-white sm:text-3xl">
-            Access Granted
-          </h2>
-          <p className="mt-3 text-base text-[#888]">
-            All evidence files are available for investigation.
-          </p>
-          <Link
-            href="/board/investigate"
-            id="footer-cta"
-            className="mt-6 inline-flex h-12 items-center gap-2 rounded bg-red-600 px-8 text-sm font-black uppercase tracking-widest text-white transition hover:bg-red-700 hover:scale-105"
-          >
-            Start Investigation
-          </Link>
-        </div>
-      </section>
     </div>
   );
 }
