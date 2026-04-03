@@ -56,6 +56,7 @@ export interface BoardConnection {
   label: string;
   strength: number;
   verified: boolean;
+  note?: string;
 }
 
 // ─── Right Panel ────────────────────────────────────────────────────────────

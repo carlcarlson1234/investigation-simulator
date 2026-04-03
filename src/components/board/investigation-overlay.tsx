@@ -22,79 +22,28 @@ interface InvestigationOverlayProps {
   nodeCount: number;
   connectionCount: number;
   evidenceCount: number;
+  score: number;
 }
 
 const STEP_ORDER: InvestigationStep[] = [
-  "place-first-person",
-  "place-second-person",
-  "create-link",
-  "add-evidence",
-  "link-evidence",
-  "add-note",
-  "classify-strength",
-  "choose-expansion",
+  "welcome",
+  "intro-people",
+  "intro-board",
+  "place-epstein",
+  "intro-evidence",
+  "place-evidence",
+  "pick-person",
+  "create-connection",
+  "connection-confirmed",
   "open-investigation",
 ];
 
-/* ──────────────────────────────────────────────────────────────────────────
- *  STEP-SPECIFIC DESCRIPTIONS — bigger, clearer, human-readable
- * ──────────────────────────────────────────────────────────────────────── */
-const STEP_HEADLINES: Record<InvestigationStep, { headline: string; sub: string }> = {
-  "place-first-person": {
-    headline: "PLACE YOUR FIRST SUBJECT",
-    sub: "Drag the person card onto the board to begin your investigation.",
-  },
-  "place-second-person": {
-    headline: "ADD A SECOND PERSON",
-    sub: "Drag a suggested person from the right panel onto the board.",
-  },
-  "create-link": {
-    headline: "CONNECT TWO PEOPLE",
-    sub: "Click one person, then click another to create a connection.",
-  },
-  "add-evidence": {
-    headline: "ATTACH EVIDENCE",
-    sub: "Drag an email or document from the left panel onto the board.",
-  },
-  "link-evidence": {
-    headline: "LINK EVIDENCE TO A PERSON",
-    sub: "Drag the evidence onto a person card to create a connection.",
-  },
-  "add-note": {
-    headline: "ADD A NOTE",
-    sub: "Click a connection line and type a note to record your observations.",
-  },
-  "classify-strength": {
-    headline: "CLASSIFY STRENGTH",
-    sub: "Rate the connection strength to indicate how strong the evidence is.",
-  },
-  "choose-expansion": {
-    headline: "CHOOSE YOUR NEXT LEAD",
-    sub: "Pick a direction to expand your investigation.",
-  },
-  "open-investigation": {
-    headline: "INVESTIGATION OPEN",
-    sub: "You now have full access. Follow leads and build your case.",
-  },
-};
-
 export function InvestigationOverlay({
   step,
-  stepConfig,
-  completedSteps,
   autoDetected,
   onAdvance,
-  onSkip,
   onSwitchToFree,
-  firstPerson,
-  onAddPerson,
-  expansionChoices,
-  onChooseExpansion,
-  clusterComplete,
-  nudges,
-  nodeCount,
-  connectionCount,
-  evidenceCount,
+  score,
 }: InvestigationOverlayProps) {
   const [showAdvanceBtn, setShowAdvanceBtn] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
@@ -103,346 +52,363 @@ export function InvestigationOverlay({
   useEffect(() => {
     if (autoDetected && !prevAutoRef.current) {
       setJustCompleted(true);
-      setTimeout(() => setShowAdvanceBtn(true), 600);
-      setTimeout(() => setJustCompleted(false), 1500);
+      const timer = setTimeout(() => {
+        setShowAdvanceBtn(true);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+    if (!autoDetected) {
+      setShowAdvanceBtn(false);
+      setJustCompleted(false);
     }
     prevAutoRef.current = autoDetected;
   }, [autoDetected]);
 
+  // Auto-advance on detected completion
   useEffect(() => {
-    setShowAdvanceBtn(false);
-  }, [step]);
+    if (autoDetected && justCompleted) {
+      const timer = setTimeout(() => {
+        onAdvance();
+        setJustCompleted(false);
+        setShowAdvanceBtn(false);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [autoDetected, justCompleted, onAdvance]);
 
   const stepIdx = STEP_ORDER.indexOf(step);
-  const totalSteps = STEP_ORDER.length - 1;
-  const headlines = STEP_HEADLINES[step];
+  const totalSteps = STEP_ORDER.length - 1; // exclude open-investigation
 
-  // ─── Open Investigation (nudges only) ─────────────────────────────────
-  if (step === "open-investigation") {
+  // ─── WELCOME SCREEN ─────────────────────────────────────────────────
+  if (step === "welcome") {
     return (
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-3" style={{ pointerEvents: "auto" }}>
-        {clusterComplete && (
-          <div className="rounded-xl border border-green-600/20 bg-[#0a0a0a]/90 backdrop-blur-sm px-6 py-4 shadow-lg animate-in">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-green-500 text-lg">✓</span>
-              <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-green-500/80">
-                Starter Cluster Complete
-              </span>
-            </div>
-            <div className="flex gap-5 text-sm font-bold text-[#666]">
-              <span>👤 {nodeCount}</span>
-              <span>🔗 {connectionCount}</span>
-              <span>📄 {evidenceCount}</span>
-            </div>
-          </div>
-        )}
-        {nudges.length > 0 && (
-          <div className="flex gap-3">
-            {nudges.slice(0, 2).map(nudge => (
-              <div key={nudge.id} className="rounded-lg border border-[#2a2a2a] bg-[#0e0e0e]/90 backdrop-blur-sm px-4 py-3 text-sm text-[#888] shadow flex items-center gap-2">
-                <span className="text-lg">{nudge.icon}</span>
-                <span>{nudge.message}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ─── Choose Expansion ─────────────────────────────────────────────────
-  if (step === "choose-expansion") {
-    return (
-      <div className="absolute inset-0 z-30 flex items-center justify-center" style={{ pointerEvents: "none" }}>
-        {/* Scrim to focus attention */}
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-        <div className="relative rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md p-8 shadow-2xl max-w-lg w-full" style={{ pointerEvents: "auto" }}>
-          <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-red-500/60">
-            Step {stepIdx + 1}/{totalSteps}
-          </span>
-          <h3 className="font-[family-name:var(--font-display)] text-4xl text-white mt-2 mb-1 tracking-wide">{headlines.headline}</h3>
-          <p className="text-sm text-[#888] mb-6">{headlines.sub}</p>
-
-          <div className="space-y-3">
-            {expansionChoices.map(choice => (
-              <button
-                key={choice.id}
-                onClick={() => onChooseExpansion(choice.id)}
-                className="w-full flex items-center gap-4 rounded-xl border border-[#2a2a2a] bg-[#141414] p-4 text-left hover:border-red-500/30 hover:bg-red-950/10 transition group"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#1a1a1a] text-2xl flex-shrink-0 group-hover:bg-red-950/20">
-                  {choice.icon}
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-base font-bold text-white">{choice.label}</h4>
-                  <p className="text-xs text-[#555] mt-0.5">{choice.description}</p>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#333] group-hover:text-red-500/50 transition flex-shrink-0">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
-            ))}
-          </div>
-
-          <button onClick={onSwitchToFree} className="mt-5 w-full text-center font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[#444] hover:text-[#999] transition py-2">
-            Switch to Free Explore →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── PLACE FIRST PERSON ───────────────────────────────────────────────
-  if (step === "place-first-person" && firstPerson) {
-    return (
-      <div className="absolute inset-0 z-30" style={{ pointerEvents: "none" }}>
-        {/* ── Light scrim over the board to focus attention ── */}
-        <div className="absolute inset-0 bg-black/20 pointer-events-none" />
-
-        {/* ── Center: Obvious drop target ── */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-6" style={{ pointerEvents: "none" }}>
-            {/* Pulsing target ring */}
-            <div className="relative">
-              <div className="w-56 h-56 rounded-full border-2 border-dashed border-red-500/25 flex items-center justify-center animate-pulse">
-                <div className="w-36 h-36 rounded-full border-2 border-dashed border-red-500/15 flex items-center justify-center">
-                  <div className="w-5 h-5 rounded-full bg-red-500/25" />
-                </div>
-              </div>
-              {/* Crosshair lines */}
-              <div className="absolute top-1/2 left-0 w-full h-px bg-red-500/10" />
-              <div className="absolute top-0 left-1/2 w-px h-full bg-red-500/10" />
-            </div>
-
-            {/* Drop zone label */}
-            <div className="text-center">
-              <h2 className="font-[family-name:var(--font-display)] text-5xl text-white/15 tracking-wider">
-                DROP HERE
-              </h2>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Right side: Floating card with arrow ── */}
-        <div
-          className="absolute flex items-center gap-5"
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#050505]">
+        {/* Background grid pattern */}
+        <div className="absolute inset-0 opacity-5"
           style={{
-            right: "340px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            pointerEvents: "auto",
+            backgroundImage: "radial-gradient(circle, #dc2626 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
           }}
-        >
-          {/* Animated arrow pointing left */}
-          <div className="flex flex-col items-center gap-1.5 animate-bounce-left">
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" className="text-red-500 drop-shadow-[0_0_12px_rgba(220,38,38,0.5)]">
-              <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.2em] text-red-500/60">
-              Drag
+        />
+
+        {/* Content */}
+        <div className="relative z-10 text-center max-w-2xl px-8">
+          {/* Classified stamp */}
+          <div className="mb-8 inline-flex items-center gap-2 rounded border border-red-900/30 bg-red-950/20 px-4 py-2">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-[family-name:var(--font-mono)] text-xs font-bold uppercase tracking-[0.3em] text-red-500/80">
+              Classified Investigation
             </span>
           </div>
 
-          {/* The person card */}
-          <div
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(
-                "application/board-item",
-                JSON.stringify({ kind: "person", id: firstPerson.id })
-              );
-              e.dataTransfer.effectAllowed = "copy";
-            }}
-            className="group cursor-grab active:cursor-grabbing rounded-xl border-2 border-red-500/40 bg-[#0e0e0e] overflow-hidden shadow-2xl shadow-red-900/30 hover:shadow-red-600/40 hover:border-red-500/60 transition-all duration-300 hover:scale-105 active:scale-95"
-            style={{ width: 220 }}
+          {/* Main title */}
+          <h1 className="font-[family-name:var(--font-display)] text-6xl md:text-7xl text-white tracking-wider leading-tight mb-6">
+            INVESTIGATE THE
+            <br />
+            <span className="text-red-500">REAL EPSTEIN FILES</span>
+          </h1>
+
+          <p className="text-lg text-[#666] mb-12 leading-relaxed max-w-lg mx-auto">
+            Explore 1.7 million emails, 18,000+ photos, and thousands of documents from the public archive.
+          </p>
+
+          {/* Start button */}
+          <button
+            onClick={onAdvance}
+            className="group relative inline-flex items-center gap-3 rounded-xl border-2 border-red-500/40 bg-red-600/10 px-10 py-4 font-[family-name:var(--font-display)] text-2xl text-white tracking-wider hover:bg-red-600/20 hover:border-red-500/60 transition-all duration-300 hover:scale-105"
           >
-            {/* Photo */}
-            <div className="relative h-48 bg-[#080808] overflow-hidden">
-              {firstPerson.imageUrl ? (
-                <img
-                  src={firstPerson.imageUrl}
-                  alt={firstPerson.name}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-red-900/20">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#0e0e0e] to-transparent" />
+            <span>BEGIN INVESTIGATION</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-red-400 group-hover:translate-x-1 transition-transform">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
 
-              {/* POI badge */}
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded bg-black/70 border border-red-900/40 px-2 py-1 backdrop-blur-sm">
-                <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.15em] text-red-500/80">POI</span>
-              </div>
-            </div>
-
-            {/* Info */}
-            <div className="px-4 py-4">
-              <h4 className="font-[family-name:var(--font-display)] text-2xl text-white tracking-wide leading-none">{firstPerson.name}</h4>
-              <p className="mt-1.5 text-xs text-[#555]">Subject of the archive</p>
-              <div className="mt-3 flex items-center gap-2 font-[family-name:var(--font-mono)] text-[10px] text-red-400/60 uppercase tracking-[0.15em]">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-red-500/50">
-                  <path d="M19 12H5M12 19l-7-7 7-7" />
-                </svg>
-                Drag onto board
-              </div>
-            </div>
+          {/* Free explore link */}
+          <div className="mt-8">
+            <button
+              onClick={onSwitchToFree}
+              className="font-[family-name:var(--font-mono)] text-[11px] text-[#444] hover:text-[#888] uppercase tracking-[0.2em] transition"
+            >
+              or explore freely →
+            </button>
           </div>
         </div>
 
-        {/* ── LARGE instruction overlay — PRIMARY command on screen ── */}
-        <StepInstructionOverlay
-          stepIdx={stepIdx}
-          totalSteps={totalSteps}
-          headline={headlines.headline}
-          sub={headlines.sub}
-          showAdvanceBtn={showAdvanceBtn}
-          onAdvance={() => { setShowAdvanceBtn(false); onAdvance(); }}
-          onSwitchToFree={onSwitchToFree}
-          justCompleted={justCompleted}
-          completedSteps={completedSteps}
-          step={step}
-        />
+        {/* Decorative corner marks */}
+        <div className="absolute top-6 left-6 w-8 h-8 border-l-2 border-t-2 border-red-900/30" />
+        <div className="absolute top-6 right-6 w-8 h-8 border-r-2 border-t-2 border-red-900/30" />
+        <div className="absolute bottom-6 left-6 w-8 h-8 border-l-2 border-b-2 border-red-900/30" />
+        <div className="absolute bottom-6 right-6 w-8 h-8 border-r-2 border-b-2 border-red-900/30" />
       </div>
     );
   }
 
-  // ─── Standard step (steps 2-7) ────────────────────────────────────────
-  return (
-    <div className="absolute inset-0 z-30" style={{ pointerEvents: "none" }}>
-      {/* Light scrim over the board during non-panel steps */}
-      {(step === "create-link" || step === "link-evidence" || step === "add-note" || step === "classify-strength") && (
-        <div className="absolute inset-0 bg-black/15 pointer-events-none" />
-      )}
+  // ─── INTRO: PEOPLE PANEL ────────────────────────────────────────────
+  if (step === "intro-people") {
+    return (
+      <div className="fixed inset-0 z-40 pointer-events-none">
+        {/* Dark overlay on left/center where panels aren't visible yet */}
+        <div className="absolute inset-0 bg-black/60" />
 
-      <StepInstructionOverlay
+        {/* Highlight box over right panel */}
+        <div className="absolute right-0 top-12 bottom-0 w-[340px] bg-transparent ring-2 ring-red-500/30 ring-inset" />
+
+        {/* Instruction card — center */}
+        <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents: "auto" }}>
+          <div className="max-w-md text-center">
+            <div className="mb-4 inline-flex items-center gap-2 rounded bg-red-950/40 border border-red-900/30 px-3 py-1">
+              <span className="font-[family-name:var(--font-mono)] text-[10px] text-red-400/80 uppercase tracking-[0.2em]">
+                Step {stepIdx + 1} of {totalSteps}
+              </span>
+            </div>
+            <h2 className="font-[family-name:var(--font-display)] text-4xl text-white tracking-wider mb-3">
+              PEOPLE INDEX
+            </h2>
+            <p className="text-base text-[#888] mb-2">
+              This panel lists every person identified in the archive files.
+            </p>
+            <p className="text-sm text-[#555] mb-8">
+              You&apos;ll drag people from here onto the board.
+            </p>
+            {/* Arrow pointing right */}
+            <div className="flex items-center justify-center gap-3 mb-8 text-red-500/60">
+              <span className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em]">See the panel</span>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-bounce-right">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </div>
+            <button
+              onClick={onAdvance}
+              className="rounded-lg border border-red-500/30 bg-red-600/15 px-8 py-3 font-[family-name:var(--font-display)] text-lg text-white tracking-wider hover:bg-red-600/25 transition"
+            >
+              CONTINUE
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── INTRO: BOARD ───────────────────────────────────────────────────
+  if (step === "intro-board") {
+    return (
+      <div className="fixed inset-0 z-40 pointer-events-none">
+        {/* Light scrim */}
+        <div className="absolute inset-0 bg-black/30" />
+
+        {/* Instruction — center */}
+        <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents: "auto" }}>
+          <div className="max-w-lg text-center">
+            <div className="mb-4 inline-flex items-center gap-2 rounded bg-red-950/40 border border-red-900/30 px-3 py-1">
+              <span className="font-[family-name:var(--font-mono)] text-[10px] text-red-400/80 uppercase tracking-[0.2em]">
+                Step {stepIdx + 1} of {totalSteps}
+              </span>
+            </div>
+            <h2 className="font-[family-name:var(--font-display)] text-4xl text-white tracking-wider mb-3">
+              THE INVESTIGATION BOARD
+            </h2>
+            <p className="text-base text-[#888] mb-8">
+              This is your board — drag people and evidence here to map connections between them.
+            </p>
+            <button
+              onClick={onAdvance}
+              className="rounded-lg border border-red-500/30 bg-red-600/15 px-8 py-3 font-[family-name:var(--font-display)] text-lg text-white tracking-wider hover:bg-red-600/25 transition"
+            >
+              CONTINUE
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── PLACE EPSTEIN ──────────────────────────────────────────────────
+  if (step === "place-epstein") {
+    return (
+      <StepInstructionCard
         stepIdx={stepIdx}
         totalSteps={totalSteps}
-        headline={headlines.headline}
-        sub={headlines.sub}
-        showAdvanceBtn={showAdvanceBtn}
-        onAdvance={() => { setShowAdvanceBtn(false); onAdvance(); }}
-        onSwitchToFree={onSwitchToFree}
-        onSkip={(step === "add-note" || step === "classify-strength") && !showAdvanceBtn ? onSkip : undefined}
-        justCompleted={justCompleted}
-        completedSteps={completedSteps}
-        step={step}
+        headline="PLACE YOUR FIRST SUBJECT"
+        sub="Drag the highlighted person from the right panel onto the board."
+        score={score}
       />
-    </div>
-  );
+    );
+  }
+
+  // ─── INTRO: EVIDENCE PANEL ──────────────────────────────────────────
+  if (step === "intro-evidence") {
+    return (
+      <div className="fixed inset-0 z-40 pointer-events-none">
+        <div className="absolute inset-0 bg-black/30" />
+
+        {/* Highlight box over left panel */}
+        <div className="absolute left-0 top-12 bottom-0 w-[340px] bg-transparent ring-2 ring-red-500/30 ring-inset" />
+
+        <div className="absolute inset-0 flex items-center justify-center" style={{ pointerEvents: "auto" }}>
+          <div className="max-w-md text-center">
+            <div className="mb-4 inline-flex items-center gap-2 rounded bg-red-950/40 border border-red-900/30 px-3 py-1">
+              <span className="font-[family-name:var(--font-mono)] text-[10px] text-red-400/80 uppercase tracking-[0.2em]">
+                Step {stepIdx + 1} of {totalSteps}
+              </span>
+            </div>
+            <h2 className="font-[family-name:var(--font-display)] text-4xl text-white tracking-wider mb-3">
+              EVIDENCE INBOX
+            </h2>
+            <p className="text-base text-[#888] mb-2">
+              Emails, photos, and documents from the archive appear here.
+            </p>
+            <p className="text-sm text-[#555] mb-8">
+              Drag evidence onto the board to support your connections.
+            </p>
+            <div className="flex items-center justify-center gap-3 mb-8 text-red-500/60">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-bounce rotate-180">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+              <span className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em]">See the panel</span>
+            </div>
+            <button
+              onClick={onAdvance}
+              className="rounded-lg border border-red-500/30 bg-red-600/15 px-8 py-3 font-[family-name:var(--font-display)] text-lg text-white tracking-wider hover:bg-red-600/25 transition"
+            >
+              CONTINUE
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── PLACE EVIDENCE ─────────────────────────────────────────────────
+  if (step === "place-evidence") {
+    return (
+      <StepInstructionCard
+        stepIdx={stepIdx}
+        totalSteps={totalSteps}
+        headline="ADD EVIDENCE"
+        sub="Drag a piece of evidence from the left panel onto the board."
+        score={score}
+      />
+    );
+  }
+
+  // ─── PICK PERSON ────────────────────────────────────────────────────
+  if (step === "pick-person") {
+    return (
+      <StepInstructionCard
+        stepIdx={stepIdx}
+        totalSteps={totalSteps}
+        headline="ADD A PERSON OF INTEREST"
+        sub="Pick someone from the right panel — who do you want to investigate?"
+        score={score}
+      />
+    );
+  }
+
+  // ─── CREATE CONNECTION ──────────────────────────────────────────────
+  if (step === "create-connection") {
+    return (
+      <StepInstructionCard
+        stepIdx={stepIdx}
+        totalSteps={totalSteps}
+        headline="CONNECT THE DOTS"
+        sub="Drag from the glowing handle on one card to another to create a connection."
+        score={score}
+      />
+    );
+  }
+
+  // ─── CONNECTION CONFIRMED 🎉 ───────────────────────────────────────
+  if (step === "connection-confirmed") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        {/* Green flash overlay */}
+        <div className="absolute inset-0 bg-green-900/20 animate-pulse" />
+
+        {/* Celebration card */}
+        <div className="relative z-10 max-w-lg text-center animate-scale-in" style={{ pointerEvents: "auto" }}>
+          <div className="rounded-2xl border-2 border-green-500/40 bg-[#0a0a0a]/95 backdrop-blur-md p-8 shadow-2xl shadow-green-900/30">
+            {/* Success icon */}
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-500/15 border-2 border-green-500/30">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-green-400">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </div>
+
+            <h2 className="font-[family-name:var(--font-display)] text-4xl text-green-400 tracking-wider mb-3">
+              CONNECTION CONFIRMED
+            </h2>
+
+            <p className="text-lg text-[#999] mb-6">
+              🎉 <strong className="text-green-300">50 other investigators</strong> have made this same connection!
+            </p>
+
+            {/* Points award */}
+            <div className="inline-flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 px-6 py-3">
+              <span className="text-2xl">🏆</span>
+              <div className="text-left">
+                <p className="font-[family-name:var(--font-mono)] text-xs text-green-400/70 uppercase tracking-[0.2em]">Points Earned</p>
+                <p className="font-[family-name:var(--font-display)] text-3xl text-green-400 tracking-wider">+50</p>
+              </div>
+            </div>
+
+            <p className="mt-6 font-[family-name:var(--font-mono)] text-[10px] text-[#555] uppercase tracking-[0.15em]">
+              Continuing in a moment...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback
+  return null;
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- *  StepInstructionOverlay — the LARGE, primary step instruction card
- *  This is the main visual command on screen during each onboarding step.
- * ──────────────────────────────────────────────────────────────────────────── */
+/* ─── Step Instruction Card (bottom overlay) ───────────────────────────────── */
 
-function StepInstructionOverlay({
+function StepInstructionCard({
   stepIdx,
   totalSteps,
   headline,
   sub,
-  showAdvanceBtn,
-  onAdvance,
-  onSwitchToFree,
-  onSkip,
-  justCompleted,
-  completedSteps,
-  step,
+  score,
 }: {
   stepIdx: number;
   totalSteps: number;
   headline: string;
   sub: string;
-  showAdvanceBtn: boolean;
-  onAdvance: () => void;
-  onSwitchToFree: () => void;
-  onSkip?: (() => void) | undefined;
-  justCompleted: boolean;
-  completedSteps: Set<InvestigationStep>;
-  step: InvestigationStep;
+  score: number;
 }) {
   return (
     <div
-      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-[560px] max-w-[90vw]"
-      style={{ pointerEvents: "auto" }}
+      className="absolute z-40"
+      style={{
+        bottom: 32,
+        left: "50%",
+        transform: "translateX(-50%)",
+        pointerEvents: "auto",
+      }}
     >
-      <div className="relative rounded-2xl border border-[#1a1a1a] bg-[#060606]/98 backdrop-blur-xl px-8 py-7 shadow-2xl shadow-black/50">
-        {/* Ambient red glow at top */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-px bg-gradient-to-r from-transparent via-red-500/40 to-transparent" />
-
-        {/* Step indicator row */}
-        <div className="flex items-center gap-3 mb-4">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-          </span>
-          <span className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.2em] text-red-500/70">
-            Step {stepIdx + 1} of {totalSteps}
-          </span>
-          {/* Progress dots */}
-          <div className="ml-auto flex gap-1.5">
-            {STEP_ORDER.slice(0, -1).map((s) => (
-              <div
-                key={s}
-                className={`rounded-full transition-all duration-300 ${
-                  completedSteps.has(s)
-                    ? "w-4 h-1.5 bg-red-500"
-                    : s === step
-                    ? "w-4 h-1.5 bg-red-500/40"
-                    : "w-1.5 h-1.5 bg-[#2a2a2a]"
-                }`}
-              />
-            ))}
+      <div className="w-[560px] rounded-2xl border border-[#222] bg-[#0a0a0a]/95 backdrop-blur-md p-6 shadow-2xl shadow-black/60">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-red-500/70">
+              Step {stepIdx + 1} / {totalSteps}
+            </span>
           </div>
+          {score > 0 && (
+            <div className="flex items-center gap-1.5 rounded bg-green-500/10 border border-green-500/20 px-2 py-0.5">
+              <span className="text-sm">🏆</span>
+              <span className="font-[family-name:var(--font-mono)] text-[10px] text-green-400 font-bold">{score} pts</span>
+            </div>
+          )}
         </div>
-
-        {/* HEADLINE — the primary command */}
-        <h2 className="font-[family-name:var(--font-display)] text-[clamp(1.5rem,4vw,2.25rem)] text-white tracking-wide leading-[1.1]">
+        <h3 className="font-[family-name:var(--font-display)] text-2xl text-white tracking-wider mb-1">
           {headline}
-        </h2>
-
-        {/* Instruction */}
-        <p className="mt-3 text-base text-[#999] leading-relaxed">
-          {sub}
-        </p>
-
-        {/* Action buttons */}
-        <div className="mt-5 flex items-center gap-3">
-          {showAdvanceBtn && (
-            <button
-              onClick={onAdvance}
-              className="rounded-lg bg-red-600 px-5 py-2.5 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-white shadow-lg shadow-red-600/20 hover:bg-red-500 hover:shadow-red-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              Continue →
-            </button>
-          )}
-          {onSkip && (
-            <button
-              onClick={onSkip}
-              className="rounded-lg border border-[#333] px-5 py-2.5 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-[#555] hover:text-white hover:border-[#555] transition"
-            >
-              Skip
-            </button>
-          )}
-          <button
-            onClick={onSwitchToFree}
-            className="ml-auto font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-[#333] hover:text-[#888] transition"
-          >
-            Free Explore →
-          </button>
-        </div>
+        </h3>
+        <p className="text-sm text-[#888] leading-relaxed">{sub}</p>
       </div>
-
-      {/* Completion flash */}
-      {justCompleted && (
-        <div className="absolute inset-0 rounded-2xl border-2 border-green-500/50 animate-ping pointer-events-none" />
-      )}
     </div>
   );
 }

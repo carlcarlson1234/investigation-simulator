@@ -97,10 +97,10 @@ export function BoardWorkspace({
     canvasRef.current?.centerOnNode(nodeId);
   }, []);
 
-  // First-placement callback - center and flash the node
-  const handleFirstPlacement = useCallback((nodeId: string) => {
-    requestAnimationFrame(() => centerOnNode(nodeId));
-  }, [centerOnNode]);
+  // First-placement callback - node already at drop position, no scroll needed
+  const handleFirstPlacement = useCallback((_nodeId: string) => {
+    // Card lands where the user dropped it, no centering needed
+  }, []);
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -222,6 +222,42 @@ export function BoardWorkspace({
     [connectingFrom, boardConnections]
   );
 
+  // Direct connection — used by drag-to-connect (bypasses two-step connectingFrom)
+  const directConnection = useCallback(
+    (fromId: string, toId: string) => {
+      if (fromId === toId) return;
+      const exists = boardConnections.some(
+        (c) =>
+          (c.sourceId === fromId && c.targetId === toId) ||
+          (c.sourceId === toId && c.targetId === fromId)
+      );
+      if (!exists) {
+        setBoardConnections((prev) => [
+          ...prev,
+          {
+            id: `manual-${Date.now()}`,
+            sourceId: fromId,
+            targetId: toId,
+            type: "manual" as const,
+            label: "Manual connection",
+            strength: 3,
+            verified: false,
+          },
+        ]);
+      }
+    },
+    [boardConnections]
+  );
+
+  const updateConnection = useCallback(
+    (connId: string, updates: Partial<BoardConnection>) => {
+      setBoardConnections((prev) =>
+        prev.map((c) => (c.id === connId ? { ...c, ...updates } : c))
+      );
+    },
+    []
+  );
+
   // ─── Selected node ──────────────────────────────────────────────────────
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
@@ -280,6 +316,17 @@ export function BoardWorkspace({
     return people.filter(p => investigation.suggestedPeopleIds.includes(p.id));
   }, [investigation.isStartMode, investigation.suggestedPeopleIds, people]);
 
+  // Panel visibility — progressive reveal during onboarding
+  const STEP_ORDER_INDEX: Record<string, number> = {
+    "welcome": 0, "intro-people": 1, "intro-board": 2, "place-epstein": 3,
+    "intro-evidence": 4, "place-evidence": 5, "pick-person": 6,
+    "create-connection": 7, "connection-confirmed": 8, "open-investigation": 9,
+  };
+  const stepIdx = investigation.isStartMode ? (STEP_ORDER_INDEX[investigation.step] ?? 9) : 9;
+  const showRightPanel = !investigation.isStartMode || stepIdx >= 1;     // intro-people+
+  const showBoard = !investigation.isStartMode || stepIdx >= 2;          // intro-board+
+  const showLeftPanel = !investigation.isStartMode || stepIdx >= 4;      // intro-evidence+
+
   // Show mode chooser if no mode selected
   if (investigation.mode === null) {
     return (
@@ -293,41 +340,51 @@ export function BoardWorkspace({
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-      {/* LEFT: Email Inbox + Search */}
-      <IntakePanel
-        isOnBoard={isOnBoard}
-        onAddEvidence={addEvidenceToBoard}
-        onSelectEmail={handleSelectEmail}
-        selectedEmailId={selectedEmailId}
-        starterLeads={investigation.isStartMode ? investigation.starterEvidence : undefined}
-        investigationStep={investigation.isStartMode ? investigation.step : null}
-      />
+      {/* LEFT: Email Inbox + Search — hidden until intro-evidence */}
+      <div className={`transition-all duration-700 ease-out h-full ${showLeftPanel ? "w-[340px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
+        {showLeftPanel && (
+          <IntakePanel
+            isOnBoard={isOnBoard}
+            onAddEvidence={addEvidenceToBoard}
+            onSelectEmail={handleSelectEmail}
+            selectedEmailId={selectedEmailId}
+            starterLeads={investigation.isStartMode ? investigation.starterEvidence : undefined}
+            investigationStep={investigation.isStartMode ? investigation.step : null}
+          />
+        )}
+      </div>
 
-      {/* CENTER: Board Canvas */}
-      <BoardCanvas
-        ref={canvasRef}
-        archiveTitle={archiveTitle}
-        archiveSubtitle={archiveSubtitle}
-        nodes={boardNodes}
-        connections={boardConnections}
-        selectedNodeId={selectedNodeId}
-        focusedNodeId={focusedNodeId}
-        focusState={focusState}
-        connectingFrom={connectingFrom}
-        onSelectNode={selectNode}
-        onFocusNode={focusNode}
-        onMoveNode={moveNode}
-        onAddEvidence={addEvidenceToBoard}
-        onAddPerson={addPersonToBoard}
-        onStartConnection={startConnection}
-        onCompleteConnection={completeConnection}
-        onOpenSubjectView={openSubjectView}
-        onOpenPhotoView={openPhotoView}
-        stats={stats}
-        firstPlacementMode={investigation.isStartMode && investigation.step === "place-first-person"}
-        onFirstPlacement={handleFirstPlacement}
-        investigationStep={investigation.isStartMode ? investigation.step : null}
-      />
+      {/* CENTER: Board Canvas — hidden until intro-board */}
+      <div className={`flex flex-col flex-1 min-h-0 transition-all duration-700 ease-out ${showBoard ? "opacity-100" : "opacity-0"}`}>
+        {showBoard && (
+          <BoardCanvas
+            ref={canvasRef}
+            archiveTitle={archiveTitle}
+            archiveSubtitle={archiveSubtitle}
+            nodes={boardNodes}
+            connections={boardConnections}
+            selectedNodeId={selectedNodeId}
+            focusedNodeId={focusedNodeId}
+            focusState={focusState}
+            connectingFrom={connectingFrom}
+            onSelectNode={selectNode}
+            onFocusNode={focusNode}
+            onMoveNode={moveNode}
+            onAddEvidence={addEvidenceToBoard}
+            onAddPerson={addPersonToBoard}
+            onStartConnection={startConnection}
+            onCompleteConnection={completeConnection}
+            onDirectConnection={directConnection}
+            onOpenSubjectView={openSubjectView}
+            onOpenPhotoView={openPhotoView}
+            stats={stats}
+            firstPlacementMode={investigation.isStartMode && investigation.step === "place-epstein"}
+            onFirstPlacement={handleFirstPlacement}
+            investigationStep={investigation.isStartMode ? investigation.step : null}
+            onUpdateConnection={updateConnection}
+          />
+        )}
+      </div>
 
       {/* Investigation Overlay (only in start mode) */}
       {investigation.isStartMode && investigation.step !== "open-investigation" && (
@@ -348,28 +405,33 @@ export function BoardWorkspace({
           nodeCount={boardNodes.filter(n => n.kind === "person").length}
           connectionCount={boardConnections.length}
           evidenceCount={boardNodes.filter(n => n.kind === "evidence").length}
+          score={investigation.score}
         />
       )}
 
-      {/* RIGHT: Persons + Email Detail + Context */}
-      <ContextPanel
-        activeTab={rightTab}
-        onTabChange={setRightTab}
-        people={people}
-        selectedNode={selectedNode}
-        selectedEmailDetail={selectedEmailDetail}
-        focusedNodeId={focusedNodeId}
-        focusState={focusState}
-        timelineEvents={timelineEvents}
-        boardConnections={boardConnections}
-        boardNodes={boardNodes}
-        isOnBoard={isOnBoard}
-        onAddPerson={addPersonToBoard}
-        onFocusNode={focusNode}
-        onSelectNode={selectNode}
-        suggestedPeople={suggestedPeople}
-        investigationStep={investigation.isStartMode ? investigation.step : null}
-      />
+      {/* RIGHT: Persons + Email Detail + Context — hidden until intro-people */}
+      <div className={`transition-all duration-700 ease-out h-full ${showRightPanel ? "w-[340px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
+        {showRightPanel && (
+          <ContextPanel
+            activeTab={rightTab}
+            onTabChange={setRightTab}
+            people={people}
+            selectedNode={selectedNode}
+            selectedEmailDetail={selectedEmailDetail}
+            focusedNodeId={focusedNodeId}
+            focusState={focusState}
+            timelineEvents={timelineEvents}
+            boardConnections={boardConnections}
+            boardNodes={boardNodes}
+            isOnBoard={isOnBoard}
+            onAddPerson={addPersonToBoard}
+            onFocusNode={focusNode}
+            onSelectNode={selectNode}
+            suggestedPeople={suggestedPeople}
+            investigationStep={investigation.isStartMode ? investigation.step : null}
+          />
+        )}
+      </div>
 
       {/* Subject Focus View overlay */}
       {subjectFocusPersonId && (() => {

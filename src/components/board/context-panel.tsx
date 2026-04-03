@@ -73,7 +73,7 @@ export function ContextPanel({
   }, [people, personSearch]);
 
   return (
-    <aside className={`context-panel flex w-80 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden transition-all duration-300 ${
+    <aside className={`context-panel flex h-full w-80 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden transition-all duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
       {/* Tab bar — muted during onboarding */}
@@ -90,7 +90,7 @@ export function ContextPanel({
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {activeTab === "persons" && (
           <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
             isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
@@ -112,171 +112,223 @@ export function ContextPanel({
   );
 }
 
-// ─── Persons Tab ────────────────────────────────────────────────────────────
+// ─── Persons Tab ──────────────────────────────────────────────────────────
 
-function PersonsTab({
-  people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep,
-}: {
+function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep }: {
   people: Person[]; search: string; onSearchChange: (v: string) => void;
   isOnBoard: (id: string) => boolean; onAddPerson: (id: string) => void;
   focusedNodeId: string | null; onFocusNode: (id: string | null) => void;
   suggestedPeople?: Person[];
   investigationStep?: InvestigationStep | null;
 }) {
-  const [peopleExpanded, setPeopleExpanded] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const isOnboarding = investigationStep != null;
-  const showFullList = !isOnboarding || peopleExpanded;
+
+  // IDs of suggested people to exclude from the "all" list
+  const suggestedIds = useMemo(() => new Set((suggestedPeople || []).map(p => p.id)), [suggestedPeople]);
+
+  // When searching, filter; when not, show all
+  const isSearching = searchOpen && search.trim().length > 0;
+
+  // Non-suggested people (everyone else)
+  const otherPeople = useMemo(() => people.filter(p => !suggestedIds.has(p.id)), [people, suggestedIds]);
 
   return (
-    <div className="p-3 space-y-2">
-      {/* ── SUGGESTED PEOPLE — MUCH LARGER during onboarding ── */}
-      {suggestedPeople && suggestedPeople.length > 0 && (
-        <div className={`rounded-lg border border-red-500/20 bg-red-950/10 ${isOnboarding ? "p-4 mb-4" : "p-2.5 mb-3"}`}>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-            <span className={`font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-red-500/80 ${
-              isOnboarding ? "text-xs" : "text-[9px]"
-            }`}>
-              👤 Suggested People
-            </span>
-          </div>
-          <div className={isOnboarding ? "space-y-3" : "space-y-1"}>
-            {suggestedPeople.map(person => (
-              <div
-                key={person.id}
-                draggable={!isOnBoard(person.id)}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
-                  e.dataTransfer.effectAllowed = "copy";
-                }}
-                className={`flex items-center gap-3 rounded-lg border transition ${
-                  isOnBoard(person.id)
-                    ? "border-green-600/20 bg-green-950/10 opacity-50"
-                    : isOnboarding
-                    ? "border-red-500/25 bg-[#111] hover:border-red-500/40 cursor-grab active:cursor-grabbing shadow-md shadow-red-900/10 pulse-glow"
-                    : "border-red-500/10 bg-[#111] hover:border-red-500/30"
-                } ${isOnboarding ? "p-3" : "p-2"}`}
-              >
-                {/* Photo — larger in onboarding */}
-                <div className={`rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0 border border-[#333] ${
-                  isOnboarding ? "h-14 w-14" : "h-8 w-8"
-                }`}>
-                  {person.imageUrl ? (
-                    <img src={person.imageUrl} alt={person.name} className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-[#444] text-xs">👤</div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`font-bold text-white truncate ${isOnboarding ? "font-[family-name:var(--font-display)] text-base tracking-wide" : "text-[11px]"}`}>{person.name}</p>
-                  {person.photoCount > 0 && <p className={`text-[#555] ${isOnboarding ? "text-[10px]" : "text-[8px]"}`}>📸 {person.photoCount} photos</p>}
-                </div>
-                {isOnBoard(person.id) ? (
-                  <span className={`font-[family-name:var(--font-mono)] font-bold text-green-500/60 uppercase ${isOnboarding ? "text-[10px]" : "text-[8px]"}`}>Added</span>
-                ) : (
-                  <button
-                    onClick={() => onAddPerson(person.id)}
-                    className={`font-[family-name:var(--font-mono)] font-bold uppercase tracking-wider transition ${
-                      isOnboarding
-                        ? "text-[11px] rounded-md bg-red-600/15 border border-red-600/30 px-3 py-1.5 text-red-400 hover:bg-red-600/25 hover:text-red-300"
-                        : "text-[8px] text-red-500/60 hover:text-red-400"
-                    }`}
-                  >
-                    + Add
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── FULL PEOPLE LIST: collapsed during onboarding ── */}
-      {isOnboarding && !showFullList ? (
-        <div className="flex flex-col items-center px-2 py-4">
-          <button
-            onClick={() => setPeopleExpanded(true)}
-            className="w-full rounded-lg border border-[#222] bg-[#111] px-4 py-3 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-[#555] hover:text-[#999] hover:border-[#444] hover:bg-[#161616] transition text-center"
-          >
-            Browse All People ↓
-          </button>
-          <p className="mt-2 font-[family-name:var(--font-mono)] text-[10px] text-[#333] text-center">
-            {people.length} persons of interest
-          </p>
-        </div>
-      ) : (
-        <>
-          {isOnboarding && peopleExpanded && (
-            <button
-              onClick={() => setPeopleExpanded(false)}
-              className="w-full mb-2 py-1.5 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#444] hover:text-white transition text-center"
-            >
-              ↑ Collapse
-            </button>
-          )}
-          <div className="relative mb-3">
-            <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted/40"
-              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <div className="p-3 space-y-1.5">
+      {/* ── SEARCH BAR ── */}
+      <div className="sticky top-0 z-10 bg-[#0a0a0a] pb-2 -mx-3 px-3 pt-0">
+        {searchOpen ? (
+          <div className="relative">
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-red-500/50"
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
             </svg>
             <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search 473 people…"
-              className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-7 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none transition"
+              autoFocus
+              placeholder={`Search ${people.length} people…`}
+              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#444] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
             />
+            <button
+              onClick={() => { setSearchOpen(false); onSearchChange(""); }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555] hover:text-white transition"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
+        ) : (
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="w-full flex items-center gap-2.5 rounded-lg border border-[#222] bg-[#111] px-3 py-2.5 text-[#555] hover:border-[#444] hover:text-[#888] transition"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.12em]">
+              Search {people.length} people
+            </span>
+          </button>
+        )}
+      </div>
 
-          <div className="font-[family-name:var(--font-mono)] text-[11px] text-[#555] mb-2">{people.length} persons of interest</div>
+      {/* Suggested People — pinned at top */}
+      {!isSearching && suggestedPeople && suggestedPeople.length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+              <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/80">
+                Suggested
+              </span>
+            </div>
+            {suggestedPeople.map(person => (
+              <PersonCard
+                key={person.id}
+                person={person}
+                isOnBoard={isOnBoard(person.id)}
+                isFocused={focusedNodeId === person.id}
+                isSuggested
+                isActiveTarget={isOnboarding && !isOnBoard(person.id) && (
+                  investigationStep === "place-epstein" || investigationStep === "pick-person"
+                )}
+                onAddPerson={onAddPerson}
+                onFocusNode={onFocusNode}
+              />
+            ))}
+          </div>
+        )}
 
-          {people.map((person) => {
-            const onBoard = isOnBoard(person.id);
-            const focused = focusedNodeId === person.id;
-            return (
-              <div key={person.id}
-                draggable={!onBoard}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
-                  e.dataTransfer.effectAllowed = "copy";
-                }}
-                className={`group rounded border p-3 transition ${
-                  focused ? "border-red-500/40 bg-red-600/10" :
-                  onBoard ? "border-red-500/20 bg-red-600/5 opacity-60" :
-                  "border-[#2a2a2a] bg-[#141414] hover:border-red-500/30 cursor-grab active:cursor-grabbing"
-                }`}>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                  <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70">Person of Interest</span>
-                  {person.photoCount > 0 && (
-                    <span className="ml-auto text-[10px] font-bold text-[#555]">📸 {person.photoCount}</span>
-                  )}
-                </div>
-                <h4 className="font-[family-name:var(--font-display)] text-lg text-white tracking-wide leading-none">{person.name}</h4>
-                {person.source && <p className="mt-0.5 text-[11px] text-[#666]">{person.source}</p>}
-                {onBoard && <span className="text-[10px] font-bold text-red-500/60">✓ On board</span>}
+        {/* Divider */}
+        {!isSearching && suggestedPeople && suggestedPeople.length > 0 && otherPeople.length > 0 && (
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="flex-1 h-px bg-[#222]" />
+            <span className="font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.15em] text-[#444]">
+              All People
+            </span>
+            <div className="flex-1 h-px bg-[#222]" />
+          </div>
+        )}
 
-                <div className="mt-2 flex gap-1.5">
-                  {!onBoard && (
-                    <button onClick={() => onAddPerson(person.id)}
-                      className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-500/70 opacity-0 group-hover:opacity-100 hover:bg-red-600/20 hover:text-red-400 transition">
-                      + Add
-                    </button>
-                  )}
-                  {onBoard && (
-                    <button onClick={() => onFocusNode(person.id)}
-                      className={`rounded px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider transition ${
-                        focused ? "bg-red-600/20 text-red-400 border border-red-600/30" : "bg-red-600/10 border border-red-600/20 text-red-500/60 opacity-0 group-hover:opacity-100"
-                      }`}>
-                      {focused ? "Unfocus" : "Focus"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </>
-      )}
+        {/* All people (or search results) */}
+        {(isSearching ? people : otherPeople).map(person => (
+          <PersonCard
+            key={person.id}
+            person={person}
+            isOnBoard={isOnBoard(person.id)}
+            isFocused={focusedNodeId === person.id}
+            isSuggested={false}
+            isActiveTarget={false}
+            onAddPerson={onAddPerson}
+            onFocusNode={onFocusNode}
+          />
+        ))}
+
+        {isSearching && people.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-[#555] text-sm">No people found</p>
+            <p className="text-[#333] text-xs mt-1">Try a different search term</p>
+          </div>
+        )}
+    </div>
+  );
+}
+
+// ── Person Card (used in both suggested and all-people lists) ────────────────
+
+function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget, onAddPerson, onFocusNode }: {
+  person: Person;
+  isOnBoard: boolean;
+  isFocused: boolean;
+  isSuggested: boolean;
+  isActiveTarget: boolean;
+  onAddPerson: (id: string) => void;
+  onFocusNode: (id: string | null) => void;
+}) {
+  return (
+    <div
+      draggable={!isOnBoard}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className={`group rounded-xl border overflow-hidden transition-all ${
+        isActiveTarget
+          ? "border-red-500/50 bg-red-950/20 shadow-lg shadow-red-600/15 ring-1 ring-red-500/30 cursor-grab active:cursor-grabbing"
+          : isFocused
+          ? "border-red-500/40 bg-red-600/10"
+          : isOnBoard
+          ? "border-green-600/15 bg-green-950/5 opacity-50"
+          : isSuggested
+          ? "border-red-500/25 bg-[#111] hover:border-red-500/40 cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-red-900/10"
+          : "border-[#1e1e1e] bg-[#0e0e0e] hover:border-[#333] hover:bg-[#111] cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-black/30"
+      }`}
+    >
+      {/* Large photo */}
+      <div className="relative w-full h-24 bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a] overflow-hidden">
+        {person.imageUrl ? (
+          <img src={person.imageUrl} alt={person.name} className="h-full w-full object-cover"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        ) : (
+          <div className="h-full w-full flex items-center justify-center">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.7" className="text-[#222]">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e0e] via-transparent to-transparent" />
+        {/* POI badge */}
+        <div className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded bg-black/60 border border-red-900/30 px-1.5 py-0.5 backdrop-blur-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+          <span className="font-[family-name:var(--font-mono)] text-[7px] uppercase tracking-wider text-red-400/80">POI</span>
+        </div>
+        {/* On-board check */}
+        {isOnBoard && (
+          <div className="absolute top-1.5 right-1.5 rounded bg-green-900/50 border border-green-600/30 px-1.5 py-0.5 backdrop-blur-sm">
+            <span className="text-[8px] font-bold text-green-400">✓ On Board</span>
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="px-3 py-2.5">
+        <p className="font-[family-name:var(--font-display)] text-[15px] font-bold text-white tracking-wide leading-tight truncate">{person.name}</p>
+        <div className="flex items-center gap-2 mt-1">
+          {person.photoCount > 0 && (
+            <span className="text-[10px] text-[#555]">📸 {person.photoCount}</span>
+          )}
+          {person.source && (
+            <span className="text-[10px] text-[#444] truncate">{person.source}</span>
+          )}
+        </div>
+
+        {/* Action */}
+        <div className="mt-2">
+          {isOnBoard ? (
+            isFocused ? (
+              <button onClick={(e) => { e.stopPropagation(); onFocusNode(null); }}
+                className="w-full rounded-lg bg-red-600/20 border border-red-600/30 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-red-400 hover:bg-red-600/30 transition text-center">
+                Unfocus
+              </button>
+            ) : null
+          ) : isActiveTarget ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg bg-red-600/20 border border-red-500/40 px-3 py-2 text-red-400 animate-pulse">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-bounce">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider">Drag to Board</span>
+            </div>
+          ) : (
+            <button onClick={(e) => { e.stopPropagation(); onAddPerson(person.id); }}
+              className="w-full rounded-lg bg-[#1a1a1a] border border-[#333] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-[#666] opacity-0 group-hover:opacity-100 hover:text-white hover:bg-[#222] transition text-center">
+              + Add to Board
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -10,22 +10,23 @@ export type InvestigationMode = "start" | "free" | null;
 // ─── Step Progression ───────────────────────────────────────────────────────
 
 export type InvestigationStep =
-  | "place-first-person"      // Step 1: Drag Epstein onto the board
-  | "place-second-person"     // Step 3: Place second anchor person
-  | "create-link"             // Step 4: Connect the two people
-  | "add-evidence"            // Step 5: Bring evidence onto the board
-  | "link-evidence"           // Step 6: Connect evidence to a person
-  | "add-note"                // Step 7: Add a descriptive note to a connection
-  | "classify-strength"       // Step 8: Tag evidence strength (optional)
-  | "choose-expansion"        // Step 9: Pick a follow-up direction
-  | "open-investigation";     // Done — free investigation with suggestions
+  | "welcome"                 // Fullscreen cinematic intro
+  | "intro-people"            // Right panel slides in — "this is where people are"
+  | "intro-board"             // Board revealed — "this is the board"
+  | "place-epstein"           // Drag Epstein from right panel onto board
+  | "intro-evidence"          // Left panel appears — "this is the evidence"
+  | "place-evidence"          // Drag a piece of evidence onto board
+  | "pick-person"             // Pick Clinton or Maxwell from right panel
+  | "create-connection"       // Connect two nodes
+  | "connection-confirmed"    // Green glow celebration + points
+  | "open-investigation";     // Done — free investigation
 
 // ─── Starter Packet ─────────────────────────────────────────────────────────
 
 export interface StarterPerson {
   personId: string;
   name: string;
-  reason: string;           // Why this person is in the starter, e.g. "127 photo detections"
+  reason: string;           // Why this person is in the starter
   stepLabel: string;        // What to show in the prompt
 }
 
@@ -37,7 +38,7 @@ export interface StarterEvidence {
 
 export interface StarterPacket {
   firstPerson: StarterPerson;
-  secondPerson: StarterPerson;
+  secondPersonOptions: StarterPerson[];  // Multiple choices for step 7
   evidence: StarterEvidence[];
 }
 
@@ -77,6 +78,7 @@ export interface InvestigationState {
   nudges: Nudge[];
   expansionChoices: ExpansionChoice[];
   clusterComplete: boolean;
+  score: number;
   /** Tracks which person IDs the user chose to skip (for expansion suggestions) */
   skippedPersonIds: Set<string>;
 }

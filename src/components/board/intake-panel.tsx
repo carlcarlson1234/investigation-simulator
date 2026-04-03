@@ -21,24 +21,34 @@ interface IntakePanelProps {
 
 export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep }: IntakePanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>("emails");
-  const [inboxExpanded, setInboxExpanded] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const isOnboarding = investigationStep != null;
-  // Show full inbox by default in Free Explore, collapsed in investigation
-  const showFullContent = !isOnboarding || inboxExpanded;
+
+  // When search is opened, switch to search tab; when closed, go back to emails
+  const handleOpenSearch = () => {
+    setSearchOpen(true);
+    setActiveTab("search");
+  };
+  const handleCloseSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setActiveTab("emails");
+  };
 
   return (
-    <aside className={`intake-panel flex w-80 flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
+    <aside className={`intake-panel flex h-full w-80 flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
-      {/* Tab bar — muted during onboarding */}
+      {/* Tab bar */}
       <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
-        isOnboarding && !inboxExpanded ? "opacity-40" : ""
+        isOnboarding ? "opacity-40" : ""
       }`}>
         <button
-          onClick={() => setActiveTab("emails")}
+          onClick={() => { setActiveTab("emails"); setSearchOpen(false); }}
           className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-            activeTab === "emails"
+            activeTab === "emails" && !searchOpen
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
           }`}
@@ -46,9 +56,9 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
           ✉️ Inbox
         </button>
         <button
-          onClick={() => setActiveTab("photos")}
+          onClick={() => { setActiveTab("photos"); setSearchOpen(false); }}
           className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-            activeTab === "photos"
+            activeTab === "photos" && !searchOpen
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
           }`}
@@ -56,9 +66,9 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
           📷 Photos
         </button>
         <button
-          onClick={() => setActiveTab("search")}
+          onClick={handleOpenSearch}
           className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-            activeTab === "search"
+            searchOpen
               ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
               : "text-[#555] hover:text-white"
           }`}
@@ -67,106 +77,152 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         </button>
       </div>
 
-      {/* ── STARTER LEADS (always visible, MUCH LARGER in investigation mode) ── */}
-      {starterLeads && starterLeads.length > 0 && (
-        <div className={`flex-shrink-0 border-b border-[#1a1a1a] ${isOnboarding ? "p-4" : "p-3"}`}>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-            <span className={`font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-red-500/80 ${
-              isOnboarding ? "text-xs" : "text-[10px]"
-            }`}>
-              🎯 Starter Evidence
-            </span>
+      {/* ── SEARCH BAR (collapsible, above everything) ── */}
+      <div className="flex-shrink-0 bg-[#0a0a0a] border-b border-[#1a1a1a] px-3 pt-3 pb-2">
+        {searchOpen ? (
+          <div className="relative">
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-red-500/50"
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+              placeholder="Search all evidence…"
+              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#444] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
+            />
+            <button
+              onClick={handleCloseSearch}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555] hover:text-white transition"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <div className={isOnboarding ? "space-y-3" : "space-y-1.5"}>
-            {starterLeads.map(lead => (
-              <div
-                key={lead.id}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(
-                    "application/board-item",
-                    JSON.stringify({ kind: "evidence", data: lead })
-                  );
-                  e.dataTransfer.effectAllowed = "copy";
-                }}
-                className={`rounded-lg border cursor-grab active:cursor-grabbing transition-all ${
-                  isOnBoard(lead.id)
-                    ? "border-green-600/20 bg-green-950/10 opacity-50"
-                    : isOnboarding
-                    ? "border-red-500/30 bg-red-950/15 hover:border-red-500/50 hover:bg-red-950/20 shadow-lg shadow-red-900/10 pulse-glow"
-                    : "border-red-500/20 bg-red-950/10 hover:border-red-500/40 hover:bg-red-950/15"
-                } ${isOnboarding ? "p-4" : "p-2.5"}`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={isOnboarding ? "text-2xl" : "text-base"}>
-                    {lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}
+        ) : (
+          <button
+            onClick={handleOpenSearch}
+            className="w-full flex items-center gap-2.5 rounded-lg border border-[#222] bg-[#111] px-3 py-2.5 text-[#555] hover:border-[#444] hover:text-[#888] transition"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.12em]">
+              Search evidence
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* ── MAIN CONTENT (scrollable) ── */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {/* Search results mode */}
+        {searchOpen ? (
+          <EvidenceSearch isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} externalQuery={searchQuery} />
+        ) : (
+          <>
+            {/* ── STARTER EVIDENCE ── */}
+            {starterLeads && starterLeads.length > 0 && (
+              <div className={`flex-shrink-0 border-b border-[#1a1a1a] ${isOnboarding ? "p-4" : "p-3"}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
                   </span>
-                  <div className="flex-1 min-w-0">
-                    <p className={`font-bold text-white truncate ${isOnboarding ? "text-sm" : "text-xs"}`}>{lead.title}</p>
-                    <p className={`text-[#777] truncate mt-0.5 ${isOnboarding ? "text-xs" : "text-[10px]"}`}>{lead.snippet}</p>
-                  </div>
-                  {isOnBoard(lead.id) ? (
-                    <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-green-500/60 uppercase tracking-wider">On Board</span>
-                  ) : (
-                    <button
-                      onClick={() => onAddEvidence(lead)}
-                      className={`font-[family-name:var(--font-mono)] font-bold uppercase tracking-wider transition ${
-                        isOnboarding
-                          ? "text-[11px] rounded-md bg-red-600/15 border border-red-600/30 px-3 py-1.5 text-red-400 hover:bg-red-600/25 hover:text-red-300"
-                          : "text-[9px] text-red-500/60 hover:text-red-400"
+                  <span className={`font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-red-500/80 ${
+                    isOnboarding ? "text-xs" : "text-[10px]"
+                  }`}>
+                    🎯 Starter Evidence
+                  </span>
+                </div>
+                <div className={isOnboarding ? "space-y-4" : "space-y-1.5"}>
+                  {starterLeads.map(lead => (
+                    <div
+                      key={lead.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(
+                          "application/board-item",
+                          JSON.stringify({ kind: "evidence", data: lead })
+                        );
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      className={`rounded-xl border cursor-grab active:cursor-grabbing transition-all overflow-hidden ${
+                        isOnBoard(lead.id)
+                          ? "border-green-600/20 bg-green-950/10 opacity-50"
+                          : isOnboarding
+                          ? "border-red-500/30 bg-[#0e0e0e] hover:border-red-500/50 shadow-lg shadow-red-900/15"
+                          : "border-red-500/20 bg-red-950/10 hover:border-red-500/40 hover:bg-red-950/15"
                       }`}
                     >
-                      + Add
-                    </button>
-                  )}
+                      {/* Photo preview */}
+                      {isOnboarding && lead.type === 'photo' && (
+                        <div className="relative w-full h-36 bg-[#080808] overflow-hidden">
+                          <img
+                            src={`https://assets.getkino.com/cdn-cgi/image/width=400,quality=80,format=auto/photos-deboned/${lead.id}`}
+                            alt={lead.title}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e0e] via-transparent to-transparent" />
+                          <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-black/60 border border-red-900/30 px-1.5 py-0.5 backdrop-blur-sm">
+                            <span className="text-[9px] text-red-400">📸</span>
+                            <span className="font-[family-name:var(--font-mono)] text-[8px] uppercase tracking-wider text-red-400/80">Photo</span>
+                          </div>
+                        </div>
+                      )}
+                      <div className={isOnboarding ? "p-4" : "p-2.5"}>
+                        <div className="flex items-start gap-3">
+                          {(!isOnboarding || lead.type !== 'photo') && (
+                            <span className={isOnboarding ? "text-2xl mt-0.5" : "text-base"}>
+                              {lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}
+                            </span>
+                          )}
+                          {isOnboarding && lead.type === 'email' && (
+                            <span className="text-2xl mt-0.5">✉️</span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-bold text-white ${isOnboarding ? "text-sm" : "text-xs truncate"}`}>{lead.title}</p>
+                            <p className={`text-[#888] mt-1 ${isOnboarding ? "text-xs leading-relaxed line-clamp-3" : "text-[10px] truncate"}`}>{lead.snippet}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-end">
+                          {isOnBoard(lead.id) ? (
+                            <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-green-500/60 uppercase tracking-wider">✓ On Board</span>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onAddEvidence(lead); }}
+                              className={`font-[family-name:var(--font-mono)] font-bold uppercase tracking-wider transition ${
+                                isOnboarding
+                                  ? "text-xs rounded-lg bg-red-600/15 border border-red-600/30 px-4 py-2 text-red-400 hover:bg-red-600/25 hover:text-red-300"
+                                  : "text-[9px] text-red-500/60 hover:text-red-400"
+                              }`}
+                            >
+                              + Add to Board
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* ── FULL CONTENT: collapsed during onboarding, expanded in free explore ── */}
-      {isOnboarding && !showFullContent ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <button
-            onClick={() => setInboxExpanded(true)}
-            className="w-full rounded-lg border border-[#222] bg-[#111] px-4 py-3 font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.15em] text-[#555] hover:text-[#999] hover:border-[#444] hover:bg-[#161616] transition text-center"
-          >
-            Browse Full Inbox ↓
-          </button>
-          <p className="mt-2 font-[family-name:var(--font-mono)] text-[10px] text-[#333] text-center">
-            1.7M+ emails available
-          </p>
-        </div>
-      ) : (
-        <>
-          {isOnboarding && inboxExpanded && (
-            <button
-              onClick={() => setInboxExpanded(false)}
-              className="flex-shrink-0 w-full border-b border-[#1a1a1a] py-1.5 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#444] hover:text-white transition text-center"
-            >
-              ↑ Collapse
-            </button>
-          )}
-          {activeTab === "emails" ? (
-            <EmailInbox
-              isOnBoard={isOnBoard}
-              onAddEvidence={onAddEvidence}
-              onSelectEmail={onSelectEmail}
-              selectedEmailId={selectedEmailId}
-            />
-          ) : activeTab === "photos" ? (
-            <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
-          ) : (
-            <EvidenceSearch isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
-          )}
-        </>
-      )}
+            {/* Tab content */}
+            {activeTab === "emails" ? (
+              <EmailInbox
+                isOnBoard={isOnBoard}
+                onAddEvidence={onAddEvidence}
+                onSelectEmail={onSelectEmail}
+                selectedEmailId={selectedEmailId}
+              />
+            ) : activeTab === "photos" ? (
+              <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+            ) : null}
+          </>
+        )}
+      </div>
     </aside>
   );
 
@@ -349,7 +405,7 @@ function EmailInbox({
                   "application/board-item",
                   JSON.stringify({ id: email.id, kind: "evidence", data: emailToSearchResult(email) })
                 );
-                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.effectAllowed = "move";
               }}
               className={`group border-b border-[#1a1a1a] px-3 py-2.5 cursor-pointer transition ${
                 isSelected
@@ -598,7 +654,7 @@ function PhotoGallery({
                     "application/board-item",
                     JSON.stringify({ id: photo.id, kind: "evidence", data: photoToSearchResult(photo) })
                   );
-                  e.dataTransfer.effectAllowed = "copy";
+                  e.dataTransfer.effectAllowed = "move";
                 }}
                 className={`group relative rounded-lg overflow-hidden border transition cursor-pointer ${
                   onBoard
@@ -756,9 +812,11 @@ function PhotoGallery({
 function EvidenceSearch({
   isOnBoard,
   onAddEvidence,
+  externalQuery,
 }: {
   isOnBoard: (id: string) => boolean;
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+  externalQuery?: string;
 }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<EvidenceType | "all">("all");
@@ -766,6 +824,9 @@ function EvidenceSearch({
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Use external query when provided
+  const effectiveQuery = externalQuery !== undefined ? externalQuery : query;
 
   const doSearch = useCallback(async (q: string, type: EvidenceType | "all") => {
     setLoading(true);
@@ -786,32 +847,35 @@ function EvidenceSearch({
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) { setResults([]); setHasSearched(false); return; }
-    debounceRef.current = setTimeout(() => doSearch(query, typeFilter), 350);
+    if (!effectiveQuery.trim()) { setResults([]); setHasSearched(false); return; }
+    debounceRef.current = setTimeout(() => doSearch(effectiveQuery, typeFilter), 350);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query, typeFilter, doSearch]);
+  }, [effectiveQuery, typeFilter, doSearch]);
 
   return (
     <>
       <div className="flex-shrink-0 border-b border-[#1a1a1a] p-3">
-        <div className="relative">
-          <svg
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
-            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-          >
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search all evidence…"
-            className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-9 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none focus:ring-1 focus:ring-red-600/20 transition"
-            id="evidence-search"
-          />
-        </div>
+        {/* Only show internal search input when not driven by external query */}
+        {externalQuery === undefined && (
+          <div className="relative mb-2">
+            <svg
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search all evidence…"
+              className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-9 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none focus:ring-1 focus:ring-red-600/20 transition"
+              id="evidence-search"
+            />
+          </div>
+        )}
 
-        <div className="mt-2 flex gap-1 flex-wrap">
+        <div className="flex gap-1 flex-wrap">
           {(["all", "email", "document", "photo", "imessage"] as const).map((t) => (
             <button
               key={t}
@@ -869,7 +933,7 @@ function EvidenceSearch({
                   "application/board-item",
                   JSON.stringify({ id: result.id, kind: "evidence", data: result })
                 );
-                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.effectAllowed = "move";
               }}
               className={`group rounded border p-2.5 transition ${
                 onBoard

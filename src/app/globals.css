@@ -496,3 +496,36 @@ body {
 .animate-bounce-left {
   animation: bounce-left 1.2s ease-in-out infinite;
 }
+
+/* Bounce arrow right — intro-people step */
+@keyframes bounce-right {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(12px);
+  }
+}
+
+.animate-bounce-right {
+  animation: bounce-right 1.2s ease-in-out infinite;
+}
+
+/* Scale in — celebration card */
+@keyframes scale-in {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.5s ease-out forwards;
+}

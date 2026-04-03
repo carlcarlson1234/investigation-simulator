@@ -29,21 +29,25 @@ export interface UseInvestigationReturn {
   nudges: Nudge[];
   clusterComplete: boolean;
   isStartMode: boolean;
+  score: number;
   /** The starter evidence items to show in the left panel */
   starterEvidence: SearchResult[];
   /** The suggested people IDs to highlight in the right panel */
   suggestedPeopleIds: string[];
+  /** Whether the current step's completion condition is met */
+  autoDetectCompletion: boolean;
 }
 
 const STEP_ORDER: InvestigationStep[] = [
-  "place-first-person",
-  "place-second-person",
-  "create-link",
-  "add-evidence",
-  "link-evidence",
-  "add-note",
-  "classify-strength",
-  "choose-expansion",
+  "welcome",
+  "intro-people",
+  "intro-board",
+  "place-epstein",
+  "intro-evidence",
+  "place-evidence",
+  "pick-person",
+  "create-connection",
+  "connection-confirmed",
   "open-investigation",
 ];
 
@@ -54,12 +58,13 @@ export function useInvestigation(
 ): UseInvestigationReturn {
   const searchParams = useSearchParams();
   const urlMode = searchParams.get("mode");
-  const initialMode: InvestigationMode = urlMode === "free" ? "free" : urlMode === "start" ? "start" : null;
+  const initialMode: InvestigationMode = urlMode === "free" ? "free" : "start";
 
   const [mode, setMode] = useState<InvestigationMode>(initialMode);
-  const [step, setStep] = useState<InvestigationStep>("place-first-person");
+  const [step, setStep] = useState<InvestigationStep>("welcome");
   const [completedSteps, setCompletedSteps] = useState<Set<InvestigationStep>>(new Set());
   const [chosenExpansionId, setChosenExpansionId] = useState<string | null>(null);
+  const [score, setScore] = useState(0);
 
   const isStartMode = mode === "start";
 
@@ -69,12 +74,17 @@ export function useInvestigation(
     const currentIdx = STEP_ORDER.indexOf(step);
     if (currentIdx < STEP_ORDER.length - 1) {
       setCompletedSteps(prev => new Set([...prev, step]));
-      setStep(STEP_ORDER[currentIdx + 1]);
+
+      const nextStep = STEP_ORDER[currentIdx + 1];
+      // Award points on connection-confirmed
+      if (nextStep === "connection-confirmed") {
+        setScore(50);
+      }
+      setStep(nextStep);
     }
   }, [step]);
 
   const skipStep = useCallback(() => {
-    // Skip current step (for optional steps like classify-strength)
     advanceStep();
   }, [advanceStep]);
 
@@ -84,42 +94,40 @@ export function useInvestigation(
 
   // ─── Auto-detect step completion ──────────────────────────────────────────
 
-  // Check if conditions for current step are met
   const autoDetectCompletion = useMemo(() => {
     if (!isStartMode) return false;
 
     switch (step) {
-      case "place-first-person":
+      case "place-epstein":
         return boardNodes.some(n => n.id === STARTER_PACKET.firstPerson.personId);
-      case "place-second-person":
-        return boardNodes.some(n => n.id === STARTER_PACKET.secondPerson.personId);
-      case "create-link":
-        return boardConnections.some(c => {
-          const ids = [c.sourceId, c.targetId];
-          return ids.includes(STARTER_PACKET.firstPerson.personId)
-            && ids.includes(STARTER_PACKET.secondPerson.personId);
-        });
-      case "add-evidence":
+      case "place-evidence":
         return boardNodes.some(n => n.kind === "evidence");
-      case "link-evidence": {
-        const evidenceNodes = boardNodes.filter(n => n.kind === "evidence");
-        return evidenceNodes.some(en =>
-          boardConnections.some(c =>
-            (c.sourceId === en.id || c.targetId === en.id)
-          )
-        );
+      case "pick-person": {
+        const optionIds = STARTER_PACKET.secondPersonOptions.map(p => p.personId);
+        return boardNodes.some(n => optionIds.includes(n.id));
       }
+      case "create-connection":
+        return boardConnections.length > 0;
       default:
         return false;
     }
   }, [step, boardNodes, boardConnections, isStartMode]);
 
+  // Auto-advance on connection-confirmed after 3 seconds
+  useEffect(() => {
+    if (step === "connection-confirmed") {
+      const timer = setTimeout(() => {
+        advanceStep();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [step, advanceStep]);
+
   // ─── Expansion ────────────────────────────────────────────────────────────
 
   const chooseExpansion = useCallback((choiceId: string) => {
     setChosenExpansionId(choiceId);
-    setCompletedSteps(prev => new Set([...prev, "choose-expansion"]));
-    setStep("open-investigation");
+    setCompletedSteps(prev => new Set([...prev, "open-investigation"]));
   }, []);
 
   const expansionPeopleIds = useMemo(() => {
@@ -134,7 +142,6 @@ export function useInvestigation(
 
     const result: Nudge[] = [];
 
-    // Check for unlinked evidence
     const evidenceNodes = boardNodes.filter(n => n.kind === "evidence");
     const unlinked = evidenceNodes.filter(en =>
       !boardConnections.some(c => c.sourceId === en.id || c.targetId === en.id)
@@ -149,7 +156,6 @@ export function useInvestigation(
       });
     }
 
-    // Check for people with no connections
     const personNodes = boardNodes.filter(n => n.kind === "person");
     const isolated = personNodes.filter(pn =>
       !boardConnections.some(c => c.sourceId === pn.id || c.targetId === pn.id)
@@ -164,7 +170,6 @@ export function useInvestigation(
       });
     }
 
-    // Suggest expanding if board is small
     if (boardNodes.length < 6) {
       result.push({
         id: "expand-board",
@@ -181,7 +186,7 @@ export function useInvestigation(
   // ─── Cluster completion detection ─────────────────────────────────────────
 
   const clusterComplete = useMemo(() => {
-    return completedSteps.has("link-evidence") || completedSteps.has("add-note");
+    return completedSteps.has("create-connection");
   }, [completedSteps]);
 
   // ─── Starter evidence for left panel ──────────────────────────────────────
@@ -197,10 +202,12 @@ export function useInvestigation(
     if (!isStartMode) return [];
 
     switch (step) {
-      case "place-first-person":
+      case "intro-people":
+      case "intro-board":
+      case "place-epstein":
         return [STARTER_PACKET.firstPerson.personId];
-      case "place-second-person":
-        return [STARTER_PACKET.secondPerson.personId];
+      case "pick-person":
+        return STARTER_PACKET.secondPersonOptions.map(p => p.personId);
       default:
         if (chosenExpansionId) return expansionPeopleIds;
         return [];
@@ -228,8 +235,9 @@ export function useInvestigation(
     nudges,
     clusterComplete,
     isStartMode,
+    score,
     starterEvidence,
     suggestedPeopleIds,
     autoDetectCompletion,
-  } as UseInvestigationReturn & { autoDetectCompletion: boolean };
+  };
 }

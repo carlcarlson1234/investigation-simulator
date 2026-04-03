@@ -38,8 +38,10 @@ interface BoardCanvasProps {
   onAddPerson: (personId: string, x?: number, y?: number) => void;
   onStartConnection: (fromId: string) => void;
   onCompleteConnection: (toId: string) => void;
+  onDirectConnection?: (fromId: string, toId: string) => void;
   onOpenSubjectView: (personId: string) => void;
   onOpenPhotoView: (photoId: string) => void;
+  onUpdateConnection?: (connId: string, updates: Partial<BoardConnection>) => void;
   stats: ArchiveStats;
   firstPlacementMode?: boolean;
   onFirstPlacement?: (nodeId: string) => void;
@@ -63,8 +65,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onAddPerson,
     onStartConnection,
     onCompleteConnection,
+    onDirectConnection,
     onOpenSubjectView,
     onOpenPhotoView,
+    onUpdateConnection,
     stats,
     firstPlacementMode,
     onFirstPlacement,
@@ -90,6 +94,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   /* ── Collapsed evidence groups ─────────────────────────────────────────── */
   // Key = "personId:evidenceType", value = whether collapsed
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  /* ── Selected connection ────────────────────────────────────────────────── */
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const selectedConnection = connections.find(c => c.id === selectedConnectionId) || null;
+
+  /* ── Connect-drag state (handle-based) ──────────────────────────────────── */
+  const [connectDrag, setConnectDrag] = useState<{
+    sourceId: string; mouseX: number; mouseY: number;
+  } | null>(null);
 
   const toggleCollapse = useCallback((personId: string, evType: EvidenceType) => {
     const key = `${personId}:${evType}`;
@@ -189,10 +202,23 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const scrollX = scaledX - vp.clientWidth / 2;
     const scrollY = scaledY - vp.clientHeight / 2;
 
-    vp.scrollTo({ left: scrollX, top: scrollY, behavior: "smooth" });
+    vp.scrollTo({ left: scrollX, top: scrollY, behavior: "auto" });
   }, [nodes, zoom]);
 
   useImperativeHandle(ref, () => ({ centerOnNode }), [centerOnNode]);
+
+  /* ── Pre-center viewport on mount ─────────────────────────────────────── */
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    // Start scrolled to center of world so the drop target is visible
+    vp.scrollTo({
+      left: (WORLD_W * zoom) / 2 - vp.clientWidth / 2,
+      top: (WORLD_H * zoom) / 2 - vp.clientHeight / 2,
+      behavior: "auto",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── Zoom helpers ──────────────────────────────────────────────────────── */
   const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
@@ -360,19 +386,78 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (connectingFrom) onStartConnection("");
+        if (connectDrag) setConnectDrag(null);
+        else if (connectingFrom) onStartConnection("");
         else if (focusedNodeId) onFocusNode(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusedNodeId, connectingFrom, onFocusNode, onStartConnection]);
+  }, [focusedNodeId, connectingFrom, connectDrag, onFocusNode, onStartConnection]);
+
+  // ─── Connect-drag mouse tracking ──────────────────────────────────────
+
+  const handleConnectHandleDown = useCallback(
+    (e: React.MouseEvent, nodeId: string) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const vp = viewportRef.current;
+      if (!vp) return;
+      const rect = vp.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left + vp.scrollLeft) / zoom;
+      const worldY = (e.clientY - rect.top + vp.scrollTop) / zoom;
+      setConnectDrag({ sourceId: nodeId, mouseX: worldX, mouseY: worldY });
+    },
+    [zoom]
+  );
+
+  useEffect(() => {
+    if (!connectDrag) return;
+    const onMove = (e: MouseEvent) => {
+      const vp = viewportRef.current;
+      if (!vp) return;
+      const rect = vp.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left + vp.scrollLeft) / zoom;
+      const worldY = (e.clientY - rect.top + vp.scrollTop) / zoom;
+      setConnectDrag(prev => prev ? { ...prev, mouseX: worldX, mouseY: worldY } : null);
+    };
+    const onUp = (e: MouseEvent) => {
+      // Use elementFromPoint for reliable hit detection
+      const elUnder = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      let targetId: string | null = null;
+      if (elUnder) {
+        const handleEl = elUnder.closest("[data-connect-handle]");
+        const cardEl = elUnder.closest(".board-node");
+        if (handleEl) {
+          targetId = handleEl.getAttribute("data-connect-handle");
+        } else if (cardEl) {
+          const handleInCard = cardEl.querySelector("[data-connect-handle]");
+          if (handleInCard) targetId = handleInCard.getAttribute("data-connect-handle");
+        }
+      }
+      if (targetId && targetId !== connectDrag.sourceId) {
+        if (onDirectConnection) {
+          onDirectConnection(connectDrag.sourceId, targetId);
+        } else {
+          onStartConnection(connectDrag.sourceId);
+          requestAnimationFrame(() => onCompleteConnection(targetId!));
+        }
+      }
+      setConnectDrag(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [connectDrag, zoom, onStartConnection, onCompleteConnection, onDirectConnection]);
 
   // ─── Drop ─────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
+    e.dataTransfer.dropEffect = "move";
     setDropHighlight(true);
   }, []);
 
@@ -390,11 +475,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         let x = Math.max(0, (e.clientX - rect.left + vp.scrollLeft) / zoom - 90);
         let y = Math.max(0, (e.clientY - rect.top + vp.scrollTop) / zoom - 45);
 
-        // In first-placement mode, snap person to center of world
-        if (firstPlacementMode && parsed.kind === "person") {
-          x = WORLD_W / 2 - 130;
-          y = WORLD_H / 2 - 130;
-        }
+        // First-placement: place where the user dropped, no forced snap
 
         if (parsed.kind === "person") {
           onAddPerson(parsed.id, x, y);
@@ -409,10 +490,24 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     [zoom, onAddEvidence, onAddPerson, firstPlacementMode, onFirstPlacement]
   );
 
+  // Returns the bottom-edge center of the card (where the handle is)
   function getNodeCenter(nodeId: string): { cx: number; cy: number } | null {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
-    return { cx: node.position.x + 95, cy: node.position.y + 50 };
+    // Try to measure actual DOM element for accurate height
+    const handleEl = document.querySelector(`[data-connect-handle="${nodeId}"]`);
+    if (handleEl) {
+      const cardEl = handleEl.closest(".board-node") as HTMLElement | null;
+      if (cardEl) {
+        const w = cardEl.offsetWidth;
+        const h = cardEl.offsetHeight;
+        return { cx: node.position.x + w / 2, cy: node.position.y + h };
+      }
+    }
+    // Fallback to estimates
+    const w = node.kind === "person" ? 260 : 190;
+    const h = node.kind === "person" ? 340 : 160;
+    return { cx: node.position.x + w / 2, cy: node.position.y + h };
   }
 
   /* ── Computed sizes ───────────────────────────────────────────────────── */
@@ -513,12 +608,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 transform: `scale(${zoom})`,
               }}
             >
-              {/* Red string connections */}
-              <svg className="pointer-events-none absolute inset-0" style={{ zIndex: 0, width: "100%", height: "100%" }}>
+              {/* Red string connections — bright & thick */}
+              <svg className="absolute inset-0" style={{ zIndex: 5, width: "100%", height: "100%", pointerEvents: "none" }}>
                 <defs>
                   <filter id="string-glow">
-                    <feGaussianBlur stdDeviation="2" result="blur" />
+                    <feGaussianBlur stdDeviation="4" result="blur" />
                     <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                  <filter id="string-glow-strong">
+                    <feGaussianBlur stdDeviation="6" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
                       <feMergeNode in="blur" />
                       <feMergeNode in="SourceGraphic" />
                     </feMerge>
@@ -530,21 +633,85 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   if (!from || !to) return null;
                   const vis = getEdgeVis(conn.id);
                   const isHighlight = vis === "highlight";
+                  const isSelected = conn.id === selectedConnectionId;
                   return (
                     <g key={conn.id}>
+                      {/* Invisible fat hit area for clicking */}
                       <line
                         x1={from.cx} y1={from.cy} x2={to.cx} y2={to.cy}
-                        stroke="#dc2626"
-                        strokeWidth={isHighlight ? 2.5 : 1.5}
-                        strokeOpacity={isHighlight ? 0.8 : vis === "faded" ? 0.06 : 0.35}
-                        strokeDasharray={conn.verified ? "none" : "none"}
-                        filter={isHighlight ? "url(#string-glow)" : undefined}
-                        className="transition-all duration-300"
+                        stroke="transparent"
+                        strokeWidth={20}
+                        style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedConnectionId(conn.id === selectedConnectionId ? null : conn.id);
+                          onSelectNode(null);
+                        }}
                       />
+                      {/* Visible line — bright and thick */}
+                      <line
+                        x1={from.cx} y1={from.cy} x2={to.cx} y2={to.cy}
+                        stroke={isSelected ? "#f87171" : "#ef4444"}
+                        strokeWidth={isSelected ? 4 : isHighlight ? 3.5 : 3}
+                        strokeOpacity={isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
+                        filter={isSelected ? "url(#string-glow-strong)" : isHighlight ? "url(#string-glow)" : "url(#string-glow)"}
+                        strokeLinecap="round"
+                        className="transition-all duration-300 pointer-events-none"
+                      />
+                      {/* Endpoint dots */}
+                      <circle cx={from.cx} cy={from.cy} r={4} fill="#ef4444" fillOpacity={vis === "faded" ? 0.08 : 0.6} className="pointer-events-none" />
+                      <circle cx={to.cx} cy={to.cy} r={4} fill="#ef4444" fillOpacity={vis === "faded" ? 0.08 : 0.6} className="pointer-events-none" />
+                      {/* Note indicator dot at midpoint */}
+                      {conn.note && (
+                        <circle
+                          cx={(from.cx + to.cx) / 2}
+                          cy={(from.cy + to.cy) / 2}
+                          r={5}
+                          fill="#f87171"
+                          className="pointer-events-none"
+                        />
+                      )}
                     </g>
                   );
                 })}
+                {/* Live connect-drag line */}
+                {connectDrag && (() => {
+                  const from = getNodeCenter(connectDrag.sourceId);
+                  if (!from) return null;
+                  return (
+                    <line
+                      x1={from.cx} y1={from.cy}
+                      x2={connectDrag.mouseX} y2={connectDrag.mouseY}
+                      stroke="#f87171"
+                      strokeWidth={3}
+                      strokeOpacity={0.8}
+                      strokeDasharray="8 4"
+                      strokeLinecap="round"
+                      filter="url(#string-glow)"
+                      className="pointer-events-none"
+                    />
+                  );
+                })()}
               </svg>
+
+              {/* Connection editor popup */}
+              {selectedConnection && (() => {
+                const from = getNodeCenter(selectedConnection.sourceId);
+                const to = getNodeCenter(selectedConnection.targetId);
+                if (!from || !to) return null;
+                const mx = (from.cx + to.cx) / 2;
+                const my = (from.cy + to.cy) / 2;
+                return (
+                  <ConnectionEditor
+                    connection={selectedConnection}
+                    x={mx}
+                    y={my}
+                    nodes={nodes}
+                    onUpdate={(updates) => onUpdateConnection?.(selectedConnection.id, updates)}
+                    onClose={() => setSelectedConnectionId(null)}
+                  />
+                );
+              })()}
               {/* First-placement center drop zone */}
               {firstPlacementMode && nodes.length === 0 && (
                 <div
@@ -573,13 +740,17 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               {nodes.filter(n => !hiddenNodeIds.has(n.id)).map((node) => {
                 const vis = getNodeVis(node.id);
                 const opc = vis === "dimmed" ? "opacity-15" : vis === "second" ? "opacity-45" : "opacity-100";
+                const isConnectSource = connectDrag?.sourceId === node.id;
+                const isConnectTarget = connectDrag && connectDrag.sourceId !== node.id;
                 return (
                   <div
                     key={node.id}
                     className={`board-node absolute select-none ${opc} ${
                       selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
                     } ${vis === "focused" ? "ring-2 ring-red-500 shadow-xl shadow-red-600/20 rounded-xl" : ""} ${
-                      connectingFrom && connectingFrom !== node.id ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-500/60 rounded-xl" : ""
+                      isConnectSource ? "ring-2 ring-red-400 shadow-xl shadow-red-500/30 rounded-xl" : ""
+                    } ${isConnectTarget ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-400 hover:shadow-lg hover:shadow-red-500/20 rounded-xl" : ""
+                    } ${connectingFrom && connectingFrom !== node.id ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-500/60 rounded-xl" : ""
                     }`}
                     style={{
                       left: node.position.x, top: node.position.y,
@@ -606,11 +777,27 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         }
                         collapsedGroups={collapsedGroups}
                         onToggleCollapse={(evType) => toggleCollapse(node.id, evType)}
-                        onConnect={() => onStartConnection(node.id)} onFocus={() => onFocusNode(node.id)} />
+                        onFocus={() => onFocusNode(node.id)} />
                     ) : (
                       <EvidenceCard data={node.data} evidenceType={node.evidenceType} isSelected={selectedNodeId === node.id}
-                        onConnect={() => onStartConnection(node.id)} onFocus={() => onFocusNode(node.id)} />
+                        onFocus={() => onFocusNode(node.id)} />
                     )}
+                    {/* Glowing connection handle at bottom center */}
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 -bottom-3 z-20 flex flex-col items-center"
+                      data-connect-handle={node.id}
+                      onMouseDown={(e) => handleConnectHandleDown(e, node.id)}
+                    >
+                      <div className={`w-6 h-6 rounded-full border-2 cursor-crosshair transition-all ${
+                        isConnectSource
+                          ? "bg-red-500 border-red-400 shadow-[0_0_16px_4px_rgba(239,68,68,0.6)]"
+                          : isConnectTarget
+                            ? "bg-red-500/60 border-red-400/80 shadow-[0_0_12px_3px_rgba(239,68,68,0.4)] scale-110"
+                            : "bg-red-600/40 border-red-500/50 shadow-[0_0_8px_2px_rgba(239,68,68,0.25)] hover:bg-red-500/70 hover:shadow-[0_0_14px_4px_rgba(239,68,68,0.5)] hover:scale-110"
+                      }`}>
+                        <div className="w-full h-full rounded-full bg-red-400/30 animate-ping" style={{ animationDuration: '2s' }} />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -634,15 +821,34 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         count={group.nodes.length}
                         isSelected={false}
                         onExpand={() => toggleCollapse(personId, group.type)}
-                        onConnect={() => onStartConnection(group.nodes[0].id)}
                       />
                     </div>
                   );
                 })
               )}
 
-              {/* Empty state */}
-              {nodes.length === 0 && (
+              {/* Drop target crosshair during onboarding */}
+              {firstPlacementMode && nodes.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="flex flex-col items-center gap-6">
+                    <div className="relative">
+                      <div className="w-56 h-56 rounded-full border-2 border-dashed border-red-500/25 flex items-center justify-center animate-pulse">
+                        <div className="w-36 h-36 rounded-full border-2 border-dashed border-red-500/15 flex items-center justify-center">
+                          <div className="w-5 h-5 rounded-full bg-red-500/25" />
+                        </div>
+                      </div>
+                      <div className="absolute top-1/2 left-0 w-full h-px bg-red-500/10" />
+                      <div className="absolute top-0 left-1/2 w-px h-full bg-red-500/10" />
+                    </div>
+                    <h2 className="font-[family-name:var(--font-display)] text-5xl text-white/15 tracking-wider">
+                      DROP HERE
+                    </h2>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state — only in free explore, not during onboarding */}
+              {nodes.length === 0 && !investigationStep && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center">
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-600/10 border border-red-600/20">
@@ -714,7 +920,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
         {/* ── Pan hint ───────────────────────────────────────────────────────── */}
         <div className="absolute bottom-4 left-4 z-40 font-[family-name:var(--font-mono)] text-[10px] text-[#444] uppercase tracking-[0.15em] pointer-events-none select-none">
-          Drag to pan · Ctrl+Scroll to zoom
+          Drag to pan · Ctrl+Scroll to zoom · Drag handles to connect
         </div>
       </div>
     </div>
@@ -723,8 +929,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
 // ─── Person Card (large suspect dossier card) ──────────────────────────────
 
-function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse }: {
-  data: Person; isSelected: boolean; onConnect: () => void; onFocus: () => void;
+function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse }: {
+  data: Person; isSelected: boolean; onFocus: () => void;
   connectedEvidence?: { emails: number; documents: number; photos: number; total: number };
   evidenceGroups?: { type: EvidenceType; count: number }[];
   collapsedGroups?: Record<string, boolean>;
@@ -842,11 +1048,6 @@ function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, e
 
         {/* Actions */}
         <div className="mt-2.5 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
-          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-            Link
-          </button>
           <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
             onMouseDown={(e) => e.stopPropagation()}
             className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
@@ -862,8 +1063,8 @@ function PersonCard({ data, isSelected, onConnect, onFocus, connectedEvidence, e
 
 const PHOTO_CDN = "https://assets.getkino.com";
 
-function EvidenceCard({ data, evidenceType, isSelected, onConnect, onFocus }: {
-  data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onConnect: () => void; onFocus: () => void;
+function EvidenceCard({ data, evidenceType, isSelected, onFocus }: {
+  data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onFocus: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
 
@@ -938,11 +1139,6 @@ function EvidenceCard({ data, evidenceType, isSelected, onConnect, onFocus }: {
           )}
 
           <div className="mt-2 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
-            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-              Link
-            </button>
             <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
               onMouseDown={(e) => e.stopPropagation()}
               className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
@@ -975,11 +1171,6 @@ function EvidenceCard({ data, evidenceType, isSelected, onConnect, onFocus }: {
       )}
 
       <div className="mt-2 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
-        <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-          Link
-        </button>
         <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
           onMouseDown={(e) => e.stopPropagation()}
           className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
@@ -997,13 +1188,11 @@ function EvidenceGroupCard({
   count, 
   isSelected, 
   onExpand,
-  onConnect,
 }: {
   evidenceType: EvidenceType;
   count: number;
   isSelected: boolean;
   onExpand: () => void;
-  onConnect: () => void;
 }) {
   return (
     <div className={`board-evidence-group w-[140px] rounded-lg cursor-grab active:cursor-grabbing relative ${
@@ -1035,14 +1224,119 @@ function EvidenceGroupCard({
             className="flex-1 rounded bg-[#1a1a1a] border border-[#333] px-2 py-1 text-[8px] font-black uppercase tracking-wider text-[#888] hover:text-white hover:bg-[#222] transition">
             Expand
           </button>
-          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onConnect(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="rounded bg-red-600/10 border border-red-600/20 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-            Link
-          </button>
         </div>
       </div>
     </div>
   );
 }
 
+
+/* ─── Connection Editor Popup ─────────────────────────────────────────────── */
+
+function ConnectionEditor({
+  connection,
+  x,
+  y,
+  nodes,
+  onUpdate,
+  onClose,
+}: {
+  connection: BoardConnection;
+  x: number;
+  y: number;
+  nodes: BoardNode[];
+  onUpdate: (updates: Partial<BoardConnection>) => void;
+  onClose: () => void;
+}) {
+  const [noteText, setNoteText] = useState(connection.note || "");
+  const [strength, setStrength] = useState(connection.strength);
+
+  const sourceNode = nodes.find(n => n.id === connection.sourceId);
+  const targetNode = nodes.find(n => n.id === connection.targetId);
+  const sourceName = sourceNode ? (sourceNode.kind === "person" ? sourceNode.data.name : sourceNode.data.title) : connection.sourceId;
+  const targetName = targetNode ? (targetNode.kind === "person" ? targetNode.data.name : targetNode.data.title) : connection.targetId;
+
+  return (
+    <div
+      className="absolute z-40"
+      style={{
+        left: x - 160,
+        top: y - 200,
+        pointerEvents: "auto",
+      }}
+    >
+      <div className="w-[320px] rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md p-4 shadow-2xl shadow-black/60">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-red-500/70">
+            Connection
+          </span>
+          <button
+            onClick={onClose}
+            className="text-[#555] hover:text-white transition text-sm"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Connection endpoints */}
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs font-bold text-white truncate max-w-[120px]">{sourceName}</span>
+          <span className="text-red-500/40">—</span>
+          <span className="text-xs font-bold text-white truncate max-w-[120px]">{targetName}</span>
+        </div>
+
+        {/* Note input */}
+        <div className="mb-3">
+          <label className="block font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.15em] text-[#555] mb-1.5">
+            Note
+          </label>
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="e.g. Frequently photographed together"
+            className="w-full rounded-lg border border-[#2a2a2a] bg-[#141414] px-3 py-2 text-sm text-white placeholder:text-[#444] focus:border-red-600/40 focus:outline-none transition resize-none"
+            rows={2}
+          />
+        </div>
+
+        {/* Strength rating */}
+        <div className="mb-4">
+          <label className="block font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.15em] text-[#555] mb-1.5">
+            Strength
+          </label>
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map(s => (
+              <button
+                key={s}
+                onClick={() => setStrength(s)}
+                className={`w-9 h-9 rounded-lg border text-sm font-bold transition ${
+                  s <= strength
+                    ? "border-red-500/40 bg-red-600/20 text-red-400"
+                    : "border-[#2a2a2a] bg-[#141414] text-[#444] hover:border-[#444] hover:text-[#888]"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-between mt-1 font-[family-name:var(--font-mono)] text-[8px] text-[#333]">
+            <span>WEAK</span>
+            <span>STRONG</span>
+          </div>
+        </div>
+
+        {/* Save button */}
+        <button
+          onClick={() => {
+            onUpdate({ note: noteText || undefined, strength });
+            onClose();
+          }}
+          className="w-full rounded-lg bg-red-600/20 border border-red-600/30 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-400 hover:bg-red-600/30 hover:text-red-300 transition"
+        >
+          Save Connection
+        </button>
+      </div>
+    </div>
+  );
+}

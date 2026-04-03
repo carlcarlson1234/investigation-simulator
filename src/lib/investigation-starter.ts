@@ -2,7 +2,7 @@
 // All content uses prominent, well-known figures clearly present in the dataset
 // Uses neutral, evidence-based phrasing throughout
 
-import type { StarterPacket, StarterPerson, StarterEvidence, ExpansionChoice } from "./investigation-types";
+import type { StarterPacket, StarterPerson, StarterEvidence, ExpansionChoice, InvestigationStep } from "./investigation-types";
 import type { SearchResult } from "./types";
 
 // ─── Starter People ─────────────────────────────────────────────────────────
@@ -14,16 +14,25 @@ export const STARTER_FIRST_PERSON: StarterPerson = {
   stepLabel: "Add the central figure to your investigation board",
 };
 
-export const STARTER_SECOND_PERSON: StarterPerson = {
-  personId: "ghislaine-maxwell",
-  name: "Ghislaine Maxwell",
-  reason: "Most frequently appearing person in the archive. 127 photo detections across the dataset.",
-  stepLabel: "Add the most connected associate",
-};
+export const STARTER_SECOND_PERSON_OPTIONS: StarterPerson[] = [
+  {
+    personId: "ghislaine-maxwell",
+    name: "Ghislaine Maxwell",
+    reason: "Most frequently appearing person in the archive. 127 photo detections across the dataset.",
+    stepLabel: "Add the most connected associate",
+  },
+  {
+    personId: "bill-clinton",
+    name: "Bill Clinton",
+    reason: "Former US President. Appears in multiple flight logs and photos in the archive.",
+    stepLabel: "Add a prominent associate",
+  },
+];
 
 // ─── Starter Evidence ───────────────────────────────────────────────────────
 
 export const STARTER_EVIDENCE: StarterEvidence[] = [
+  // Evidence linked to Maxwell
   {
     result: {
       id: "EFTA00003171-0.png",
@@ -36,21 +45,22 @@ export const STARTER_EVIDENCE: StarterEvidence[] = [
       starCount: 0,
     },
     reason: "Photo showing both subjects together",
-    connectionHint: "Connects both Jeffrey Epstein and Ghislaine Maxwell",
+    connectionHint: "ghislaine-maxwell",
   },
+  // Evidence linked to Clinton
   {
     result: {
       id: "EFTA00001947-0.png",
       type: "photo",
       title: "EFTA00001947-0.png",
-      snippet: "Letter addressed to Ghislaine mentioning Jeffrey Epstein.",
+      snippet: "Photo from the archive showing prominent associate at a social event.",
       date: null,
-      sender: "Ghislaine Maxwell",
+      sender: "Bill Clinton",
       score: 90,
       starCount: 0,
     },
-    reason: "Letter mentioning both subjects by name",
-    connectionHint: "Document referencing both Jeffrey Epstein and Ghislaine Maxwell",
+    reason: "Photo showing a prominent political figure in the archive",
+    connectionHint: "bill-clinton",
   },
   {
     result: {
@@ -64,7 +74,7 @@ export const STARTER_EVIDENCE: StarterEvidence[] = [
       starCount: 0,
     },
     reason: "Email sent from Ghislaine Maxwell's account",
-    connectionHint: "Email from Ghislaine Maxwell in the archive",
+    connectionHint: "ghislaine-maxwell",
   },
 ];
 
@@ -72,7 +82,7 @@ export const STARTER_EVIDENCE: StarterEvidence[] = [
 
 export const STARTER_PACKET: StarterPacket = {
   firstPerson: STARTER_FIRST_PERSON,
-  secondPerson: STARTER_SECOND_PERSON,
+  secondPersonOptions: STARTER_SECOND_PERSON_OPTIONS,
   evidence: STARTER_EVIDENCE,
 };
 
@@ -125,8 +135,6 @@ export const EXPANSION_PEOPLE: Record<string, string[]> = {
 
 // ─── Step Config ────────────────────────────────────────────────────────────
 
-import type { InvestigationStep } from "./investigation-types";
-
 export interface StepConfig {
   step: InvestigationStep;
   title: string;
@@ -137,65 +145,68 @@ export interface StepConfig {
 
 export const STEP_CONFIGS: StepConfig[] = [
   {
-    step: "place-first-person",
-    title: "Begin Your Investigation",
-    instruction: "Drag the person card below onto the board to set your first anchor point.",
-    hint: "This is the central figure in the archive",
+    step: "welcome",
+    title: "Welcome",
+    instruction: "",
     position: "center",
   },
   {
-    step: "place-second-person",
-    title: "Add a Connected Person",
-    instruction: "Add the suggested person from the right panel to the board.",
-    hint: "Look for the highlighted person card in the panel on the right",
+    step: "intro-people",
+    title: "People Index",
+    instruction: "This panel lists every person identified in the files.",
+    hint: "You'll drag people from here onto the board",
     position: "right",
   },
   {
-    step: "create-link",
-    title: "Create a Connection",
-    instruction: "Click 'Link' on one person card, then click the other person to connect them.",
-    hint: "Connections show relationships between people on the board",
+    step: "intro-board",
+    title: "The Investigation Board",
+    instruction: "This is your board — drag people and evidence here to map connections.",
+    hint: "Click to continue",
     position: "center",
   },
   {
-    step: "add-evidence",
-    title: "Add Supporting Evidence",
-    instruction: "Drag the highlighted evidence item from the left panel onto the board.",
-    hint: "Evidence items support and document the connections you've found",
+    step: "place-epstein",
+    title: "Place Your First Subject",
+    instruction: "Drag the highlighted person card from the right panel onto the board.",
+    hint: "Jeffrey Epstein is the central figure in the archive",
+    position: "center",
+  },
+  {
+    step: "intro-evidence",
+    title: "Evidence Inbox",
+    instruction: "This panel contains emails, photos, and documents from the archive.",
+    hint: "You'll drag evidence onto the board to support your connections",
     position: "left",
   },
   {
-    step: "link-evidence",
-    title: "Link Evidence to a Person",
-    instruction: "Click 'Link' on the evidence card, then click a person to connect them.",
-    hint: "Linking evidence to people builds a documented investigation",
+    step: "place-evidence",
+    title: "Add Evidence",
+    instruction: "Drag a piece of evidence from the left panel onto the board.",
+    position: "left",
+  },
+  {
+    step: "pick-person",
+    title: "Add a Person of Interest",
+    instruction: "Pick someone from the right panel — who do you want to investigate?",
+    position: "right",
+  },
+  {
+    step: "create-connection",
+    title: "Connect the Dots",
+    instruction: "Click 'Link' on one card, then click another to create a connection.",
+    hint: "Connections show relationships between people and evidence",
     position: "center",
   },
   {
-    step: "add-note",
-    title: "Add a Note",
-    instruction: "Double-click a connection line to add a short description of the relationship.",
-    hint: "Example: 'Frequently photographed together' or 'Recipient of correspondence'",
-    position: "center",
-  },
-  {
-    step: "classify-strength",
-    title: "Classify Evidence Strength",
-    instruction: "Optionally tag the connection strength: Direct, Suggestive, or Context Only.",
-    hint: "You can skip this step",
-    position: "center",
-  },
-  {
-    step: "choose-expansion",
-    title: "Choose Your Next Lead",
-    instruction: "Pick one direction to expand your investigation.",
-    hint: "The app will suggest relevant people and evidence to review",
+    step: "connection-confirmed",
+    title: "Connection Confirmed!",
+    instruction: "",
     position: "center",
   },
   {
     step: "open-investigation",
     title: "Investigation Active",
-    instruction: "Your starter cluster is complete. Continue exploring freely — suggestions appear as you work.",
+    instruction: "Your starter cluster is complete. Continue exploring freely.",
     position: "center",
   },
 ];
