@@ -517,6 +517,20 @@ body {
   animation: bounce-right 1.2s ease-in-out infinite;
 }
 
+/* Bounce arrow — tutorial directional indicator */
+@keyframes bounce-arrow {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(16px);
+  }
+}
+
+.animate-bounce-arrow {
+  animation: bounce-arrow 1s ease-in-out infinite;
+}
+
 /* Scale in — celebration card */
 @keyframes scale-in {
   0% {

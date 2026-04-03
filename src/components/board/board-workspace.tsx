@@ -297,25 +297,21 @@ export function BoardWorkspace({
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
-  // People lookup for investigation overlay
-  const firstPerson = people.find(p => p.id === investigation.starterPacket.firstPerson.personId);
-
   // Investigation-mode suggested people (for right panel)
   const suggestedPeople = useMemo(() => {
-    if (!investigation.isStartMode) return undefined;
+    if (investigation.suggestedPeopleIds.length === 0) return undefined;
     return people.filter(p => investigation.suggestedPeopleIds.includes(p.id));
-  }, [investigation.isStartMode, investigation.suggestedPeopleIds, people]);
+  }, [investigation.suggestedPeopleIds, people]);
 
   // Panel visibility — progressive reveal during onboarding
   const STEP_ORDER_INDEX: Record<string, number> = {
-    "welcome": 0, "intro-people": 1, "intro-board": 2, "place-epstein": 3,
-    "intro-evidence": 4, "place-evidence": 5, "pick-person": 6,
-    "create-connection": 7, "connection-confirmed": 8, "open-investigation": 9,
+    "place-epstein": 0, "place-evidence": 1, "pick-person": 2,
+    "create-connection": 3, "connection-confirmed": 4, "open-investigation": 5,
   };
-  const stepIdx = investigation.isStartMode ? (STEP_ORDER_INDEX[investigation.step] ?? 9) : 9;
-  const showRightPanel = !investigation.isStartMode || stepIdx >= 1;     // intro-people+
-  const showBoard = !investigation.isStartMode || stepIdx >= 2;          // intro-board+
-  const showLeftPanel = !investigation.isStartMode || stepIdx >= 4;      // intro-evidence+
+  const stepIdx = investigation.isStartMode ? (STEP_ORDER_INDEX[investigation.step] ?? 5) : 5;
+  const showRightPanel = true;                                           // always visible
+  const showBoard = true;                                                // always visible
+  const showLeftPanel = !investigation.isStartMode || stepIdx >= 1;      // place-evidence+
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
@@ -327,7 +323,7 @@ export function BoardWorkspace({
             onAddEvidence={addEvidenceToBoard}
             onSelectEmail={handleSelectEmail}
             selectedEmailId={selectedEmailId}
-            starterLeads={investigation.isStartMode ? investigation.starterEvidence : undefined}
+            starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
             investigationStep={investigation.isStartMode ? investigation.step : null}
           />
         )}
@@ -366,25 +362,14 @@ export function BoardWorkspace({
         )}
       </div>
 
-      {/* Investigation Overlay (only in start mode) */}
+      {/* Investigation Overlay (only in start mode, not after tutorial ends) */}
       {investigation.isStartMode && investigation.step !== "open-investigation" && (
         <InvestigationOverlay
           step={investigation.step}
-          stepConfig={investigation.stepConfig}
-          completedSteps={investigation.completedSteps}
           autoDetected={autoDetectCompletion}
           onAdvance={investigation.advanceStep}
           onSkip={investigation.skipStep}
           onSwitchToFree={investigation.switchToFree}
-          firstPerson={firstPerson}
-          onAddPerson={addPersonToBoard}
-          expansionChoices={investigation.expansionChoices}
-          onChooseExpansion={investigation.chooseExpansion}
-          clusterComplete={investigation.clusterComplete}
-          nudges={investigation.nudges}
-          nodeCount={boardNodes.filter(n => n.kind === "person").length}
-          connectionCount={boardConnections.length}
-          evidenceCount={boardNodes.filter(n => n.kind === "evidence").length}
           score={investigation.score}
         />
       )}

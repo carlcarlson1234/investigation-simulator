@@ -145,38 +145,10 @@ export interface StepConfig {
 
 export const STEP_CONFIGS: StepConfig[] = [
   {
-    step: "welcome",
-    title: "Welcome",
-    instruction: "",
-    position: "center",
-  },
-  {
-    step: "intro-people",
-    title: "People Index",
-    instruction: "This panel lists every person identified in the files.",
-    hint: "You'll drag people from here onto the board",
-    position: "right",
-  },
-  {
-    step: "intro-board",
-    title: "The Investigation Board",
-    instruction: "This is your board — drag people and evidence here to map connections.",
-    hint: "Click to continue",
-    position: "center",
-  },
-  {
     step: "place-epstein",
-    title: "Place Your First Subject",
-    instruction: "Drag the highlighted person card from the right panel onto the board.",
-    hint: "Jeffrey Epstein is the central figure in the archive",
-    position: "center",
-  },
-  {
-    step: "intro-evidence",
-    title: "Evidence Inbox",
-    instruction: "This panel contains emails, photos, and documents from the archive.",
-    hint: "You'll drag evidence onto the board to support your connections",
-    position: "left",
+    title: "Drag Epstein onto the Board",
+    instruction: "Find the highlighted card in the right panel and drag it here.",
+    position: "right",
   },
   {
     step: "place-evidence",
@@ -187,14 +159,13 @@ export const STEP_CONFIGS: StepConfig[] = [
   {
     step: "pick-person",
     title: "Add a Person of Interest",
-    instruction: "Pick someone from the right panel — who do you want to investigate?",
+    instruction: "Drag someone from the right panel onto the board.",
     position: "right",
   },
   {
     step: "create-connection",
     title: "Connect the Dots",
-    instruction: "Click 'Link' on one card, then click another to create a connection.",
-    hint: "Connections show relationships between people and evidence",
+    instruction: "Drag from the glowing red handle on one card to another.",
     position: "center",
   },
   {
@@ -206,7 +177,7 @@ export const STEP_CONFIGS: StepConfig[] = [
   {
     step: "open-investigation",
     title: "Investigation Active",
-    instruction: "Your starter cluster is complete. Continue exploring freely.",
+    instruction: "Your investigation is underway. Explore freely.",
     position: "center",
   },
 ];

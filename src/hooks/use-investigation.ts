@@ -38,11 +38,7 @@ export interface UseInvestigationReturn {
 }
 
 const STEP_ORDER: InvestigationStep[] = [
-  "welcome",
-  "intro-people",
-  "intro-board",
   "place-epstein",
-  "intro-evidence",
   "place-evidence",
   "pick-person",
   "create-connection",
@@ -65,11 +61,13 @@ export function useInvestigation(
   const [step, setStep] = useState<InvestigationStep>(() => {
     if (savedMode && boardNodes.length > 0) return "open-investigation";
     if (initialMode === "free") return "open-investigation";
-    return "intro-people";
+    return "place-epstein";
   });
   const [completedSteps, setCompletedSteps] = useState<Set<InvestigationStep>>(new Set());
   const [chosenExpansionId, setChosenExpansionId] = useState<string | null>(null);
   const [score, setScore] = useState(0);
+  // Track that user went through the tutorial (persists after switching to free)
+  const [didTutorial] = useState(() => initialMode === "start");
 
   const isStartMode = mode === "start";
 
@@ -123,10 +121,17 @@ export function useInvestigation(
     if (step === "connection-confirmed") {
       const timer = setTimeout(() => {
         advanceStep();
-      }, 4000);
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, [step, advanceStep]);
+
+  // Switch to free mode when tutorial ends
+  useEffect(() => {
+    if (step === "open-investigation" && mode === "start") {
+      setMode("free");
+    }
+  }, [step, mode]);
 
   // ─── Expansion ────────────────────────────────────────────────────────────
 
@@ -197,25 +202,29 @@ export function useInvestigation(
   // ─── Starter evidence for left panel ──────────────────────────────────────
 
   const starterEvidence = useMemo<SearchResult[]>(() => {
-    if (!isStartMode) return [];
+    if (!isStartMode && !didTutorial) return [];
     return STARTER_PACKET.evidence.map(e => e.result);
-  }, [isStartMode]);
+  }, [isStartMode, didTutorial]);
 
   // ─── Suggested people for right panel ─────────────────────────────────────
 
   const suggestedPeopleIds = useMemo<string[]>(() => {
-    if (!isStartMode) return [];
+    if (!isStartMode && !didTutorial) return [];
 
     switch (step) {
-      case "intro-people":
-      case "intro-board":
       case "place-epstein":
         return [STARTER_PACKET.firstPerson.personId];
       case "pick-person":
         return STARTER_PACKET.secondPersonOptions.map(p => p.personId);
-      default:
-        if (chosenExpansionId) return expansionPeopleIds;
-        return [];
+      default: {
+        // After tutorial, show all starter people as suggestions
+        const ids = [
+          STARTER_PACKET.firstPerson.personId,
+          ...STARTER_PACKET.secondPersonOptions.map(p => p.personId),
+        ];
+        if (chosenExpansionId) ids.push(...expansionPeopleIds);
+        return ids;
+      }
     }
   }, [isStartMode, step, chosenExpansionId, expansionPeopleIds]);
 
