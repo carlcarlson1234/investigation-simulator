@@ -8,7 +8,7 @@ import {
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
 
-type PanelTab = "emails" | "photos";
+type PanelTab = "photos" | "emails" | "files";
 
 interface IntakePanelProps {
   isOnBoard: (id: string) => boolean;
@@ -20,20 +20,22 @@ interface IntakePanelProps {
 }
 
 export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep }: IntakePanelProps) {
-  const [activeTab, setActiveTab] = useState<PanelTab>("emails");
+  const [activeTab, setActiveTab] = useState<PanelTab>("photos");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const isOnboarding = investigationStep != null;
 
-  // When search is opened, switch to search tab; when closed, go back to emails
-  const handleOpenSearch = () => {
-    setSearchOpen(true);
-  };
-  const handleCloseSearch = () => {
-    setSearchOpen(false);
-    setSearchQuery("");
-  };
+  const handleOpenSearch = () => setSearchOpen(true);
+  const handleCloseSearch = () => { setSearchOpen(false); setSearchQuery(""); };
+
+  // Filter starter leads by active tab type
+  const tabStarterLeads = (starterLeads ?? []).filter(lead => {
+    if (activeTab === "photos") return lead.type === "photo";
+    if (activeTab === "emails") return lead.type === "email";
+    if (activeTab === "files") return lead.type === "document" || lead.type === "imessage";
+    return false;
+  });
 
   return (
     <aside className={`intake-panel flex h-full w-80 flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
@@ -43,26 +45,23 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
       <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""
       }`}>
-        <button
-          onClick={() => { setActiveTab("emails"); setSearchOpen(false); }}
-          className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-            activeTab === "emails" && !searchOpen
-              ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
-              : "text-[#555] hover:text-white"
-          }`}
-        >
-          ✉️ Inbox
-        </button>
-        <button
-          onClick={() => { setActiveTab("photos"); setSearchOpen(false); }}
-          className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-            activeTab === "photos" && !searchOpen
-              ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
-              : "text-[#555] hover:text-white"
-          }`}
-        >
-          📷 Photos
-        </button>
+        {([
+          { key: "photos" as const, label: "📷 Photos" },
+          { key: "emails" as const, label: "✉️ Emails" },
+          { key: "files" as const, label: "📄 Files" },
+        ]).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => { setActiveTab(tab.key); setSearchOpen(false); }}
+            className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
+              activeTab === tab.key && !searchOpen
+                ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
+                : "text-[#555] hover:text-white"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* ── SEARCH BAR (collapsible, above everything) ── */}
@@ -110,7 +109,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
         ) : (
           <>
             {/* ── STARTER EVIDENCE ── */}
-            {starterLeads && starterLeads.length > 0 && (
+            {tabStarterLeads.length > 0 && (
               <div className={`flex-shrink-0 border-b border-[#1a1a1a] ${isOnboarding ? "p-4" : "p-3"}`}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="relative flex h-2 w-2">
@@ -120,19 +119,16 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                   <span className={`font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-red-500/80 ${
                     isOnboarding ? "text-xs" : "text-[10px]"
                   }`}>
-                    🎯 Starter Evidence
+                    🎯 Suggested {activeTab === "photos" ? "Photos" : activeTab === "emails" ? "Emails" : "Files"}
                   </span>
                 </div>
                 <div className={isOnboarding ? "space-y-4" : "space-y-1.5"}>
-                  {starterLeads.map(lead => (
+                  {tabStarterLeads.map(lead => (
                     <div
                       key={lead.id}
                       draggable
                       onDragStart={(e) => {
-                        e.dataTransfer.setData(
-                          "application/board-item",
-                          JSON.stringify({ kind: "evidence", data: lead })
-                        );
+                        e.dataTransfer.setData("application/board-item", JSON.stringify({ kind: "evidence", data: lead }));
                         e.dataTransfer.effectAllowed = "move";
                       }}
                       className={`rounded-xl border cursor-grab active:cursor-grabbing transition-all overflow-hidden ${
@@ -143,8 +139,8 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                           : "border-red-500/20 bg-red-950/10 hover:border-red-500/40 hover:bg-red-950/15"
                       }`}
                     >
-                      {/* Photo preview */}
-                      {isOnboarding && lead.type === 'photo' && (
+                      {/* Photo preview for photo leads */}
+                      {lead.type === 'photo' && (
                         <div className="relative w-full h-36 bg-[#080808] overflow-hidden">
                           <img
                             src={`https://assets.getkino.com/cdn-cgi/image/width=400,quality=80,format=auto/photos-deboned/${lead.id}`}
@@ -161,13 +157,10 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                       )}
                       <div className={isOnboarding ? "p-4" : "p-2.5"}>
                         <div className="flex items-start gap-3">
-                          {(!isOnboarding || lead.type !== 'photo') && (
+                          {lead.type !== 'photo' && (
                             <span className={isOnboarding ? "text-2xl mt-0.5" : "text-base"}>
-                              {lead.type === 'photo' ? '📸' : lead.type === 'email' ? '✉️' : '📄'}
+                              {lead.type === 'email' ? '✉️' : lead.type === 'document' ? '📄' : '💬'}
                             </span>
-                          )}
-                          {isOnboarding && lead.type === 'email' && (
-                            <span className="text-2xl mt-0.5">✉️</span>
                           )}
                           <div className="flex-1 min-w-0">
                             <p className={`font-bold text-white ${isOnboarding ? "text-sm" : "text-xs truncate"}`}>{lead.title}</p>
@@ -198,16 +191,18 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
             )}
 
             {/* Tab content */}
-            {activeTab === "emails" ? (
+            {activeTab === "photos" ? (
+              <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+            ) : activeTab === "emails" ? (
               <EmailInbox
                 isOnBoard={isOnBoard}
                 onAddEvidence={onAddEvidence}
                 onSelectEmail={onSelectEmail}
                 selectedEmailId={selectedEmailId}
               />
-            ) : activeTab === "photos" ? (
-              <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
-            ) : null}
+            ) : (
+              <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+            )}
           </>
         )}
       </div>
@@ -756,6 +751,171 @@ function PhotoGallery({
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+// ─── FILES TAB (documents + imessages) ──────────────────────────────────────
+
+interface FileItem {
+  id: string;
+  kind: "document" | "imessage";
+  title: string;
+  snippet: string;
+  date: string | null;
+  sender: string | null;
+  volume: string | null;
+}
+
+function FilesTab({
+  isOnBoard,
+  onAddEvidence,
+}: {
+  isOnBoard: (id: string) => boolean;
+  onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+}) {
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const initialLoad = useRef(false);
+
+  const fetchFiles = useCallback(async (p: number, append: boolean) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(p), pageSize: "30" });
+      const res = await fetch(`/api/files?${params}`);
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      if (append) {
+        setFiles((prev) => [...prev, ...data.files]);
+      } else {
+        setFiles(data.files);
+      }
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setPage(data.page);
+    } catch (err) {
+      console.error("Files fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoad.current) {
+      initialLoad.current = true;
+      fetchFiles(1, false);
+    }
+  }, [fetchFiles]);
+
+  const loadMore = () => {
+    if (hasMore && !loading) fetchFiles(page + 1, true);
+  };
+
+  function fileToSearchResult(file: FileItem): SearchResult {
+    return {
+      id: file.id,
+      type: file.kind === "document" ? "document" : "imessage",
+      title: file.title,
+      snippet: file.snippet,
+      date: file.date,
+      sender: file.sender,
+      score: 0,
+      starCount: 0,
+    };
+  }
+
+  return (
+    <>
+      {/* Status bar */}
+      <div className="flex-shrink-0 px-3 py-1.5 text-[10px] font-bold text-[#555] border-b border-[#1a1a1a] flex items-center justify-between">
+        {loading && files.length === 0 ? (
+          <span className="flex items-center gap-1.5 text-red-400">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            Loading…
+          </span>
+        ) : (
+          <span>{total.toLocaleString()} files</span>
+        )}
+        <span className="text-[#444] tabular-nums">Page {page}</span>
+      </div>
+
+      {/* File list */}
+      <div className="flex-1 overflow-y-auto">
+        {files.map((file) => {
+          const onBoard = isOnBoard(file.id);
+          return (
+            <div
+              key={`${file.kind}-${file.id}`}
+              draggable={!onBoard}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(
+                  "application/board-item",
+                  JSON.stringify({ id: file.id, kind: "evidence", data: fileToSearchResult(file) })
+                );
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              className={`group border-b border-[#1a1a1a] px-3 py-2.5 cursor-pointer transition ${
+                onBoard
+                  ? "bg-[#0f0f0f] opacity-50"
+                  : "hover:bg-[#161616]"
+              }`}
+            >
+              {/* Row 1: Type icon + Title */}
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-sm">
+                  {file.kind === "document" ? "📄" : "💬"}
+                </span>
+                <span className="flex-1 text-xs font-bold text-white truncate">{file.title}</span>
+                {file.date && (
+                  <span className="text-[10px] text-[#555] tabular-nums flex-shrink-0">{file.date}</span>
+                )}
+              </div>
+
+              {/* Row 2: Snippet */}
+              <p className="text-[11px] text-[#777] truncate pl-6">{file.snippet}</p>
+
+              {/* Row 3: Metadata */}
+              <div className="flex items-center gap-2 mt-1 pl-6">
+                {file.volume && (
+                  <span className="text-[9px] text-[#555] font-[family-name:var(--font-mono)] uppercase tracking-wider">
+                    Vol: {file.volume}
+                  </span>
+                )}
+                {file.sender && (
+                  <span className="text-[9px] text-[#555]">
+                    {file.sender}
+                  </span>
+                )}
+                <div className="flex-1" />
+                {onBoard ? (
+                  <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-green-500/60 uppercase tracking-wider">✓ On Board</span>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAddEvidence(fileToSearchResult(file)); }}
+                    className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition opacity-0 group-hover:opacity-100"
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Load more */}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loading}
+            className="w-full py-3 text-center font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:bg-[#161616] transition border-b border-[#1a1a1a]"
+          >
+            {loading ? "Loading…" : "Load More ↓"}
+          </button>
+        )}
+      </div>
     </>
   );
 }

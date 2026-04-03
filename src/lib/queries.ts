@@ -326,7 +326,7 @@ export async function searchEvidence(
       FROM emails
       WHERE search_vector @@ to_tsquery('english', ${tsQuery})
       ORDER BY score DESC
-      LIMIT ${type === "all" ? Math.ceil(limit / 3) : limit}
+      LIMIT ${type === "all" ? Math.ceil(limit / 4) : limit}
       OFFSET ${type === "email" ? offset : 0}
     `;
     for (const r of emailRows) {
@@ -355,7 +355,7 @@ export async function searchEvidence(
       JOIN documents d ON d.id = df.doc_id
       WHERE df.search_vector @@ to_tsquery('english', ${tsQuery})
       ORDER BY df.doc_id, score DESC
-      LIMIT ${type === "all" ? Math.ceil(limit / 3) : limit}
+      LIMIT ${type === "all" ? Math.ceil(limit / 4) : limit}
       OFFSET ${type === "document" ? offset : 0}
     `;
     for (const r of docRows) {
@@ -377,12 +377,11 @@ export async function searchEvidence(
     const msgRows = await jmail`
       SELECT id, sender, raw_json->>'text' as text,
              raw_json->>'timestamp' as timestamp,
-             raw_json->>'conversation_slug' as convo_slug,
-             ts_rank(search_vector, to_tsquery('english', ${tsQuery})) as score
+             raw_json->>'conversation_slug' as convo_slug
       FROM imessage_messages
-      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
-      ORDER BY score DESC
-      LIMIT ${type === "all" ? Math.ceil(limit / 3) : limit}
+      WHERE raw_json->>'text' ILIKE ${"%" + query + "%"}
+      ORDER BY id DESC
+      LIMIT ${type === "all" ? Math.ceil(limit / 4) : limit}
       OFFSET ${type === "imessage" ? offset : 0}
     `;
     for (const r of msgRows) {
@@ -393,7 +392,52 @@ export async function searchEvidence(
         snippet: ((r.text as string) ?? "").slice(0, 150),
         date: formatDate(r.timestamp as string),
         sender: r.sender as string,
-        score: Number(r.score),
+        score: 0.5,
+        starCount: 0,
+      });
+    }
+  }
+
+  // Search photos by description
+  if (type === "all" || type === "photo") {
+    const photoRows = await jmail`
+      SELECT id, raw_json
+      FROM photos
+      WHERE raw_json->>'image_description' ILIKE ${"%" + query + "%"}
+      ORDER BY id
+      LIMIT ${type === "all" ? Math.ceil(limit / 4) : limit}
+      OFFSET ${type === "photo" ? offset : 0}
+    `;
+
+    // Batch fetch face names for matched photos
+    const photoIds = photoRows.map((r: Record<string, unknown>) => r.id as string);
+    let faceMap: Record<string, string[]> = {};
+    if (photoIds.length > 0) {
+      const faceRows = await jmail`
+        SELECT pf.photo_id, p.name
+        FROM photo_faces pf
+        JOIN people p ON p.id = pf.person_id
+        WHERE pf.photo_id = ANY(${photoIds})
+      `;
+      for (const fr of faceRows) {
+        const pid = fr.photo_id as string;
+        if (!faceMap[pid]) faceMap[pid] = [];
+        faceMap[pid].push(fr.name as string);
+      }
+    }
+
+    for (const r of photoRows) {
+      const rj = (r.raw_json as Record<string, unknown>) ?? {};
+      const desc = ((rj.image_description as string) ?? "").slice(0, 150);
+      const faces = faceMap[r.id as string] ?? [];
+      results.push({
+        id: r.id as string,
+        type: "photo",
+        title: faces.length > 0 ? `Photo — ${faces.join(", ")}` : "Photo",
+        snippet: desc,
+        date: null,
+        sender: faces.length > 0 ? faces.join(", ") : null,
+        score: 0.5, // give a baseline relevance score
         starCount: 0,
       });
     }
@@ -546,6 +590,80 @@ async function getIMessageById(id: string): Promise<IMessageEvidence | null> {
     conversationSlug: (rj.conversation_slug as string) ?? "",
     timestamp: (rj.timestamp as string) ?? null,
   };
+}
+
+// ─── Files & Messages Browsing ──────────────────────────────────────────────
+
+export interface FileListItem {
+  id: string;
+  kind: "document" | "imessage";
+  title: string;
+  snippet: string;
+  date: string | null;
+  sender: string | null;
+  volume: string | null;
+}
+
+export async function browseFiles(opts: {
+  page?: number;
+  pageSize?: number;
+}): Promise<{ files: FileListItem[]; total: number; page: number; pageSize: number; hasMore: boolean }> {
+  const page = opts.page ?? 1;
+  const pageSize = Math.min(opts.pageSize ?? 30, 60);
+  const half = Math.ceil(pageSize / 2);
+  const offset = (page - 1) * half;
+
+  // Fetch documents and imessages separately, then interleave
+  const [docRows, msgRows, countRows] = await Promise.all([
+    jmail`
+      SELECT id, raw_json->>'original_filename' as filename, volume
+      FROM documents
+      ORDER BY id
+      LIMIT ${half} OFFSET ${offset}
+    `,
+    jmail`
+      SELECT id, sender, raw_json->>'text' as text,
+             raw_json->>'conversation_slug' as convo_slug,
+             raw_json->>'timestamp' as timestamp
+      FROM imessage_messages
+      ORDER BY id
+      LIMIT ${half} OFFSET ${offset}
+    `,
+    jmail`
+      SELECT
+        (SELECT count(*)::int FROM documents) +
+        (SELECT count(*)::int FROM imessage_messages) as cnt
+    `,
+  ]);
+
+  const total = Number(countRows[0]?.cnt ?? 0);
+  const files: FileListItem[] = [];
+
+  for (const r of docRows) {
+    files.push({
+      id: r.id as string,
+      kind: "document",
+      title: (r.filename as string) || (r.id as string),
+      snippet: "",
+      date: null,
+      sender: null,
+      volume: (r.volume as string) || null,
+    });
+  }
+
+  for (const r of msgRows) {
+    files.push({
+      id: r.id as string,
+      kind: "imessage",
+      title: `iMessage — ${(r.convo_slug as string) ?? "conversation"}`,
+      snippet: ((r.text as string) ?? "").slice(0, 120),
+      date: r.timestamp ? formatDate(r.timestamp as string) : null,
+      sender: (r.sender as string) || null,
+      volume: null,
+    });
+  }
+
+  return { files, total, page, pageSize, hasMore: offset + files.length < total };
 }
 
 // ─── Release Batches ────────────────────────────────────────────────────────
