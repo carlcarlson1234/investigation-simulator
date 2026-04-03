@@ -203,8 +203,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   // ─── Focus visibility ──────────────────────────────────────────────────
 
   function getNodeVis(nodeId: string): "focused" | "direct" | "second" | "dimmed" | "normal" {
-    const fs = pathFocus || focusState;
+    const fs = (pathFocus && !showAllInCompare) ? pathFocus : (!pathFocus ? focusState : null);
     if (!fs) return "normal";
+    // Nodes added after compare started are always visible
+    if (pathFocus && compareNodeIdsRef.current && !compareNodeIdsRef.current.has(nodeId)) return "normal";
     if (nodeId === fs.nodeId) return "focused";
     if (fs.directIds.has(nodeId)) return "direct";
     if (fs.secondIds.has(nodeId)) return "second";
@@ -212,7 +214,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   }
 
   function getEdgeVis(connId: string): "highlight" | "faded" | "normal" {
-    const fs = pathFocus || focusState;
+    const fs = (pathFocus && !showAllInCompare) ? pathFocus : (!pathFocus ? focusState : null);
     if (!fs) return "normal";
     if (fs.edgeIds.has(connId)) return "highlight";
     return "faded";
@@ -302,6 +304,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [pathPicker, setPathPicker] = useState<{ open: boolean; selected: string[] }>({ open: false, selected: [] });
   const [pathFocus, setPathFocus] = useState<FocusState | null>(null);
   const [pathDrillNode, setPathDrillNode] = useState<string | null>(null);
+  const [showAllInCompare, setShowAllInCompare] = useState(false);
+  const compareNodeIdsRef = useRef<Set<string> | null>(null);
   // Default path focus (5 core columns) and full focus (includes indirect)
   const pathDefaultFocusRef = useRef<FocusState | null>(null);
   const pathFullFocusRef = useRef<FocusState | null>(null);
@@ -337,7 +341,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangeGrid = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
-    setPathFocus(null); setPathDrillNode(null);
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
     const pos: Record<string, { x: number; y: number }> = {};
 
     // Measure all cards to find the largest
@@ -380,7 +384,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangeSplit = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
-    setPathFocus(null); setPathDrillNode(null);
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
     const pos: Record<string, { x: number; y: number }> = {};
 
     const people = nodes.filter(n => n.kind === "person");
@@ -449,7 +453,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangeForce = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
-    setPathFocus(null); setPathDrillNode(null);
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
 
     // Measure card sizes
     const sizes = new Map<string, { w: number; h: number }>();
@@ -553,7 +557,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangeEgo = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
-    setPathFocus(null); setPathDrillNode(null);
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
 
     // Pick ego: selected node (prefer person), or most-connected person
     const people = nodes.filter(n => n.kind === "person");
@@ -672,6 +676,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangePath = useCallback((nodeAId: string, nodeBId: string) => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
+
+    // Snapshot current node IDs so newly added cards stay visible
+    compareNodeIdsRef.current = new Set(nodes.map(n => n.id));
 
     // Build adjacency with connection references
     const adj: Record<string, { neighbor: string; connId: string; strength: number }[]> = {};
@@ -823,6 +830,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const directShared: string[] = [];
     const transitiveA: string[] = [];
     const transitiveB: string[] = [];
+    const exclusiveA: string[] = []; // connected to A only, no link to shared evidence
+    const exclusiveB: string[] = []; // connected to B only, no link to shared evidence
     const indirectA: string[] = [];
     const indirectB: string[] = [];
 
@@ -841,20 +850,24 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       const connToB = fullAdj[nId]?.has(nodeBId) || false;
       const connToShared = [...(fullAdj[nId] || [])].some(id => directSharedSet.has(id));
 
-      if (connToA && !connToB) transitiveA.push(nId);
-      else if (connToB && !connToA) transitiveB.push(nId);
-      else if (!connToA && !connToB && connToShared) {
-        // Connected to shared evidence but not to either person — figure out which side
-        // Check if any neighbor connects to A or B to determine side
+      if (connToA && !connToB) {
+        // Connected to A but not B — is it also linked to shared evidence?
+        if (connToShared) transitiveA.push(nId);
+        else exclusiveA.push(nId);
+      } else if (connToB && !connToA) {
+        if (connToShared) transitiveB.push(nId);
+        else exclusiveB.push(nId);
+      } else if (!connToA && !connToB && connToShared) {
         const neighborsConnectA = [...(fullAdj[nId] || [])].some(nb => fullAdj[nb]?.has(nodeAId));
         if (neighborsConnectA) indirectA.push(nId);
         else indirectB.push(nId);
       } else if (connToA) {
-        transitiveA.push(nId);
+        if (connToShared) transitiveA.push(nId);
+        else exclusiveA.push(nId);
       } else if (connToB) {
-        transitiveB.push(nId);
+        if (connToShared) transitiveB.push(nId);
+        else exclusiveB.push(nId);
       } else {
-        // Fallback: use BFS distance from A vs B
         const dA = reachFromA.has(nId) ? 1 : 999;
         const dB = reachFromB.has(nId) ? 1 : 999;
         if (dA <= dB) indirectA.push(nId); else indirectB.push(nId);
@@ -868,27 +881,66 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       return m || 0;
     };
 
+    // Person columns include exclusive evidence stacked below
+    const wColA = Math.max(sA.w, maxColW(exclusiveA));
     const wTransA = maxColW(transitiveA);
     const wIndA = maxColW(indirectA);
     const wDirect = maxColW(directShared) || 200;
     const wIndB = maxColW(indirectB);
     const wTransB = maxColW(transitiveB);
+    const wColB = Math.max(sB.w, maxColW(exclusiveB));
     const COL_GAP = 160;
 
-    // 7 columns: [A] [transA] [indirectA] [direct] [indirectB] [transB] [B]
-    // Only include columns that have items (skip empty)
-    let curX = 100;
-    const col1X = curX + sA.w / 2; curX += sA.w + COL_GAP;
-    const col2X = wTransA > 0 ? (curX + wTransA / 2) : -1; if (wTransA > 0) curX += wTransA + COL_GAP;
-    const col3X = wIndA > 0 ? (curX + wIndA / 2) : -1; if (wIndA > 0) curX += wIndA + COL_GAP;
-    const col4X = curX + wDirect / 2; curX += wDirect + COL_GAP;
-    const col5X = wIndB > 0 ? (curX + wIndB / 2) : -1; if (wIndB > 0) curX += wIndB + COL_GAP;
-    const col6X = wTransB > 0 ? (curX + wTransB / 2) : -1; if (wTransB > 0) curX += wTransB + COL_GAP;
-    const col7X = curX + sB.w / 2;
+    // Calculate each side's total span from person edge to center edge
+    // A side: [person A half] + gap + [transA] + gap + [indirectA] + gap + [center half]
+    let spanA = wColA / 2 + COL_GAP + wDirect / 2;
+    if (wTransA > 0) spanA += wTransA + COL_GAP;
+    if (wIndA > 0) spanA += wIndA + COL_GAP;
 
-    // Person A and B at top
-    pos[nodeAId] = { x: col1X - sA.w / 2, y: startY };
-    pos[nodeBId] = { x: col7X - sB.w / 2, y: startY };
+    let spanB = wColB / 2 + COL_GAP + wDirect / 2;
+    if (wTransB > 0) spanB += wTransB + COL_GAP;
+    if (wIndB > 0) spanB += wIndB + COL_GAP;
+
+    // Use the larger span for both sides so center is equidistant
+    const span = Math.max(spanA, spanB);
+
+    // Place center column, then mirror outward
+    const MARGIN = 100;
+    const col4X = MARGIN + span; // center of direct column
+
+    // A side: place columns right-to-left from center
+    let curLeft = col4X - wDirect / 2 - COL_GAP;
+    const col3X = wIndA > 0 ? (curLeft - wIndA / 2) : -1; if (wIndA > 0) curLeft -= wIndA + COL_GAP;
+    const col2X = wTransA > 0 ? (curLeft - wTransA / 2) : -1; if (wTransA > 0) curLeft -= wTransA + COL_GAP;
+    const col1X = curLeft - wColA / 2;
+
+    // B side: place columns left-to-right from center
+    let curRight = col4X + wDirect / 2 + COL_GAP;
+    const col5X = wIndB > 0 ? (curRight + wIndB / 2) : -1; if (wIndB > 0) curRight += wIndB + COL_GAP;
+    const col6X = wTransB > 0 ? (curRight + wTransB / 2) : -1; if (wTransB > 0) curRight += wTransB + COL_GAP;
+    const col7X = curRight + wColB / 2;
+
+    // Person A and B at top (equidistant from center)
+    const colACenterX = col1X + wColA / 2;
+    const colBCenterX = col7X;
+    pos[nodeAId] = { x: colACenterX - sA.w / 2, y: startY };
+    pos[nodeBId] = { x: colBCenterX - sB.w / 2, y: startY };
+
+    // Exclusive A: stack below Person A in the same column
+    let exclAY = startY + sA.h + GAP_Y;
+    for (const nId of exclusiveA) {
+      const s = getCardSize(nId);
+      pos[nId] = { x: colACenterX - s.w / 2, y: exclAY };
+      exclAY += s.h + GAP_Y;
+    }
+
+    // Exclusive B: stack below Person B in the same column
+    let exclBY = startY + sB.h + GAP_Y;
+    for (const nId of exclusiveB) {
+      const s = getCardSize(nId);
+      pos[nId] = { x: colBCenterX - s.w / 2, y: exclBY };
+      exclBY += s.h + GAP_Y;
+    }
 
     // Direct shared in center column
     const directStartY = startY + Math.max(sA.h, sB.h) + GAP_Y + 40;
@@ -901,23 +953,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       dy += s.h + GAP_Y;
     }
 
-    // Place transitive/indirect nodes ON the diagonal line between person and shared evidence
-    const personACenter = { x: col1X, y: startY + sA.h / 2 };
-    const personBCenter = { x: col7X, y: startY + sB.h / 2 };
+    // Place transitive nodes on the diagonal between person and shared evidence
+    const personACenter = { x: colACenterX, y: startY + sA.h / 2 };
+    const personBCenter = { x: colBCenterX, y: startY + sB.h / 2 };
 
     const placeOnDiagonal = (ids: string[], colCenterX: number, personCenter: { x: number; y: number }) => {
       if (colCenterX < 0 || ids.length === 0) return;
       for (const nId of ids) {
         const s = getCardSize(nId);
-        // Find the shared evidence this connects toward
         let targetCenter = { x: col4X, y: directStartY + 100 };
         for (const dId of directShared) {
-          // Check if this node connects to this shared evidence (directly or through one hop)
           if (fullAdj[nId]?.has(dId)) {
             targetCenter = directPositions[dId] || targetCenter;
             break;
           }
-          // Or through a neighbor
           for (const nb of (fullAdj[nId] || [])) {
             if (fullAdj[nb]?.has(dId) && directPositions[dId]) {
               targetCenter = directPositions[dId];
@@ -925,7 +974,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             }
           }
         }
-        // Interpolate Y at this column's X on the line from person to target
         const dx = targetCenter.x - personCenter.x;
         const t = dx !== 0 ? (colCenterX - personCenter.x) / dx : 0.5;
         const lineY = personCenter.y + t * (targetCenter.y - personCenter.y);
@@ -936,13 +984,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     placeOnDiagonal(transitiveA, col2X, personACenter);
     placeOnDiagonal(transitiveB, col6X, personBCenter);
 
-    // Place indirect nodes aligned with the shared evidence they connect to (NOT on the person's diagonal)
-    const placeIndirect = (ids: string[], colCenterX: number) => {
-      if (colCenterX < 0 || ids.length === 0) return;
+    // Place indirect nodes aligned with the shared evidence they connect to
+    const placeIndirect = (ids: string[], colX: number) => {
+      if (colX < 0 || ids.length === 0) return;
       for (const nId of ids) {
         const s = getCardSize(nId);
-        // Find the shared evidence this connects to and align Y with it
-        let targetY = directStartY + 100; // fallback
+        let targetY = directStartY + 100;
         for (const dId of directShared) {
           if (fullAdj[nId]?.has(dId) && directPositions[dId]) {
             targetY = directPositions[dId].y;
@@ -955,7 +1002,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             }
           }
         }
-        pos[nId] = { x: colCenterX - s.w / 2, y: targetY - s.h / 2 };
+        pos[nId] = { x: colX - s.w / 2, y: targetY - s.h / 2 };
       }
     };
 
@@ -965,23 +1012,24 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     // De-overlap pass: within each column group, push cards apart if they overlap
     const deOverlapColumn = (ids: string[]) => {
       if (ids.length < 2) return;
-      // Sort by current Y position
       const sorted = [...ids].filter(id => pos[id]).sort((a, b) => pos[a].y - pos[b].y);
       for (let i = 1; i < sorted.length; i++) {
         const prev = sorted[i - 1];
         const curr = sorted[i];
-        const prevBottom = pos[prev].y + getCardSize(prev).h + 30; // 30px min gap
+        const prevBottom = pos[prev].y + getCardSize(prev).h + 30;
         if (pos[curr].y < prevBottom) {
           pos[curr] = { ...pos[curr], y: prevBottom };
         }
       }
     };
 
+    deOverlapColumn(exclusiveA);
     deOverlapColumn(transitiveA);
     deOverlapColumn(indirectA);
     deOverlapColumn(directShared);
     deOverlapColumn(indirectB);
     deOverlapColumn(transitiveB);
+    deOverlapColumn(exclusiveB);
 
     // Off-path nodes: stack below center column, dimmed
     const allYs = Object.values(pos).map(p => p.y + 400);
@@ -994,8 +1042,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       offY += s.h + 30;
     }
 
-    // Default focus: only 5 core columns (A, transitiveA, directShared, transitiveB, B)
-    const coreNodeIds = new Set([nodeAId, nodeBId, ...transitiveA, ...transitiveB, ...directShared]);
+    // Default focus: core columns (A, exclusiveA, transitiveA, directShared, transitiveB, exclusiveB, B)
+    const coreNodeIds = new Set([nodeAId, nodeBId, ...exclusiveA, ...exclusiveB, ...transitiveA, ...transitiveB, ...directShared]);
     const coreEdgeIds = new Set<string>();
     for (const c of connections) {
       if (coreNodeIds.has(c.sourceId) && coreNodeIds.has(c.targetId)) {
@@ -1394,6 +1442,27 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
       {/* ── Canvas area (viewport + scrollable sizer + scaled world) ──────── */}
       <div className="relative flex-1 overflow-hidden">
+
+        {/* ── Show All toggle (top-center, compare mode only) ───────────── */}
+        {pathFocus && (
+          <button
+            onClick={() => setShowAllInCompare(s => !s)}
+            className={`absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition shadow-lg shadow-black/40 ${
+              showAllInCompare
+                ? "border-red-500/40 bg-red-600/15 text-red-400 hover:bg-red-600/25"
+                : "border-[#2a2a2a] bg-[#141414]/90 text-[#888] hover:bg-[#222] hover:text-white"
+            } backdrop-blur-sm`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {showAllInCompare
+                ? <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>
+                : <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></>
+              }
+            </svg>
+            {showAllInCompare ? "Show All" : "Show All"}
+          </button>
+        )}
+
         {/*
           VIEWPORT: The scrollable container. overflow:auto creates scrollbars.
           The sizer div inside provides scrollable dimensions.
@@ -1520,16 +1589,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       <path
                         d={curvePath}
                         stroke={lineColor}
-                        strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 3.5 : 3}
-                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? (pathFocus ? 0 : 0.08) : 0.7}
+                        strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && !showAllInCompare && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 3.5 : 3}
+                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : 0.7}
                         fill="none"
                         filter={lineFilter}
                         strokeLinecap="round"
                         className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`}
                       />
                       {/* Endpoint dots */}
-                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
-                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
                       {/* Note indicator dot at curve midpoint */}
                       {conn.note && (
                         <circle
@@ -1619,7 +1688,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               {/* Nodes */}
               {nodes.filter(n => !hiddenNodeIds.has(n.id)).map((node) => {
                 const vis = getNodeVis(node.id);
-                const opc = vis === "dimmed" ? (pathFocus ? "opacity-0 pointer-events-none" : "opacity-15") : vis === "second" ? "opacity-45" : "opacity-100";
+                const opc = vis === "dimmed" ? (pathFocus && !showAllInCompare ? "opacity-0 pointer-events-none" : "opacity-15") : vis === "second" ? "opacity-45" : "opacity-100";
                 const isConnectSource = connectDrag?.sourceId === node.id;
                 const isConnectTarget = connectDrag && connectDrag.sourceId !== node.id;
                 return (
@@ -1795,7 +1864,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         </div>
 
         {/* ── Zoom controls (floating bottom-right) ─────────────────────────── */}
-        <div className="absolute bottom-4 right-4 z-40 flex items-center gap-1 rounded-lg border border-[#2a2a2a] bg-[#141414]/90 backdrop-blur-sm p-1 shadow-xl shadow-black/50">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 rounded-lg border border-[#2a2a2a] bg-[#141414]/90 backdrop-blur-sm p-1 shadow-xl shadow-black/50">
           <button
             onClick={zoomOut}
             disabled={zoom <= MIN_ZOOM}
@@ -1981,7 +2050,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           )}
           {pathFocus && (
             <button
-              onClick={() => { setPathFocus(null); setPathDrillNode(null); }}
+              onClick={() => { setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null; }}
               className="flex h-8 items-center gap-1 rounded px-2 text-[10px] font-bold uppercase tracking-wider text-[#666] hover:text-red-400 hover:bg-red-600/10 transition"
               title="Exit compare mode"
             >
@@ -1994,10 +2063,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
         </div>
 
-        {/* ── Pan hint ───────────────────────────────────────────────────────── */}
-        <div className="absolute bottom-4 left-4 z-40 font-[family-name:var(--font-mono)] text-[10px] text-[#444] uppercase tracking-[0.15em] pointer-events-none select-none">
-          Drag to pan · Ctrl+Scroll to zoom · Drag handles to connect
-        </div>
       </div>
     </div>
   );
