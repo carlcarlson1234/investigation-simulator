@@ -299,7 +299,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   /* ── Auto-arrange (multiple modes) ───────────────────────────────────── */
   const [isArranging, setIsArranging] = useState(false);
-  const [comparePicker, setComparePicker] = useState<{ open: boolean; selected: string[] }>({ open: false, selected: [] });
   const [pathPicker, setPathPicker] = useState<{ open: boolean; selected: string[] }>({ open: false, selected: [] });
   const [pathFocus, setPathFocus] = useState<FocusState | null>(null);
   const [pathDrillNode, setPathDrillNode] = useState<string | null>(null);
@@ -670,112 +669,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onBatchMoveNodes(pos);
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, connections, selectedNodeId, onBatchMoveNodes, getCardSize, zoomFit]);
-
-  const arrangeCompare = useCallback((personA: string, personB: string) => {
-    if (!onBatchMoveNodes || nodes.length < 2) return;
-    setPathFocus(null); setPathDrillNode(null);
-
-    // Build adjacency
-    const neighbors: Record<string, Set<string>> = {};
-    for (const n of nodes) neighbors[n.id] = new Set();
-    for (const c of connections) {
-      if (neighbors[c.sourceId]) neighbors[c.sourceId].add(c.targetId);
-      if (neighbors[c.targetId]) neighbors[c.targetId].add(c.sourceId);
-    }
-
-    // Categorize evidence
-    const evidenceA = new Set(neighbors[personA] || []);
-    const evidenceB = new Set(neighbors[personB] || []);
-
-    // Categorize all non-subject nodes
-    const onlyAEvidence: string[] = [];
-    const sharedEvidence: string[] = [];
-    const onlyBEvidence: string[] = [];
-    const sharedPeople: string[] = []; // connected to both A and B
-    const onlyAPeople: string[] = [];  // connected to A only
-    const onlyBPeople: string[] = [];  // connected to B only
-    const unconnected: string[] = [];
-
-    for (const n of nodes) {
-      if (n.id === personA || n.id === personB) continue;
-      const inA = evidenceA.has(n.id);
-      const inB = evidenceB.has(n.id);
-      if (n.kind === "person") {
-        if (inA && inB) sharedPeople.push(n.id);
-        else if (inA) onlyAPeople.push(n.id);
-        else if (inB) onlyBPeople.push(n.id);
-        else unconnected.push(n.id);
-      } else {
-        if (inA && inB) sharedEvidence.push(n.id);
-        else if (inA) onlyAEvidence.push(n.id);
-        else if (inB) onlyBEvidence.push(n.id);
-        else unconnected.push(n.id);
-      }
-    }
-
-    const GAP = 40;
-    const COL_GAP = 80;
-    const pos: Record<string, { x: number; y: number }> = {};
-
-    // Helper: stack cards vertically, centered on colCenterX, return bottom Y
-    const stackCol = (ids: string[], colCenterX: number, y: number): number => {
-      for (const id of ids) {
-        const s = getCardSize(id);
-        pos[id] = { x: colCenterX - s.w / 2, y };
-        y += s.h + GAP;
-      }
-      return y;
-    };
-
-    // Helper: measure max width of a set of cards
-    const maxW = (ids: string[], fallback = 200) => {
-      let m = 0;
-      for (const id of ids) { const s = getCardSize(id); if (s.w > m) m = s.w; }
-      return m || fallback;
-    };
-
-    const sA = getCardSize(personA);
-    const sB = getCardSize(personB);
-
-    // Column widths
-    const wOnlyA = maxW([...onlyAEvidence, ...onlyAPeople], 200);
-    const wOnlyB = maxW([...onlyBEvidence, ...onlyBPeople], 200);
-    const wShared = maxW([...sharedEvidence, ...sharedPeople], 200);
-
-    // 5 columns: [A unique] [Person A] [Shared] [Person B] [B unique]
-    const startY = 80;
-    const col1CenterX = 100 + wOnlyA / 2;                           // A's unique
-    const col2CenterX = col1CenterX + wOnlyA / 2 + COL_GAP + sA.w / 2;  // Person A
-    const col3CenterX = col2CenterX + sA.w / 2 + COL_GAP + wShared / 2; // Shared
-    const col4CenterX = col3CenterX + wShared / 2 + COL_GAP + sB.w / 2; // Person B
-    const col5CenterX = col4CenterX + sB.w / 2 + COL_GAP + wOnlyB / 2;  // B's unique
-
-    // Person A and B at the top of their columns
-    pos[personA] = { x: col2CenterX - sA.w / 2, y: startY };
-    pos[personB] = { x: col4CenterX - sB.w / 2, y: startY };
-
-    const contentY = startY + Math.max(sA.h, sB.h) + GAP + 20;
-
-    // Col 1: A's unique evidence + people
-    stackCol([...onlyAEvidence, ...onlyAPeople], col1CenterX, contentY);
-
-    // Col 3: Shared evidence + people
-    stackCol([...sharedEvidence, ...sharedPeople], col3CenterX, contentY);
-
-    // Col 5: B's unique evidence + people
-    stackCol([...onlyBEvidence, ...onlyBPeople], col5CenterX, contentY);
-
-    // Unconnected: stack below shared column
-    if (unconnected.length > 0) {
-      const allBottoms = Object.values(pos).map(p => p.y + 400);
-      const bottomY = Math.max(...allBottoms) + 40;
-      stackCol(unconnected, col3CenterX, bottomY);
-    }
-
-    setIsArranging(true);
-    onBatchMoveNodes(pos);
-    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
-  }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFit]);
 
   const arrangePath = useCallback((nodeAId: string, nodeBId: string) => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
@@ -2005,103 +1898,71 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
           <div className="relative">
             <button
-              onClick={() => { setComparePicker(p => ({ open: !p.open, selected: [] })); setPathPicker({ open: false, selected: [] }); }}
-              disabled={nodes.filter(n => n.kind === "person").length < 2 || isArranging}
-              className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Compare two subjects"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="8" cy="12" r="6" />
-                <circle cx="16" cy="12" r="6" />
-              </svg>
-              <span className="text-[10px] font-bold uppercase tracking-wider">Compare</span>
-            </button>
-            {comparePicker.open && (
-              <div className="absolute bottom-full right-0 mb-2 w-56 rounded-lg border border-[#2a2a2a] bg-[#111] p-2 shadow-xl shadow-black/60 z-50">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] px-2 py-1 mb-1">
-                  Pick {2 - comparePicker.selected.length} {comparePicker.selected.length === 0 ? "people" : "more"}
-                </div>
-                {nodes.filter(n => n.kind === "person").map(n => {
-                  const picked = comparePicker.selected.includes(n.id);
-                  return (
-                    <button
-                      key={n.id}
-                      onClick={() => {
-                        if (picked) {
-                          setComparePicker(prev => ({ ...prev, selected: prev.selected.filter(id => id !== n.id) }));
-                          return;
-                        }
-                        const next = [...comparePicker.selected, n.id];
-                        if (next.length >= 2) {
-                          setComparePicker({ open: false, selected: [] });
-                          arrangeCompare(next[0], next[1]);
-                        } else {
-                          setComparePicker(prev => ({ ...prev, selected: next }));
-                        }
-                      }}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition ${
-                        picked ? "bg-red-600/20 text-red-400" : "text-[#aaa] hover:bg-[#1a1a1a] hover:text-white"
-                      }`}
-                    >
-                      <span className={`h-2.5 w-2.5 rounded-full ${picked ? "bg-red-500" : "bg-[#333]"}`} />
-                      {n.data.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="relative">
-            <button
-              onClick={() => { setPathPicker(p => ({ open: !p.open, selected: [] })); setComparePicker({ open: false, selected: [] }); }}
+              onClick={() => setPathPicker(p => ({ open: !p.open, selected: [] }))}
               disabled={nodes.length < 2 || isArranging}
               className={`flex h-8 items-center gap-1.5 rounded px-2 transition disabled:opacity-30 disabled:cursor-not-allowed ${
                 pathFocus ? "text-red-400 bg-red-600/10 hover:bg-red-600/20" : "text-[#888] hover:bg-[#222] hover:text-white"
               }`}
-              title="Find path between two nodes"
+              title="Compare two nodes"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="4" cy="12" r="2" />
                 <circle cx="20" cy="12" r="2" />
                 <path d="M6 12h2c2 0 2-4 4-4s2 4 4 4h2" />
               </svg>
-              <span className="text-[10px] font-bold uppercase tracking-wider">Path</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider">Compare</span>
             </button>
             {pathPicker.open && (
-              <div className="absolute bottom-full right-0 mb-2 w-56 rounded-lg border border-[#2a2a2a] bg-[#111] p-2 shadow-xl shadow-black/60 z-50">
+              <div className="absolute bottom-full right-0 mb-2 w-64 max-h-80 overflow-y-auto rounded-lg border border-[#2a2a2a] bg-[#111] p-2 shadow-xl shadow-black/60 z-50">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] px-2 py-1 mb-1">
                   Pick {2 - pathPicker.selected.length} {pathPicker.selected.length === 0 ? "nodes" : "more"}
                 </div>
-                {nodes.map(n => {
-                  const picked = pathPicker.selected.includes(n.id);
-                  const label = n.kind === "person" ? n.data.name : n.data.title;
-                  return (
-                    <button
-                      key={n.id}
-                      onClick={() => {
-                        if (picked) {
-                          setPathPicker(prev => ({ ...prev, selected: prev.selected.filter(id => id !== n.id) }));
-                          return;
-                        }
-                        const next = [...pathPicker.selected, n.id];
-                        if (next.length >= 2) {
-                          setPathPicker({ open: false, selected: [] });
-                          arrangePath(next[0], next[1]);
-                        } else {
-                          setPathPicker(prev => ({ ...prev, selected: next }));
-                        }
-                      }}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition ${
-                        picked ? "bg-red-600/20 text-red-400" : "text-[#aaa] hover:bg-[#1a1a1a] hover:text-white"
-                      }`}
-                    >
-                      <span className={`h-2.5 w-2.5 rounded-full ${picked ? "bg-red-500" : "bg-[#333]"}`} />
-                      <span className="truncate">{label}</span>
-                      <span className="ml-auto text-[9px] text-[#555] uppercase">{n.kind === "person" ? "person" : (n as BoardEvidenceNode).evidenceType}</span>
-                    </button>
-                  );
-                })}
+                {(() => {
+                  const people = nodes.filter(n => n.kind === "person");
+                  const photos = nodes.filter(n => n.kind === "evidence" && (n as BoardEvidenceNode).evidenceType === "photo");
+                  const other = nodes.filter(n => n.kind === "evidence" && (n as BoardEvidenceNode).evidenceType !== "photo");
+                  const groups = [
+                    { label: "People", items: people },
+                    { label: "Photos", items: photos },
+                    { label: "Evidence", items: other },
+                  ].filter(g => g.items.length > 0);
+
+                  const renderItem = (n: BoardNode) => {
+                    const picked = pathPicker.selected.includes(n.id);
+                    const label = n.kind === "person" ? n.data.name : n.data.title;
+                    return (
+                      <button
+                        key={n.id}
+                        onClick={() => {
+                          if (picked) {
+                            setPathPicker(prev => ({ ...prev, selected: prev.selected.filter(id => id !== n.id) }));
+                            return;
+                          }
+                          const next = [...pathPicker.selected, n.id];
+                          if (next.length >= 2) {
+                            setPathPicker({ open: false, selected: [] });
+                            arrangePath(next[0], next[1]);
+                          } else {
+                            setPathPicker(prev => ({ ...prev, selected: next }));
+                          }
+                        }}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition ${
+                          picked ? "bg-red-600/20 text-red-400" : "text-[#aaa] hover:bg-[#1a1a1a] hover:text-white"
+                        }`}
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full ${picked ? "bg-red-500" : "bg-[#333]"}`} />
+                        <span className="truncate">{label}</span>
+                      </button>
+                    );
+                  };
+
+                  return groups.map(g => (
+                    <div key={g.label}>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-[#444] px-2 pt-2 pb-1">{g.label}</div>
+                      {g.items.map(renderItem)}
+                    </div>
+                  ));
+                })()}
               </div>
             )}
           </div>
@@ -2110,7 +1971,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             <button
               onClick={() => { setPathFocus(pathDefaultFocusRef.current); setPathDrillNode(null); }}
               className="flex h-8 items-center gap-1 rounded px-2 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-600/10 transition"
-              title="Back to default path view"
+              title="Back to default compare view"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="15 18 9 12 15 6" />
@@ -2122,7 +1983,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             <button
               onClick={() => { setPathFocus(null); setPathDrillNode(null); }}
               className="flex h-8 items-center gap-1 rounded px-2 text-[10px] font-bold uppercase tracking-wider text-[#666] hover:text-red-400 hover:bg-red-600/10 transition"
-              title="Exit path mode"
+              title="Exit compare mode"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
