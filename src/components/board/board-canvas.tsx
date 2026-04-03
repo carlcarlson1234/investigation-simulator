@@ -261,19 +261,28 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     viewportRef.current?.scrollTo({ left: 0, top: 0, behavior: "smooth" });
   }, []);
   const zoomFit = useCallback(() => {
-    if (!viewportRef.current || nodes.length === 0) return;
+    const vp = viewportRef.current;
+    if (!vp) return;
+    // Read all card bounds directly from the DOM for accuracy
+    const cards = vp.querySelectorAll<HTMLElement>("[data-node-id]");
+    if (cards.length === 0) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-      minX = Math.min(minX, n.position.x);
-      minY = Math.min(minY, n.position.y);
-      maxX = Math.max(maxX, n.position.x + 190);
-      maxY = Math.max(maxY, n.position.y + 140);
+    for (const el of cards) {
+      // Position is set via inline style transform — parse from the element's style
+      const x = parseFloat(el.style.left) || 0;
+      const y = parseFloat(el.style.top) || 0;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
     }
-    const padding = 80;
+    const padding = 60;
     const contentW = maxX - minX + padding * 2;
     const contentH = maxY - minY + padding * 2;
-    const vp = viewportRef.current;
-    const fitZoom = clampZoom(Math.min(vp.clientWidth / contentW, vp.clientHeight / contentH));
+    // Use the minimal zoom that fits everything — don't zoom in past 1.0
+    const fitZoom = clampZoom(Math.min(1, vp.clientWidth / contentW, vp.clientHeight / contentH));
     setZoom(fitZoom);
     requestAnimationFrame(() => {
       const cx = (minX + maxX) / 2;
@@ -284,71 +293,225 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         behavior: "smooth",
       });
     });
-  }, [nodes]);
+  }, []);
 
-  /* ── Auto-arrange (force-directed layout) ──────────────────────────────── */
+  /* ── Auto-arrange (multiple modes) ───────────────────────────────────── */
   const [isArranging, setIsArranging] = useState(false);
+  // Measure actual card dimensions from the DOM
+  const getCardSize = useCallback((nodeId: string) => {
+    const el = viewportRef.current?.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null;
+    if (el) return { w: el.offsetWidth, h: el.offsetHeight };
+    return { w: 260, h: 300 }; // fallback
+  }, []);
 
-  const autoArrange = useCallback(() => {
-    if (!onBatchMoveNodes || nodes.length < 2) return;
-
-    // Build adjacency for grouping connected nodes
-    const neighbors: Record<string, Set<string>> = {};
-    for (const n of nodes) neighbors[n.id] = new Set();
-    for (const c of connections) {
-      if (neighbors[c.sourceId]) neighbors[c.sourceId].add(c.targetId);
-      if (neighbors[c.targetId]) neighbors[c.targetId].add(c.sourceId);
-    }
-
-    // BFS from most-connected node to order nodes so connected ones are adjacent
-    const ordered: string[] = [];
-    const visited = new Set<string>();
-    const byConnections = [...nodes].sort((a, b) =>
-      (neighbors[b.id]?.size ?? 0) - (neighbors[a.id]?.size ?? 0)
-    );
-
-    for (const start of byConnections) {
-      if (visited.has(start.id)) continue;
-      const queue = [start.id];
-      visited.add(start.id);
-      while (queue.length > 0) {
-        const id = queue.shift()!;
-        ordered.push(id);
-        // Add unvisited neighbors, sorted by connection count
-        const nbs = [...(neighbors[id] || [])].filter(n => !visited.has(n));
-        nbs.sort((a, b) => (neighbors[b]?.size ?? 0) - (neighbors[a]?.size ?? 0));
-        for (const nb of nbs) { visited.add(nb); queue.push(nb); }
+  // Only zoom-to-fit if any node card is outside the visible viewport
+  const zoomFitIfNeeded = useCallback((newPositions: Record<string, { x: number; y: number }>) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const scrollL = vp.scrollLeft;
+    const scrollT = vp.scrollTop;
+    const viewW = vp.clientWidth;
+    const viewH = vp.clientHeight;
+    for (const [id, pos] of Object.entries(newPositions)) {
+      const s = getCardSize(id);
+      const left = pos.x * zoom;
+      const top = pos.y * zoom;
+      const right = (pos.x + s.w) * zoom;
+      const bottom = (pos.y + s.h) * zoom;
+      if (left < scrollL || top < scrollT || right > scrollL + viewW || bottom > scrollT + viewH) {
+        zoomFit();
+        return;
       }
     }
+  }, [zoom, getCardSize, zoomFit]);
 
-    const CELL_W = 300;
-    const CELL_H = 380;
-    const GAP_X = 80;
-    const GAP_Y = 80;
-    const cols = Math.max(2, Math.ceil(Math.sqrt(ordered.length)));
+  const arrangeGrid = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    const pos: Record<string, { x: number; y: number }> = {};
 
+    // Measure all cards to find the largest
+    const sizes = new Map<string, { w: number; h: number }>();
+    let maxW = 0, maxH = 0;
+    for (const node of nodes) {
+      const s = getCardSize(node.id);
+      sizes.set(node.id, s);
+      if (s.w > maxW) maxW = s.w;
+      if (s.h > maxH) maxH = s.h;
+    }
+
+    const GAP = 60;
+    const CELL_W = maxW;
+    const CELL_H = maxH;
+    const cols = Math.max(2, Math.ceil(Math.sqrt(nodes.length)));
     const startX = 100;
     const startY = 80;
 
-    const pos: Record<string, { x: number; y: number }> = {};
-    ordered.forEach((id, i) => {
+    const ordered = [...nodes].sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === "person" ? -1 : 1;
+      return 0;
+    });
+
+    ordered.forEach((node, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      pos[id] = {
-        x: startX + col * (CELL_W + GAP_X),
-        y: startY + row * (CELL_H + GAP_Y),
+      const { w: cardW, h: cardH } = sizes.get(node.id) ?? { w: maxW, h: maxH };
+      // Center both axes so all card centers sit on perfect grid intersections
+      pos[node.id] = {
+        x: startX + col * (CELL_W + GAP) + (CELL_W - cardW) / 2,
+        y: startY + row * (CELL_H + GAP) + (CELL_H - cardH) / 2,
       };
     });
 
-    // Animate to new positions
     setIsArranging(true);
     onBatchMoveNodes(pos);
-    setTimeout(() => {
-      setIsArranging(false);
-      // Fit view after arrange
-      zoomFit();
-    }, 350);
-  }, [nodes, connections, onBatchMoveNodes, zoomFit]);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, onBatchMoveNodes, zoomFitIfNeeded, getCardSize]);
+
+  const arrangeSplit = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    const pos: Record<string, { x: number; y: number }> = {};
+
+    const people = nodes.filter(n => n.kind === "person");
+    const evidence = nodes.filter(n => n.kind !== "person");
+
+    const GAP = 60;
+    const MIDDLE_GAP = 400;
+    const startY = 80;
+
+    // Measure actual widths for the left column
+    let leftColW = 0;
+    for (const node of people) {
+      const s = getCardSize(node.id);
+      if (s.w > leftColW) leftColW = s.w;
+    }
+    leftColW = leftColW || 260;
+
+    const leftX = 100;
+    let py = startY;
+    for (const node of people) {
+      const s = getCardSize(node.id);
+      pos[node.id] = { x: leftX + (leftColW - s.w) / 2, y: py };
+      py += s.h + GAP;
+    }
+
+    const rightX = leftX + leftColW + MIDDLE_GAP;
+    let rightColW = 0;
+    for (const node of evidence) {
+      const s = getCardSize(node.id);
+      if (s.w > rightColW) rightColW = s.w;
+    }
+
+    let ey = startY;
+    for (const node of evidence) {
+      const s = getCardSize(node.id);
+      pos[node.id] = { x: rightX + (rightColW - s.w) / 2, y: ey };
+      ey += s.h + GAP;
+    }
+
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
+
+  const arrangeForce = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+
+    // Measure card sizes
+    const sizes = new Map<string, { w: number; h: number }>();
+    for (const node of nodes) sizes.set(node.id, getCardSize(node.id));
+
+    // Build adjacency set
+    const connected = new Set<string>();
+    for (const c of connections) {
+      connected.add(`${c.sourceId}:${c.targetId}`);
+      connected.add(`${c.targetId}:${c.sourceId}`);
+    }
+
+    // Initialize positions from current locations (or random if stacked)
+    type Body = { id: string; x: number; y: number; vx: number; vy: number; w: number; h: number };
+    const bodies: Body[] = nodes.map((n) => {
+      const s = sizes.get(n.id) ?? { w: 260, h: 300 };
+      return {
+        id: n.id,
+        x: n.position.x + s.w / 2,
+        y: n.position.y + s.h / 2,
+        vx: 0, vy: 0,
+        w: s.w, h: s.h,
+      };
+    });
+
+    const ITERATIONS = 200;
+    const REPULSION = 200000;
+    const ATTRACTION = 0.005;
+    const REST_LENGTH = 180;
+    const DAMPING = 0.85;
+    const MIN_DIST = 60;
+
+    for (let iter = 0; iter < ITERATIONS; iter++) {
+      const temp = 1 - iter / ITERATIONS; // cool down over time
+
+      // Repulsion between all pairs
+      for (let i = 0; i < bodies.length; i++) {
+        for (let j = i + 1; j < bodies.length; j++) {
+          const a = bodies[i], b = bodies[j];
+          let dx = a.x - b.x;
+          let dy = a.y - b.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < MIN_DIST) dist = MIN_DIST;
+          const force = REPULSION / (dist * dist);
+          const fx = (dx / dist) * force * temp;
+          const fy = (dy / dist) * force * temp;
+          a.vx += fx; a.vy += fy;
+          b.vx -= fx; b.vy -= fy;
+        }
+      }
+
+      // Attraction along connections
+      for (const conn of connections) {
+        const a = bodies.find(b => b.id === conn.sourceId);
+        const b = bodies.find(b => b.id === conn.targetId);
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) continue;
+        const force = ATTRACTION * (dist - REST_LENGTH) * temp;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        a.vx += fx; a.vy += fy;
+        b.vx -= fx; b.vy -= fy;
+      }
+
+      // Apply velocities with damping
+      for (const body of bodies) {
+        body.vx *= DAMPING;
+        body.vy *= DAMPING;
+        body.x += body.vx;
+        body.y += body.vy;
+      }
+    }
+
+    // Normalize: shift so top-left is at (100, 80)
+    let minX = Infinity, minY = Infinity;
+    for (const b of bodies) {
+      if (b.x - b.w / 2 < minX) minX = b.x - b.w / 2;
+      if (b.y - b.h / 2 < minY) minY = b.y - b.h / 2;
+    }
+    const offsetX = 100 - minX;
+    const offsetY = 80 - minY;
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    for (const b of bodies) {
+      pos[b.id] = {
+        x: b.x + offsetX - b.w / 2,
+        y: b.y + offsetY - b.h / 2,
+      };
+    }
+
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
 
   /* ── Wheel-to-zoom (Ctrl+scroll) ────────────────────────────────────────── */
   useEffect(() => {
@@ -937,6 +1100,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 return (
                   <div
                     key={node.id}
+                    data-node-id={node.id}
                     className={`board-node absolute select-none ${opc} ${
                       dragState?.nodeId === node.id ? "board-node--dragging" : isArranging ? "board-node--arranging" : ""
                     } ${selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
@@ -1115,10 +1279,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           <div className="mx-0.5 h-5 w-px bg-[#333]" />
 
           <button
-            onClick={autoArrange}
+            onClick={arrangeGrid}
             disabled={nodes.length < 2 || isArranging}
             className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Auto-arrange nodes"
+            title="Organize: Grid"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -1126,7 +1290,37 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               <rect x="3" y="14" width="7" height="7" rx="1" />
               <rect x="14" y="14" width="7" height="7" rx="1" />
             </svg>
-            <span className="text-[10px] font-bold uppercase tracking-wider">Organize</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Grid</span>
+          </button>
+
+          <button
+            onClick={arrangeSplit}
+            disabled={nodes.length < 2 || isArranging}
+            className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Organize: Split by type"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="18" rx="1" />
+              <rect x="14" y="3" width="7" height="18" rx="1" />
+            </svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Split</span>
+          </button>
+
+          <button
+            onClick={arrangeForce}
+            disabled={nodes.length < 2 || isArranging}
+            className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Organize: Force-directed network"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="5" cy="6" r="3" />
+              <circle cx="19" cy="6" r="3" />
+              <circle cx="12" cy="19" r="3" />
+              <line x1="7.5" y1="7.5" x2="10" y2="17" />
+              <line x1="16.5" y1="7.5" x2="14" y2="17" />
+              <line x1="8" y1="6" x2="16" y2="6" />
+            </svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Network</span>
           </button>
 
         </div>
