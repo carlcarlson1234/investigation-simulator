@@ -43,6 +43,7 @@ export function BoardWorkspace({
   const [selectedEmailDetail, setSelectedEmailDetail] = useState<EmailEvidence | null>(null);
   const [subjectFocusPersonId, setSubjectFocusPersonId] = useState<string | null>(null);
   const [photoFocusId, setPhotoFocusId] = useState<string | null>(null);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
@@ -355,7 +356,7 @@ export function BoardWorkspace({
       </div>
 
       {/* CENTER: Board Canvas — hidden until intro-board */}
-      <div className={`flex flex-col flex-1 min-h-0 transition-all duration-700 ease-out ${showBoard ? "opacity-100" : "opacity-0"}`}>
+      <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden transition-all duration-700 ease-out ${showBoard ? "opacity-100" : "opacity-0"}`}>
         {showBoard && (
           <BoardCanvas
             ref={canvasRef}
@@ -384,6 +385,73 @@ export function BoardWorkspace({
             onUpdateConnection={updateConnection}
           />
         )}
+
+        {/* Timeline toggle button (floating) */}
+        <button
+          onClick={() => setTimelineOpen(!timelineOpen)}
+          className={`absolute top-3 right-3 z-30 flex items-center gap-2 rounded-lg border px-3 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] transition backdrop-blur-sm ${
+            timelineOpen
+              ? "border-red-500/40 bg-red-600/15 text-red-400 shadow-lg shadow-red-900/20"
+              : "border-[#2a2a2a] bg-[#0a0a0a]/80 text-[#666] hover:text-white hover:border-[#444]"
+          }`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+          </svg>
+          Timeline{timelineEvents.length > 0 ? ` (${timelineEvents.length})` : ""}
+        </button>
+
+        {/* Timeline drawer (slide from right over canvas) */}
+        <div className={`absolute top-0 right-0 z-20 h-full w-72 border-l border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-md transition-transform duration-300 ease-out ${
+          timelineOpen ? "translate-x-0" : "translate-x-full"
+        }`}>
+          <div className="flex items-center justify-between border-b border-[#1a1a1a] px-3 py-2.5">
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-red-500">
+              🕐 Timeline
+            </span>
+            <button onClick={() => setTimelineOpen(false)} className="text-[#555] hover:text-white transition">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="overflow-y-auto h-[calc(100%-42px)]">
+            {timelineEvents.length === 0 ? (
+              <div className="flex items-center justify-center p-8 text-center">
+                <div>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto mb-2 text-[#333]">
+                    <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  <p className="text-xs text-[#555]">Add dated evidence to build a timeline</p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3">
+                {focusState && (
+                  <div className="mb-3 rounded-md border border-red-600/20 bg-red-600/5 px-2 py-1.5 text-[9px] text-red-400/70">
+                    Related events are highlighted.
+                  </div>
+                )}
+                <div className="relative pl-4 border-l border-[#222]">
+                  {timelineEvents.map((event, i) => {
+                    const dimmed = focusState && !event.isRelatedToFocus;
+                    return (
+                      <button key={`${event.itemId}-${i}`} onClick={() => selectNode(event.itemId)}
+                        className={`relative mb-4 pb-1 block w-full text-left transition-opacity duration-300 hover:opacity-100 ${dimmed ? "opacity-30" : "opacity-100"}`}>
+                        <div className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 bg-[#0a0a0a] transition-colors ${
+                          !dimmed && focusState ? "border-red-500" : "border-red-500/40"
+                        }`} />
+                        <div className="text-[10px] font-semibold text-red-500/60 tabular-nums mb-0.5">{event.date}</div>
+                        <h4 className="text-xs font-semibold text-white/90">{event.title}</h4>
+                        <p className="mt-0.5 text-[10px] leading-relaxed text-[#777]">{event.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Investigation Overlay (only in start mode) */}

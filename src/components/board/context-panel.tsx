@@ -38,7 +38,6 @@ interface ContextPanelProps {
 const TABS: { key: RightPanelTab; label: string }[] = [
   { key: "persons", label: "Persons" },
   { key: "details", label: "Details" },
-  { key: "timeline", label: "Timeline" },
 ];
 
 export function ContextPanel({
@@ -103,9 +102,6 @@ export function ContextPanel({
             <DetailsTab selectedNode={selectedNode} boardConnections={boardConnections} boardNodes={boardNodes}
               onFocusNode={onFocusNode} onSelectNode={onSelectNode} focusedNodeId={focusedNodeId} />
           )
-        )}
-        {activeTab === "timeline" && (
-          <TimelineTab events={timelineEvents} focusState={focusState} onSelectNode={onSelectNode} />
         )}
       </div>
     </aside>

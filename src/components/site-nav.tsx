@@ -12,7 +12,7 @@ export function SiteNav() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-md">
+    <header className="sticky top-0 z-[999] border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-md">
       <nav className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-3 group" id="nav-logo">
           <span className="flex h-8 w-8 items-center justify-center rounded bg-red-600/15 text-red-500 transition group-hover:bg-red-600/25 group-hover:shadow-lg group-hover:shadow-red-600/10">
