@@ -21,14 +21,12 @@ import { useInvestigation } from "@/hooks/use-investigation";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
-  archiveSubtitle: string;
   people: Person[];
   stats: ArchiveStats;
 }
 
 export function BoardWorkspace({
   archiveTitle,
-  archiveSubtitle,
   people,
   stats,
 }: BoardWorkspaceProps) {
@@ -155,7 +153,11 @@ export function BoardWorkspace({
 
   const selectNode = useCallback((id: string | null) => {
     setSelectedNodeId(id);
-    if (id) setRightTab("details");
+    if (id) {
+      setRightTab("details");
+    } else {
+      setRightTab((prev) => prev === "details" ? "persons" : prev);
+    }
   }, []);
 
   const focusNode = useCallback((id: string | null) => {
@@ -367,7 +369,6 @@ export function BoardWorkspace({
           <BoardCanvas
             ref={canvasRef}
             archiveTitle={archiveTitle}
-            archiveSubtitle={archiveSubtitle}
             nodes={boardNodes}
             connections={boardConnections}
             selectedNodeId={selectedNodeId}

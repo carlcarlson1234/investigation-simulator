@@ -56,7 +56,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
             className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
               activeTab === tab.key && !searchOpen
                 ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
-                : "text-[#555] hover:text-white"
+                : "text-[#aaa] hover:text-white hover:border-b-2 hover:border-[#555]"
             }`}
           >
             {tab.label}
@@ -75,7 +75,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
             <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               autoFocus
               placeholder="Search all evidence…"
-              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#444] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
+              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#777] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
             />
             <button
               onClick={handleCloseSearch}

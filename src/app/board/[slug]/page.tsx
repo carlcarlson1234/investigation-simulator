@@ -17,7 +17,6 @@ export default async function BoardPage() {
   return (
     <BoardWorkspace
       archiveTitle="Investigate Epstein"
-      archiveSubtitle={`${stats.emailCount.toLocaleString()} emails · ${stats.documentCount.toLocaleString()} docs · ${stats.photoCount.toLocaleString()} photos · ${stats.personCount} persons`}
       people={people}
       stats={stats}
     />

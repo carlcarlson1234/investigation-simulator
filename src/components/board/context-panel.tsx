@@ -83,7 +83,7 @@ export function ContextPanel({
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => onTabChange(tab.key)}
             className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-              activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#555] hover:text-white"
+              activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#aaa] hover:text-white hover:border-b-2 hover:border-[#555]"
             }`}>
             {tab.label}
           </button>
@@ -94,7 +94,7 @@ export function ContextPanel({
         {activeTab === "persons" && (
           <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
             isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
-            suggestedPeople={suggestedPeople} investigationStep={investigationStep} />
+            suggestedPeople={suggestedPeople} investigationStep={investigationStep} boardConnections={boardConnections} />
         )}
         {activeTab === "details" && (
           selectedEmailDetail && !selectedNode ? (
@@ -114,12 +114,13 @@ export function ContextPanel({
 
 // ─── Persons Tab ──────────────────────────────────────────────────────────
 
-function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep }: {
+function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep, boardConnections }: {
   people: Person[]; search: string; onSearchChange: (v: string) => void;
   isOnBoard: (id: string) => boolean; onAddPerson: (id: string) => void;
   focusedNodeId: string | null; onFocusNode: (id: string | null) => void;
   suggestedPeople?: Person[];
   investigationStep?: InvestigationStep | null;
+  boardConnections: BoardConnection[];
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const isOnboarding = investigationStep != null;
@@ -132,6 +133,16 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
 
   // Non-suggested people (everyone else)
   const otherPeople = useMemo(() => people.filter(p => !suggestedIds.has(p.id)), [people, suggestedIds]);
+
+  // Connection count per person
+  const connectionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const conn of boardConnections) {
+      counts.set(conn.sourceId, (counts.get(conn.sourceId) || 0) + 1);
+      counts.set(conn.targetId, (counts.get(conn.targetId) || 0) + 1);
+    }
+    return counts;
+  }, [boardConnections]);
 
   return (
     <div className="p-3 space-y-1.5">
@@ -146,7 +157,7 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
             <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)}
               autoFocus
               placeholder={`Search ${people.length} people…`}
-              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#444] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
+              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#777] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
             />
             <button
               onClick={() => { setSearchOpen(false); onSearchChange(""); }}
@@ -196,6 +207,7 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
                 )}
                 onAddPerson={onAddPerson}
                 onFocusNode={onFocusNode}
+                connectionCount={connectionCounts.get(person.id) || 0}
               />
             ))}
           </div>
@@ -223,6 +235,7 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
             isActiveTarget={false}
             onAddPerson={onAddPerson}
             onFocusNode={onFocusNode}
+            connectionCount={connectionCounts.get(person.id) || 0}
           />
         ))}
 
@@ -238,7 +251,7 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
 
 // ── Person Card (used in both suggested and all-people lists) ────────────────
 
-function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget, onAddPerson, onFocusNode }: {
+function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget, onAddPerson, onFocusNode, connectionCount }: {
   person: Person;
   isOnBoard: boolean;
   isFocused: boolean;
@@ -246,6 +259,7 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
   isActiveTarget: boolean;
   onAddPerson: (id: string) => void;
   onFocusNode: (id: string | null) => void;
+  connectionCount: number;
 }) {
   return (
     <div
@@ -280,10 +294,17 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e0e] via-transparent to-transparent" />
-        {/* POI badge */}
-        <div className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded bg-black/60 border border-red-900/30 px-1.5 py-0.5 backdrop-blur-sm">
-          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-          <span className="font-[family-name:var(--font-mono)] text-[7px] uppercase tracking-wider text-red-400/80">POI</span>
+        {/* POI badge + connection count */}
+        <div className="absolute top-1.5 left-1.5 flex items-center gap-1.5">
+          <div className="flex items-center gap-1 rounded bg-black/70 border border-red-900/40 px-1.5 py-0.5 backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+            <span className="font-[family-name:var(--font-mono)] text-[8px] uppercase tracking-wider text-red-400">POI</span>
+          </div>
+          {connectionCount > 0 && (
+            <div className="flex items-center gap-1 rounded bg-black/70 border border-green-600/30 px-1.5 py-0.5 backdrop-blur-sm">
+              <span className="font-[family-name:var(--font-mono)] text-[8px] text-green-400">{connectionCount} 🔗</span>
+            </div>
+          )}
         </div>
         {/* On-board check */}
         {isOnBoard && (
@@ -296,38 +317,29 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
       {/* Info */}
       <div className="px-3 py-2.5">
         <p className="font-[family-name:var(--font-display)] text-[15px] font-bold text-white tracking-wide leading-tight truncate">{person.name}</p>
-        <div className="flex items-center gap-2 mt-1">
-          {person.photoCount > 0 && (
-            <span className="text-[10px] text-[#555]">📸 {person.photoCount}</span>
-          )}
-          {person.source && (
-            <span className="text-[10px] text-[#444] truncate">{person.source}</span>
-          )}
-        </div>
+        {person.photoCount > 0 && (
+          <p className="text-[11px] text-[#999] mt-0.5">📸 Tagged in {person.photoCount} {person.photoCount === 1 ? "photo" : "photos"}</p>
+        )}
 
-        {/* Action */}
-        <div className="mt-2">
-          {isOnBoard ? (
-            isFocused ? (
-              <button onClick={(e) => { e.stopPropagation(); onFocusNode(null); }}
-                className="w-full rounded-lg bg-red-600/20 border border-red-600/30 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-red-400 hover:bg-red-600/30 transition text-center">
-                Unfocus
-              </button>
-            ) : null
-          ) : isActiveTarget ? (
+        {/* Action — only show unfocus button for focused on-board nodes, or drag prompt */}
+        {isOnBoard && isFocused && (
+          <div className="mt-2">
+            <button onClick={(e) => { e.stopPropagation(); onFocusNode(null); }}
+              className="w-full rounded-lg bg-red-600/20 border border-red-600/30 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-red-400 hover:bg-red-600/30 transition text-center">
+              Unfocus
+            </button>
+          </div>
+        )}
+        {isActiveTarget && (
+          <div className="mt-2">
             <div className="flex items-center justify-center gap-2 rounded-lg bg-red-600/20 border border-red-500/40 px-3 py-2 text-red-400 animate-pulse">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-bounce">
                 <path d="M19 12H5M12 19l-7-7 7-7" />
               </svg>
               <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider">Drag to Board</span>
             </div>
-          ) : (
-            <button onClick={(e) => { e.stopPropagation(); onAddPerson(person.id); }}
-              className="w-full rounded-lg bg-[#1a1a1a] border border-[#333] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-[#666] opacity-0 group-hover:opacity-100 hover:text-white hover:bg-[#222] transition text-center">
-              + Add to Board
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

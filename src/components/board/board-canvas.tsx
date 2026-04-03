@@ -24,7 +24,6 @@ export interface BoardCanvasHandle {
 
 interface BoardCanvasProps {
   archiveTitle: string;
-  archiveSubtitle: string;
   nodes: BoardNode[];
   connections: BoardConnection[];
   selectedNodeId: string | null;
@@ -53,7 +52,6 @@ interface BoardCanvasProps {
 export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(function BoardCanvas(
   {
     archiveTitle,
-    archiveSubtitle,
     nodes,
     connections,
     selectedNodeId,
@@ -882,16 +880,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               {nodes.length === 0 && !investigationStep && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center">
-                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-600/10 border border-red-600/20">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-red-500/50">
+                    <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-red-600/10 border border-red-600/20">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-red-500/70">
                         <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                         <polyline points="14 2 14 8 20 8" />
                       </svg>
                     </div>
-                    <p className="text-sm font-bold uppercase tracking-widest text-[#555]">
+                    <p className="text-base font-bold uppercase tracking-widest text-[#999]">
                       No evidence on board
                     </p>
-                    <p className="text-xs text-[#444] mt-1.5">
+                    <p className="text-sm text-[#777] mt-2">
                       Search evidence left · Drag persons from right
                     </p>
                   </div>
