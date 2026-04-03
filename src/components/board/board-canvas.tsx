@@ -14,8 +14,8 @@ const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
 const DEFAULT_ZOOM = 1;
-const WORLD_W = 4000;
-const WORLD_H = 3000;
+const BASE_WORLD_W = 4000;
+const BASE_WORLD_H = 3000;
 
 /* ── Public handle so parent can call centerOnNode ──────────────────────── */
 export interface BoardCanvasHandle {
@@ -203,16 +203,18 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   // ─── Focus visibility ──────────────────────────────────────────────────
 
   function getNodeVis(nodeId: string): "focused" | "direct" | "second" | "dimmed" | "normal" {
-    if (!focusState) return "normal";
-    if (nodeId === focusState.nodeId) return "focused";
-    if (focusState.directIds.has(nodeId)) return "direct";
-    if (focusState.secondIds.has(nodeId)) return "second";
+    const fs = pathFocus || focusState;
+    if (!fs) return "normal";
+    if (nodeId === fs.nodeId) return "focused";
+    if (fs.directIds.has(nodeId)) return "direct";
+    if (fs.secondIds.has(nodeId)) return "second";
     return "dimmed";
   }
 
   function getEdgeVis(connId: string): "highlight" | "faded" | "normal" {
-    if (!focusState) return "normal";
-    if (focusState.edgeIds.has(connId)) return "highlight";
+    const fs = pathFocus || focusState;
+    if (!fs) return "normal";
+    if (fs.edgeIds.has(connId)) return "highlight";
     return "faded";
   }
 
@@ -297,6 +299,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   /* ── Auto-arrange (multiple modes) ───────────────────────────────────── */
   const [isArranging, setIsArranging] = useState(false);
+  const [comparePicker, setComparePicker] = useState<{ open: boolean; selected: string[] }>({ open: false, selected: [] });
+  const [pathPicker, setPathPicker] = useState<{ open: boolean; selected: string[] }>({ open: false, selected: [] });
+  const [pathFocus, setPathFocus] = useState<FocusState | null>(null);
+  const [pathDrillNode, setPathDrillNode] = useState<string | null>(null);
+  // Default path focus (5 core columns) and full focus (includes indirect)
+  const pathDefaultFocusRef = useRef<FocusState | null>(null);
+  const pathFullFocusRef = useRef<FocusState | null>(null);
   // Measure actual card dimensions from the DOM
   const getCardSize = useCallback((nodeId: string) => {
     const el = viewportRef.current?.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null;
@@ -327,6 +336,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangeGrid = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null);
     const pos: Record<string, { x: number; y: number }> = {};
 
     // Measure all cards to find the largest
@@ -369,6 +379,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   const arrangeSplit = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null);
     const pos: Record<string, { x: number; y: number }> = {};
 
     const people = nodes.filter(n => n.kind === "person");
@@ -413,23 +424,49 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
 
+  // Stack unconnected nodes in a column to the right of main layout
+  const stackSidebar = (
+    orphanIds: string[],
+    pos: Record<string, { x: number; y: number }>,
+  ) => {
+    if (orphanIds.length === 0) return;
+    // Find rightmost edge of already-placed nodes
+    let maxRight = 0;
+    for (const p of Object.values(pos)) {
+      const id = Object.entries(pos).find(([, v]) => v === p)?.[0];
+      const s = id ? getCardSize(id) : { w: 260, h: 300 };
+      if (p.x + s.w > maxRight) maxRight = p.x + s.w;
+    }
+    const sideX = maxRight + 120;
+    let sideY = 80;
+    for (const id of orphanIds) {
+      const s = getCardSize(id);
+      pos[id] = { x: sideX, y: sideY };
+      sideY += s.h + 30;
+    }
+  };
+
   const arrangeForce = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null);
 
     // Measure card sizes
     const sizes = new Map<string, { w: number; h: number }>();
     for (const node of nodes) sizes.set(node.id, getCardSize(node.id));
 
-    // Build adjacency set
-    const connected = new Set<string>();
+    // Find which nodes have at least one connection
+    const hasConnection = new Set<string>();
     for (const c of connections) {
-      connected.add(`${c.sourceId}:${c.targetId}`);
-      connected.add(`${c.targetId}:${c.sourceId}`);
+      hasConnection.add(c.sourceId);
+      hasConnection.add(c.targetId);
     }
 
-    // Initialize positions from current locations (or random if stacked)
+    const connectedNodes = nodes.filter(n => hasConnection.has(n.id));
+    const orphanNodes = nodes.filter(n => !hasConnection.has(n.id));
+
+    // Only simulate connected nodes
     type Body = { id: string; x: number; y: number; vx: number; vy: number; w: number; h: number };
-    const bodies: Body[] = nodes.map((n) => {
+    const bodies: Body[] = connectedNodes.map((n) => {
       const s = sizes.get(n.id) ?? { w: 260, h: 300 };
       return {
         id: n.id,
@@ -448,9 +485,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const MIN_DIST = 60;
 
     for (let iter = 0; iter < ITERATIONS; iter++) {
-      const temp = 1 - iter / ITERATIONS; // cool down over time
+      const temp = 1 - iter / ITERATIONS;
 
-      // Repulsion between all pairs
       for (let i = 0; i < bodies.length; i++) {
         for (let j = i + 1; j < bodies.length; j++) {
           const a = bodies[i], b = bodies[j];
@@ -466,7 +502,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       }
 
-      // Attraction along connections
       for (const conn of connections) {
         const a = bodies.find(b => b.id === conn.sourceId);
         const b = bodies.find(b => b.id === conn.targetId);
@@ -482,7 +517,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         b.vx -= fx; b.vy -= fy;
       }
 
-      // Apply velocities with damping
       for (const body of bodies) {
         body.vx *= DAMPING;
         body.vy *= DAMPING;
@@ -491,7 +525,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       }
     }
 
-    // Normalize: shift so top-left is at (100, 80)
+    // Normalize connected nodes to top-left at (100, 80)
     let minX = Infinity, minY = Infinity;
     for (const b of bodies) {
       if (b.x - b.w / 2 < minX) minX = b.x - b.w / 2;
@@ -508,10 +542,593 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       };
     }
 
+    // Stack orphans in a column to the right
+    stackSidebar(orphanNodes.map(n => n.id), pos);
+
     setIsArranging(true);
     onBatchMoveNodes(pos);
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
+
+  const arrangeEgo = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null);
+
+    // Pick ego: selected node (prefer person), or most-connected person
+    const people = nodes.filter(n => n.kind === "person");
+    if (people.length === 0) return;
+
+    // Build adjacency
+    const neighbors: Record<string, Set<string>> = {};
+    for (const n of nodes) neighbors[n.id] = new Set();
+    for (const c of connections) {
+      if (neighbors[c.sourceId]) neighbors[c.sourceId].add(c.targetId);
+      if (neighbors[c.targetId]) neighbors[c.targetId].add(c.sourceId);
+    }
+
+    const ego = (selectedNodeId && people.find(p => p.id === selectedNodeId))
+      ? selectedNodeId
+      : people.sort((a, b) => (neighbors[b.id]?.size ?? 0) - (neighbors[a.id]?.size ?? 0))[0].id;
+
+    // BFS outward from ego to build rings by distance
+    const placed = new Set<string>([ego]);
+    const rings: string[][] = [];
+    let frontier = [ego];
+
+    while (frontier.length > 0) {
+      const nextFrontier: string[] = [];
+      for (const id of frontier) {
+        for (const nId of (neighbors[id] || [])) {
+          if (!placed.has(nId)) {
+            placed.add(nId);
+            nextFrontier.push(nId);
+          }
+        }
+      }
+      if (nextFrontier.length > 0) rings.push(nextFrontier);
+      frontier = nextFrontier;
+    }
+
+    // Orphans: not reachable from ego
+    const orphans: string[] = [];
+    for (const n of nodes) {
+      if (!placed.has(n.id)) orphans.push(n.id);
+    }
+
+    // Measure max card height per ring for clearance
+    const ringMaxH: number[] = rings.map(ids => {
+      let maxH = 0;
+      for (const id of ids) {
+        const s = getCardSize(id);
+        if (s.h > maxH) maxH = s.h;
+      }
+      return maxH;
+    });
+
+    // Calculate radius per ring — tight but no overlap
+    const ringRadii: number[] = [];
+    const egoSize = getCardSize(ego);
+    let prevRadius = 0;
+    for (let i = 0; i < rings.length; i++) {
+      const count = rings[i].length;
+      const maxH = ringMaxH[i];
+      // Circumference must fit all cards with small gaps
+      const minFromSpacing = (count * 300) / (2 * Math.PI);
+      // Must clear previous ring
+      const clearance = i === 0 ? egoSize.h / 2 + maxH / 2 + 30 : ringMaxH[i - 1] / 2 + maxH / 2 + 30;
+      const minFromPrev = prevRadius + clearance;
+      const r = Math.max(minFromSpacing, minFromPrev);
+      ringRadii.push(r);
+      prevRadius = r;
+    }
+
+    const maxR = ringRadii.length > 0 ? ringRadii[ringRadii.length - 1] : 200;
+    const centerX = maxR + 300;
+    const centerY = maxR + 300;
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    pos[ego] = { x: centerX - egoSize.w / 2, y: centerY - egoSize.h / 2 };
+
+    // Place each ring evenly around the center, offset each ring's start angle
+    for (let i = 0; i < rings.length; i++) {
+      const ids = rings[i];
+      const radius = ringRadii[i];
+      const angleStep = (2 * Math.PI) / ids.length;
+      // Rotate each ring so cards don't line up radially with the ring inside
+      const startAngle = -Math.PI / 2 + (i % 2 === 1 ? angleStep / 2 : 0);
+      ids.forEach((id, j) => {
+        const angle = startAngle + j * angleStep;
+        const s = getCardSize(id);
+        pos[id] = {
+          x: centerX + Math.cos(angle) * radius - s.w / 2,
+          y: centerY + Math.sin(angle) * radius - s.h / 2,
+        };
+      });
+    }
+
+    // Normalize so nothing goes past the top/left edge
+    let minX = Infinity, minY = Infinity;
+    for (const p of Object.values(pos)) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+    }
+    const shiftX = minX < 80 ? 80 - minX : 0;
+    const shiftY = minY < 80 ? 80 - minY : 0;
+    if (shiftX || shiftY) {
+      for (const p of Object.values(pos)) {
+        p.x += shiftX;
+        p.y += shiftY;
+      }
+    }
+
+    // Stack orphans to the right
+    stackSidebar(orphans, pos);
+
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, selectedNodeId, onBatchMoveNodes, getCardSize, zoomFit]);
+
+  const arrangeCompare = useCallback((personA: string, personB: string) => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null);
+
+    // Build adjacency
+    const neighbors: Record<string, Set<string>> = {};
+    for (const n of nodes) neighbors[n.id] = new Set();
+    for (const c of connections) {
+      if (neighbors[c.sourceId]) neighbors[c.sourceId].add(c.targetId);
+      if (neighbors[c.targetId]) neighbors[c.targetId].add(c.sourceId);
+    }
+
+    // Categorize evidence
+    const evidenceA = new Set(neighbors[personA] || []);
+    const evidenceB = new Set(neighbors[personB] || []);
+
+    // Categorize all non-subject nodes
+    const onlyAEvidence: string[] = [];
+    const sharedEvidence: string[] = [];
+    const onlyBEvidence: string[] = [];
+    const sharedPeople: string[] = []; // connected to both A and B
+    const onlyAPeople: string[] = [];  // connected to A only
+    const onlyBPeople: string[] = [];  // connected to B only
+    const unconnected: string[] = [];
+
+    for (const n of nodes) {
+      if (n.id === personA || n.id === personB) continue;
+      const inA = evidenceA.has(n.id);
+      const inB = evidenceB.has(n.id);
+      if (n.kind === "person") {
+        if (inA && inB) sharedPeople.push(n.id);
+        else if (inA) onlyAPeople.push(n.id);
+        else if (inB) onlyBPeople.push(n.id);
+        else unconnected.push(n.id);
+      } else {
+        if (inA && inB) sharedEvidence.push(n.id);
+        else if (inA) onlyAEvidence.push(n.id);
+        else if (inB) onlyBEvidence.push(n.id);
+        else unconnected.push(n.id);
+      }
+    }
+
+    const GAP = 40;
+    const COL_GAP = 80;
+    const pos: Record<string, { x: number; y: number }> = {};
+
+    // Helper: stack cards vertically, centered on colCenterX, return bottom Y
+    const stackCol = (ids: string[], colCenterX: number, y: number): number => {
+      for (const id of ids) {
+        const s = getCardSize(id);
+        pos[id] = { x: colCenterX - s.w / 2, y };
+        y += s.h + GAP;
+      }
+      return y;
+    };
+
+    // Helper: measure max width of a set of cards
+    const maxW = (ids: string[], fallback = 200) => {
+      let m = 0;
+      for (const id of ids) { const s = getCardSize(id); if (s.w > m) m = s.w; }
+      return m || fallback;
+    };
+
+    const sA = getCardSize(personA);
+    const sB = getCardSize(personB);
+
+    // Column widths
+    const wOnlyA = maxW([...onlyAEvidence, ...onlyAPeople], 200);
+    const wOnlyB = maxW([...onlyBEvidence, ...onlyBPeople], 200);
+    const wShared = maxW([...sharedEvidence, ...sharedPeople], 200);
+
+    // 5 columns: [A unique] [Person A] [Shared] [Person B] [B unique]
+    const startY = 80;
+    const col1CenterX = 100 + wOnlyA / 2;                           // A's unique
+    const col2CenterX = col1CenterX + wOnlyA / 2 + COL_GAP + sA.w / 2;  // Person A
+    const col3CenterX = col2CenterX + sA.w / 2 + COL_GAP + wShared / 2; // Shared
+    const col4CenterX = col3CenterX + wShared / 2 + COL_GAP + sB.w / 2; // Person B
+    const col5CenterX = col4CenterX + sB.w / 2 + COL_GAP + wOnlyB / 2;  // B's unique
+
+    // Person A and B at the top of their columns
+    pos[personA] = { x: col2CenterX - sA.w / 2, y: startY };
+    pos[personB] = { x: col4CenterX - sB.w / 2, y: startY };
+
+    const contentY = startY + Math.max(sA.h, sB.h) + GAP + 20;
+
+    // Col 1: A's unique evidence + people
+    stackCol([...onlyAEvidence, ...onlyAPeople], col1CenterX, contentY);
+
+    // Col 3: Shared evidence + people
+    stackCol([...sharedEvidence, ...sharedPeople], col3CenterX, contentY);
+
+    // Col 5: B's unique evidence + people
+    stackCol([...onlyBEvidence, ...onlyBPeople], col5CenterX, contentY);
+
+    // Unconnected: stack below shared column
+    if (unconnected.length > 0) {
+      const allBottoms = Object.values(pos).map(p => p.y + 400);
+      const bottomY = Math.max(...allBottoms) + 40;
+      stackCol(unconnected, col3CenterX, bottomY);
+    }
+
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFit]);
+
+  const arrangePath = useCallback((nodeAId: string, nodeBId: string) => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+
+    // Build adjacency with connection references
+    const adj: Record<string, { neighbor: string; connId: string; strength: number }[]> = {};
+    for (const n of nodes) adj[n.id] = [];
+    for (const c of connections) {
+      if (adj[c.sourceId]) adj[c.sourceId].push({ neighbor: c.targetId, connId: c.id, strength: c.strength });
+      if (adj[c.targetId]) adj[c.targetId].push({ neighbor: c.sourceId, connId: c.id, strength: c.strength });
+    }
+
+    // BFS to find all shortest paths (max length 6)
+    type Path = { nodes: string[]; edges: string[]; totalStrength: number };
+    const MAX_LEN = 6;
+    const allPaths: Path[] = [];
+    const queue: Path[] = [{ nodes: [nodeAId], edges: [], totalStrength: 0 }];
+    let shortestLen = Infinity;
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const last = current.nodes[current.nodes.length - 1];
+
+      if (last === nodeBId) {
+        if (current.nodes.length <= shortestLen + 2) { // allow paths up to 2 longer than shortest
+          if (current.nodes.length < shortestLen) shortestLen = current.nodes.length;
+          allPaths.push(current);
+        }
+        continue;
+      }
+
+      if (current.nodes.length >= MAX_LEN) continue;
+      if (current.nodes.length > shortestLen + 2) continue;
+
+      for (const edge of (adj[last] || [])) {
+        if (current.nodes.includes(edge.neighbor)) continue;
+        queue.push({
+          nodes: [...current.nodes, edge.neighbor],
+          edges: [...current.edges, edge.connId],
+          totalStrength: current.totalStrength + edge.strength,
+        });
+      }
+    }
+
+    // Sort by total strength (descending), keep best for layout spine
+    allPaths.sort((a, b) => b.totalStrength - a.totalStrength);
+    const bestPaths = allPaths.slice(0, 5);
+
+    // Also find ALL nodes that sit between A and B:
+    // any node reachable from A that can also reach B (within max hops)
+    const reachFromA = new Set<string>();
+    const reachFromB = new Set<string>();
+    const bfsReach = (startId: string, result: Set<string>) => {
+      const q = [startId];
+      result.add(startId);
+      const visited = new Set([startId]);
+      let depth = 0;
+      let frontier = [startId];
+      while (frontier.length > 0 && depth < MAX_LEN) {
+        const next: string[] = [];
+        for (const id of frontier) {
+          for (const edge of (adj[id] || [])) {
+            if (!visited.has(edge.neighbor)) {
+              visited.add(edge.neighbor);
+              result.add(edge.neighbor);
+              next.push(edge.neighbor);
+            }
+          }
+        }
+        frontier = next;
+        depth++;
+      }
+    };
+    bfsReach(nodeAId, reachFromA);
+    bfsReach(nodeBId, reachFromB);
+
+    // Nodes between A and B: reachable from both
+    const betweenNodes = new Set<string>();
+    for (const nId of reachFromA) {
+      if (reachFromB.has(nId)) betweenNodes.add(nId);
+    }
+
+    // Edges between "between" nodes
+    const betweenEdges = new Set<string>();
+    for (const c of connections) {
+      if (betweenNodes.has(c.sourceId) && betweenNodes.has(c.targetId)) {
+        betweenEdges.add(c.id);
+      }
+    }
+
+    // Use betweenNodes/betweenEdges as the highlighted set
+    const pathNodeIds = betweenNodes;
+    const pathEdgeIds = betweenEdges;
+
+    if (bestPaths.length === 0) {
+      // No path found — just put them side by side
+      const sA = getCardSize(nodeAId);
+      const sB = getCardSize(nodeBId);
+      const pos: Record<string, { x: number; y: number }> = {};
+      pos[nodeAId] = { x: 100, y: 200 };
+      pos[nodeBId] = { x: 100 + sA.w + 400, y: 200 };
+      let offY = 200 + Math.max(sA.h, sB.h) + 100;
+      for (const n of nodes) {
+        if (n.id === nodeAId || n.id === nodeBId) continue;
+        const s = getCardSize(n.id);
+        pos[n.id] = { x: 100, y: offY };
+        offY += s.h + 30;
+      }
+      setPathFocus({
+        nodeId: nodeAId,
+        directIds: new Set([nodeBId]),
+        secondIds: new Set(),
+        edgeIds: new Set(),
+      });
+      setIsArranging(true);
+      onBatchMoveNodes(pos);
+      setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+      return;
+    }
+
+    // Build ordered sequence from best path + all between-nodes
+    const ordered: string[] = [...bestPaths[0].nodes];
+
+    // Add all between-nodes that aren't already in ordered
+    for (const nId of betweenNodes) {
+      if (!ordered.includes(nId)) ordered.push(nId);
+    }
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    const startY = 80;
+    const GAP_Y = 50;
+
+    const sA = getCardSize(nodeAId);
+    const sB = getCardSize(nodeBId);
+
+    // Build full adjacency for categorization (all connections, not just path)
+    const fullAdj: Record<string, Set<string>> = {};
+    for (const n of nodes) fullAdj[n.id] = new Set();
+    for (const c of connections) {
+      if (fullAdj[c.sourceId]) fullAdj[c.sourceId].add(c.targetId);
+      if (fullAdj[c.targetId]) fullAdj[c.targetId].add(c.sourceId);
+    }
+
+    // Categorize all intermediates into 5 buckets:
+    // 1. directShared: connected to BOTH A and B directly
+    // 2. transitiveA: connected to A directly, connects to shared evidence (not B)
+    // 3. indirectA: connected to shared evidence but NOT to A or B — closer to A's side
+    // 4. indirectB: mirror of indirectA on B's side
+    // 5. transitiveB: connected to B directly, connects to shared evidence (not A)
+    const intermediates = ordered.filter(id => id !== nodeAId && id !== nodeBId);
+
+    const directShared: string[] = [];
+    const transitiveA: string[] = [];
+    const transitiveB: string[] = [];
+    const indirectA: string[] = [];
+    const indirectB: string[] = [];
+
+    // First pass: find direct shared
+    for (const nId of intermediates) {
+      const connToA = fullAdj[nId]?.has(nodeAId) || false;
+      const connToB = fullAdj[nId]?.has(nodeBId) || false;
+      if (connToA && connToB) directShared.push(nId);
+    }
+    const directSharedSet = new Set(directShared);
+
+    // Second pass: categorize the rest
+    for (const nId of intermediates) {
+      if (directSharedSet.has(nId)) continue;
+      const connToA = fullAdj[nId]?.has(nodeAId) || false;
+      const connToB = fullAdj[nId]?.has(nodeBId) || false;
+      const connToShared = [...(fullAdj[nId] || [])].some(id => directSharedSet.has(id));
+
+      if (connToA && !connToB) transitiveA.push(nId);
+      else if (connToB && !connToA) transitiveB.push(nId);
+      else if (!connToA && !connToB && connToShared) {
+        // Connected to shared evidence but not to either person — figure out which side
+        // Check if any neighbor connects to A or B to determine side
+        const neighborsConnectA = [...(fullAdj[nId] || [])].some(nb => fullAdj[nb]?.has(nodeAId));
+        if (neighborsConnectA) indirectA.push(nId);
+        else indirectB.push(nId);
+      } else if (connToA) {
+        transitiveA.push(nId);
+      } else if (connToB) {
+        transitiveB.push(nId);
+      } else {
+        // Fallback: use BFS distance from A vs B
+        const dA = reachFromA.has(nId) ? 1 : 999;
+        const dB = reachFromB.has(nId) ? 1 : 999;
+        if (dA <= dB) indirectA.push(nId); else indirectB.push(nId);
+      }
+    }
+
+    // Measure column widths
+    const maxColW = (ids: string[]) => {
+      let m = 0;
+      for (const id of ids) { const s = getCardSize(id); if (s.w > m) m = s.w; }
+      return m || 0;
+    };
+
+    const wTransA = maxColW(transitiveA);
+    const wIndA = maxColW(indirectA);
+    const wDirect = maxColW(directShared) || 200;
+    const wIndB = maxColW(indirectB);
+    const wTransB = maxColW(transitiveB);
+    const COL_GAP = 160;
+
+    // 7 columns: [A] [transA] [indirectA] [direct] [indirectB] [transB] [B]
+    // Only include columns that have items (skip empty)
+    let curX = 100;
+    const col1X = curX + sA.w / 2; curX += sA.w + COL_GAP;
+    const col2X = wTransA > 0 ? (curX + wTransA / 2) : -1; if (wTransA > 0) curX += wTransA + COL_GAP;
+    const col3X = wIndA > 0 ? (curX + wIndA / 2) : -1; if (wIndA > 0) curX += wIndA + COL_GAP;
+    const col4X = curX + wDirect / 2; curX += wDirect + COL_GAP;
+    const col5X = wIndB > 0 ? (curX + wIndB / 2) : -1; if (wIndB > 0) curX += wIndB + COL_GAP;
+    const col6X = wTransB > 0 ? (curX + wTransB / 2) : -1; if (wTransB > 0) curX += wTransB + COL_GAP;
+    const col7X = curX + sB.w / 2;
+
+    // Person A and B at top
+    pos[nodeAId] = { x: col1X - sA.w / 2, y: startY };
+    pos[nodeBId] = { x: col7X - sB.w / 2, y: startY };
+
+    // Direct shared in center column
+    const directStartY = startY + Math.max(sA.h, sB.h) + GAP_Y + 40;
+    let dy = directStartY;
+    const directPositions: Record<string, { x: number; y: number }> = {};
+    for (const nId of directShared) {
+      const s = getCardSize(nId);
+      pos[nId] = { x: col4X - s.w / 2, y: dy };
+      directPositions[nId] = { x: col4X, y: dy + s.h / 2 };
+      dy += s.h + GAP_Y;
+    }
+
+    // Place transitive/indirect nodes ON the diagonal line between person and shared evidence
+    const personACenter = { x: col1X, y: startY + sA.h / 2 };
+    const personBCenter = { x: col7X, y: startY + sB.h / 2 };
+
+    const placeOnDiagonal = (ids: string[], colCenterX: number, personCenter: { x: number; y: number }) => {
+      if (colCenterX < 0 || ids.length === 0) return;
+      for (const nId of ids) {
+        const s = getCardSize(nId);
+        // Find the shared evidence this connects toward
+        let targetCenter = { x: col4X, y: directStartY + 100 };
+        for (const dId of directShared) {
+          // Check if this node connects to this shared evidence (directly or through one hop)
+          if (fullAdj[nId]?.has(dId)) {
+            targetCenter = directPositions[dId] || targetCenter;
+            break;
+          }
+          // Or through a neighbor
+          for (const nb of (fullAdj[nId] || [])) {
+            if (fullAdj[nb]?.has(dId) && directPositions[dId]) {
+              targetCenter = directPositions[dId];
+              break;
+            }
+          }
+        }
+        // Interpolate Y at this column's X on the line from person to target
+        const dx = targetCenter.x - personCenter.x;
+        const t = dx !== 0 ? (colCenterX - personCenter.x) / dx : 0.5;
+        const lineY = personCenter.y + t * (targetCenter.y - personCenter.y);
+        pos[nId] = { x: colCenterX - s.w / 2, y: lineY - s.h / 2 };
+      }
+    };
+
+    placeOnDiagonal(transitiveA, col2X, personACenter);
+    placeOnDiagonal(transitiveB, col6X, personBCenter);
+
+    // Place indirect nodes aligned with the shared evidence they connect to (NOT on the person's diagonal)
+    const placeIndirect = (ids: string[], colCenterX: number) => {
+      if (colCenterX < 0 || ids.length === 0) return;
+      for (const nId of ids) {
+        const s = getCardSize(nId);
+        // Find the shared evidence this connects to and align Y with it
+        let targetY = directStartY + 100; // fallback
+        for (const dId of directShared) {
+          if (fullAdj[nId]?.has(dId) && directPositions[dId]) {
+            targetY = directPositions[dId].y;
+            break;
+          }
+          for (const nb of (fullAdj[nId] || [])) {
+            if (fullAdj[nb]?.has(dId) && directPositions[dId]) {
+              targetY = directPositions[dId].y;
+              break;
+            }
+          }
+        }
+        pos[nId] = { x: colCenterX - s.w / 2, y: targetY - s.h / 2 };
+      }
+    };
+
+    placeIndirect(indirectA, col3X);
+    placeIndirect(indirectB, col5X);
+
+    // De-overlap pass: within each column group, push cards apart if they overlap
+    const deOverlapColumn = (ids: string[]) => {
+      if (ids.length < 2) return;
+      // Sort by current Y position
+      const sorted = [...ids].filter(id => pos[id]).sort((a, b) => pos[a].y - pos[b].y);
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const curr = sorted[i];
+        const prevBottom = pos[prev].y + getCardSize(prev).h + 30; // 30px min gap
+        if (pos[curr].y < prevBottom) {
+          pos[curr] = { ...pos[curr], y: prevBottom };
+        }
+      }
+    };
+
+    deOverlapColumn(transitiveA);
+    deOverlapColumn(indirectA);
+    deOverlapColumn(directShared);
+    deOverlapColumn(indirectB);
+    deOverlapColumn(transitiveB);
+
+    // Off-path nodes: stack below center column, dimmed
+    const allYs = Object.values(pos).map(p => p.y + 400);
+    const offStartY = Math.max(...allYs, directStartY) + 60;
+    let offY = offStartY;
+    const offPathNodes = nodes.filter(n => !pathNodeIds.has(n.id));
+    for (const n of offPathNodes) {
+      const s = getCardSize(n.id);
+      pos[n.id] = { x: col4X - s.w / 2, y: offY };
+      offY += s.h + 30;
+    }
+
+    // Default focus: only 5 core columns (A, transitiveA, directShared, transitiveB, B)
+    const coreNodeIds = new Set([nodeAId, nodeBId, ...transitiveA, ...transitiveB, ...directShared]);
+    const coreEdgeIds = new Set<string>();
+    for (const c of connections) {
+      if (coreNodeIds.has(c.sourceId) && coreNodeIds.has(c.targetId)) {
+        coreEdgeIds.add(c.id);
+      }
+    }
+    const defaultFocus: FocusState = {
+      nodeId: nodeAId,
+      directIds: new Set([...coreNodeIds].filter(id => id !== nodeAId)),
+      secondIds: new Set(),
+      edgeIds: coreEdgeIds,
+    };
+    // Full focus includes indirect nodes too (for drill-down)
+    const fullFocus: FocusState = {
+      nodeId: nodeAId,
+      directIds: new Set([...pathNodeIds].filter(id => id !== nodeAId)),
+      secondIds: new Set(),
+      edgeIds: pathEdgeIds,
+    };
+    pathDefaultFocusRef.current = defaultFocus;
+    pathFullFocusRef.current = fullFocus;
+    setPathFocus(defaultFocus);
+    setPathDrillNode(null);
+
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFit]);
 
   /* ── Wheel-to-zoom (Ctrl+scroll) ────────────────────────────────────────── */
   useEffect(() => {
@@ -799,7 +1416,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     return { cx: node.position.x + w / 2, cy: node.position.y + h };
   }
 
-  /* ── Computed sizes ───────────────────────────────────────────────────── */
+  /* ── Dynamic world size — grows to fit all nodes ───────────────────────── */
+  const { WORLD_W, WORLD_H } = useMemo(() => {
+    let maxX = 0, maxY = 0;
+    for (const n of nodes) {
+      const s = getCardSize(n.id);
+      maxX = Math.max(maxX, n.position.x + s.w);
+      maxY = Math.max(maxY, n.position.y + s.h);
+    }
+    return {
+      WORLD_W: Math.max(BASE_WORLD_W, maxX + 500),
+      WORLD_H: Math.max(BASE_WORLD_H, maxY + 500),
+    };
+  }, [nodes, getCardSize]);
+
   const sizerW = WORLD_W * zoom;
   const sizerH = WORLD_H * zoom;
 
@@ -995,7 +1625,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       <path
                         d={curvePath}
                         stroke={lineColor}
-                        strokeWidth={isNew ? 5 : isSelected ? 4 : isHighlight ? 3.5 : 3}
+                        strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 3.5 : 3}
                         strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
                         fill="none"
                         filter={lineFilter}
@@ -1116,8 +1746,42 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (connectingFrom) onCompleteConnection(node.id);
-                      else onSelectNode(node.id);
+                      if (connectingFrom) { onCompleteConnection(node.id); return; }
+                      // Path drill-down: click a path node to focus on its connections
+                      if (pathFocus && pathFullFocusRef.current && pathDefaultFocusRef.current) {
+                        const fullFocus = pathFullFocusRef.current;
+                        const defaultFocus = pathDefaultFocusRef.current;
+                        const isOnPath = node.id === fullFocus.nodeId || fullFocus.directIds.has(node.id);
+                        if (isOnPath) {
+                          if (pathDrillNode === node.id) {
+                            // Clicking same node again — restore default (5-column) view
+                            setPathFocus(defaultFocus);
+                            setPathDrillNode(null);
+                          } else {
+                            // Drill into this node: show it + ALL its connections from the full path set
+                            const drillDirect = new Set<string>();
+                            const drillEdges = new Set<string>();
+                            for (const c of connections) {
+                              if (c.sourceId === node.id || c.targetId === node.id) {
+                                const other = c.sourceId === node.id ? c.targetId : c.sourceId;
+                                if (fullFocus.directIds.has(other) || other === fullFocus.nodeId) {
+                                  drillDirect.add(other);
+                                  drillEdges.add(c.id);
+                                }
+                              }
+                            }
+                            setPathFocus({
+                              nodeId: node.id,
+                              directIds: drillDirect,
+                              secondIds: new Set(),
+                              edgeIds: drillEdges,
+                            });
+                            setPathDrillNode(node.id);
+                          }
+                          return;
+                        }
+                      }
+                      onSelectNode(node.id);
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -1322,6 +1986,148 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             </svg>
             <span className="text-[10px] font-bold uppercase tracking-wider">Network</span>
           </button>
+
+          <button
+            onClick={arrangeEgo}
+            disabled={nodes.length < 2 || isArranging}
+            className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Organize: Ego view (select a person first)"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <circle cx="12" cy="12" r="7" fill="none" />
+              <circle cx="12" cy="12" r="11" fill="none" strokeDasharray="3 3" />
+            </svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Ego</span>
+          </button>
+
+          <div className="relative">
+            <button
+              onClick={() => { setComparePicker(p => ({ open: !p.open, selected: [] })); setPathPicker({ open: false, selected: [] }); }}
+              disabled={nodes.filter(n => n.kind === "person").length < 2 || isArranging}
+              className="flex h-8 items-center gap-1.5 rounded px-2 text-[#888] hover:bg-[#222] hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Compare two subjects"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="8" cy="12" r="6" />
+                <circle cx="16" cy="12" r="6" />
+              </svg>
+              <span className="text-[10px] font-bold uppercase tracking-wider">Compare</span>
+            </button>
+            {comparePicker.open && (
+              <div className="absolute bottom-full right-0 mb-2 w-56 rounded-lg border border-[#2a2a2a] bg-[#111] p-2 shadow-xl shadow-black/60 z-50">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] px-2 py-1 mb-1">
+                  Pick {2 - comparePicker.selected.length} {comparePicker.selected.length === 0 ? "people" : "more"}
+                </div>
+                {nodes.filter(n => n.kind === "person").map(n => {
+                  const picked = comparePicker.selected.includes(n.id);
+                  return (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        if (picked) {
+                          setComparePicker(prev => ({ ...prev, selected: prev.selected.filter(id => id !== n.id) }));
+                          return;
+                        }
+                        const next = [...comparePicker.selected, n.id];
+                        if (next.length >= 2) {
+                          setComparePicker({ open: false, selected: [] });
+                          arrangeCompare(next[0], next[1]);
+                        } else {
+                          setComparePicker(prev => ({ ...prev, selected: next }));
+                        }
+                      }}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition ${
+                        picked ? "bg-red-600/20 text-red-400" : "text-[#aaa] hover:bg-[#1a1a1a] hover:text-white"
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${picked ? "bg-red-500" : "bg-[#333]"}`} />
+                      {n.data.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={() => { setPathPicker(p => ({ open: !p.open, selected: [] })); setComparePicker({ open: false, selected: [] }); }}
+              disabled={nodes.length < 2 || isArranging}
+              className={`flex h-8 items-center gap-1.5 rounded px-2 transition disabled:opacity-30 disabled:cursor-not-allowed ${
+                pathFocus ? "text-red-400 bg-red-600/10 hover:bg-red-600/20" : "text-[#888] hover:bg-[#222] hover:text-white"
+              }`}
+              title="Find path between two nodes"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="4" cy="12" r="2" />
+                <circle cx="20" cy="12" r="2" />
+                <path d="M6 12h2c2 0 2-4 4-4s2 4 4 4h2" />
+              </svg>
+              <span className="text-[10px] font-bold uppercase tracking-wider">Path</span>
+            </button>
+            {pathPicker.open && (
+              <div className="absolute bottom-full right-0 mb-2 w-56 rounded-lg border border-[#2a2a2a] bg-[#111] p-2 shadow-xl shadow-black/60 z-50">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#666] px-2 py-1 mb-1">
+                  Pick {2 - pathPicker.selected.length} {pathPicker.selected.length === 0 ? "nodes" : "more"}
+                </div>
+                {nodes.map(n => {
+                  const picked = pathPicker.selected.includes(n.id);
+                  const label = n.kind === "person" ? n.data.name : n.data.title;
+                  return (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        if (picked) {
+                          setPathPicker(prev => ({ ...prev, selected: prev.selected.filter(id => id !== n.id) }));
+                          return;
+                        }
+                        const next = [...pathPicker.selected, n.id];
+                        if (next.length >= 2) {
+                          setPathPicker({ open: false, selected: [] });
+                          arrangePath(next[0], next[1]);
+                        } else {
+                          setPathPicker(prev => ({ ...prev, selected: next }));
+                        }
+                      }}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition ${
+                        picked ? "bg-red-600/20 text-red-400" : "text-[#aaa] hover:bg-[#1a1a1a] hover:text-white"
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${picked ? "bg-red-500" : "bg-[#333]"}`} />
+                      <span className="truncate">{label}</span>
+                      <span className="ml-auto text-[9px] text-[#555] uppercase">{n.kind === "person" ? "person" : (n as BoardEvidenceNode).evidenceType}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {pathFocus && pathDrillNode && (
+            <button
+              onClick={() => { setPathFocus(pathDefaultFocusRef.current); setPathDrillNode(null); }}
+              className="flex h-8 items-center gap-1 rounded px-2 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-600/10 transition"
+              title="Back to default path view"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Back
+            </button>
+          )}
+          {pathFocus && (
+            <button
+              onClick={() => { setPathFocus(null); setPathDrillNode(null); }}
+              className="flex h-8 items-center gap-1 rounded px-2 text-[10px] font-bold uppercase tracking-wider text-[#666] hover:text-red-400 hover:bg-red-600/10 transition"
+              title="Exit path mode"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              Clear
+            </button>
+          )}
 
         </div>
 
