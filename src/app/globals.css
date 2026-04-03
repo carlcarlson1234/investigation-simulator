@@ -242,6 +242,12 @@ body {
   transition: box-shadow 0.15s ease, opacity 0.3s ease;
 }
 
+.board-node--dragging,
+.board-node--dragging *,
+.board-node--dragging .board-entity-card {
+  transition: none !important;
+}
+
 .board-node:hover {
   z-index: 15 !important;
 }

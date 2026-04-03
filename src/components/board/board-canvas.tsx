@@ -720,11 +720,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
                         filter={lineFilter}
                         strokeLinecap="round"
-                        className="transition-all duration-500 pointer-events-none"
+                        className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`}
                       />
                       {/* Endpoint dots */}
-                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className="pointer-events-none transition-all duration-500" />
-                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className="pointer-events-none transition-all duration-500" />
+                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
                       {/* Note indicator dot at midpoint */}
                       {conn.note && (
                         <circle
@@ -814,7 +814,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   <div
                     key={node.id}
                     className={`board-node absolute select-none ${opc} ${
-                      selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
+                      dragState?.nodeId === node.id ? "board-node--dragging" : ""
+                    } ${selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
                     } ${vis === "focused" ? "ring-2 ring-red-500 shadow-xl shadow-red-600/20 rounded-xl" : ""} ${
                       isConnectSource ? "ring-2 ring-red-400 shadow-xl shadow-red-500/30 rounded-xl" : ""
                     } ${isConnectTarget ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-400 hover:shadow-lg hover:shadow-red-500/20 rounded-xl" : ""

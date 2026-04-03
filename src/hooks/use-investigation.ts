@@ -65,7 +65,7 @@ export function useInvestigation(
   const [step, setStep] = useState<InvestigationStep>(() => {
     if (savedMode && boardNodes.length > 0) return "open-investigation";
     if (initialMode === "free") return "open-investigation";
-    return "welcome";
+    return "intro-people";
   });
   const [completedSteps, setCompletedSteps] = useState<Set<InvestigationStep>>(new Set());
   const [chosenExpansionId, setChosenExpansionId] = useState<string | null>(null);
