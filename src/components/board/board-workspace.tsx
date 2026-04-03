@@ -258,6 +258,13 @@ export function BoardWorkspace({
     []
   );
 
+  const deleteConnection = useCallback(
+    (connId: string) => {
+      setBoardConnections((prev) => prev.filter((c) => c.id !== connId));
+    },
+    []
+  );
+
   // ─── Selected node ──────────────────────────────────────────────────────
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
@@ -378,10 +385,12 @@ export function BoardWorkspace({
             onOpenSubjectView={openSubjectView}
             onOpenPhotoView={openPhotoView}
             stats={stats}
+            score={boardConnections.length * 50}
             firstPlacementMode={investigation.isStartMode && investigation.step === "place-epstein"}
             onFirstPlacement={handleFirstPlacement}
             investigationStep={investigation.isStartMode ? investigation.step : null}
             onUpdateConnection={updateConnection}
+            onDeleteConnection={deleteConnection}
           />
         )}
       </div>

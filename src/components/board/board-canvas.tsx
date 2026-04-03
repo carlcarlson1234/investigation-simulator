@@ -42,7 +42,9 @@ interface BoardCanvasProps {
   onOpenSubjectView: (personId: string) => void;
   onOpenPhotoView: (photoId: string) => void;
   onUpdateConnection?: (connId: string, updates: Partial<BoardConnection>) => void;
+  onDeleteConnection?: (connId: string) => void;
   stats: ArchiveStats;
+  score: number;
   firstPlacementMode?: boolean;
   onFirstPlacement?: (nodeId: string) => void;
   investigationStep?: InvestigationStep | null;
@@ -69,13 +71,28 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onOpenSubjectView,
     onOpenPhotoView,
     onUpdateConnection,
+    onDeleteConnection,
     stats,
+    score,
     firstPlacementMode,
     onFirstPlacement,
     investigationStep,
   },
   ref
 ) {
+  /* ── Score glow ───────────────────────────────────────────────────────── */
+  const [scoreGlow, setScoreGlow] = useState(false);
+  const prevScoreRef = useRef(score);
+  useEffect(() => {
+    if (score > prevScoreRef.current) {
+      setScoreGlow(true);
+      const t = setTimeout(() => setScoreGlow(false), 800);
+      prevScoreRef.current = score;
+      return () => clearTimeout(t);
+    }
+    prevScoreRef.current = score;
+  }, [score]);
+
   /* ── Refs ──────────────────────────────────────────────────────────────── */
   const viewportRef = useRef<HTMLDivElement>(null);   // the outer scrollable viewport
 
@@ -531,10 +548,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             </span>
             LIVE
           </span>
-          <span className={`ml-auto font-[family-name:var(--font-mono)] text-[11px] text-[#555] tabular-nums tracking-wider transition-opacity duration-300 ${
+          <span className={`ml-auto flex items-center gap-2 font-[family-name:var(--font-mono)] text-sm tabular-nums tracking-wider transition-opacity duration-300 ${
             investigationStep ? "opacity-20" : ""
           }`}>
-            {stats.emailCount.toLocaleString()} emails · {stats.documentCount.toLocaleString()} docs · {stats.photoCount.toLocaleString()} photos
+            <span className="text-[#555] text-[11px] uppercase">Score</span>
+            <span
+              className="font-black text-lg"
+              style={{
+                color: scoreGlow ? "#4ade80" : (score > 0 ? "#22c55e" : "#555"),
+                textShadow: scoreGlow ? "0 0 12px #4ade80, 0 0 24px #22c55e80" : "none",
+                transition: "color 0.3s, text-shadow 0.5s",
+              }}
+            >
+              {score.toLocaleString()}
+            </span>
           </span>
         </div>
       </div>
@@ -708,6 +735,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     y={my}
                     nodes={nodes}
                     onUpdate={(updates) => onUpdateConnection?.(selectedConnection.id, updates)}
+                    onDelete={() => {
+                      onDeleteConnection?.(selectedConnection.id);
+                      setSelectedConnectionId(null);
+                    }}
                     onClose={() => setSelectedConnectionId(null)}
                   />
                 );
@@ -1239,6 +1270,7 @@ function ConnectionEditor({
   y,
   nodes,
   onUpdate,
+  onDelete,
   onClose,
 }: {
   connection: BoardConnection;
@@ -1246,6 +1278,7 @@ function ConnectionEditor({
   y: number;
   nodes: BoardNode[];
   onUpdate: (updates: Partial<BoardConnection>) => void;
+  onDelete: () => void;
   onClose: () => void;
 }) {
   const [noteText, setNoteText] = useState(connection.note || "");
@@ -1326,16 +1359,25 @@ function ConnectionEditor({
           </div>
         </div>
 
-        {/* Save button */}
-        <button
-          onClick={() => {
-            onUpdate({ note: noteText || undefined, strength });
-            onClose();
-          }}
-          className="w-full rounded-lg bg-red-600/20 border border-red-600/30 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-400 hover:bg-red-600/30 hover:text-red-300 transition"
-        >
-          Save Connection
-        </button>
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              onUpdate({ note: noteText || undefined, strength });
+              onClose();
+            }}
+            className="flex-1 rounded-lg bg-red-600/20 border border-red-600/30 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-400 hover:bg-red-600/30 hover:text-red-300 transition"
+          >
+            Save
+          </button>
+          <button
+            onClick={onDelete}
+            className="rounded-lg bg-[#1a1a1a] border border-[#333] px-4 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#666] hover:border-red-600/40 hover:bg-red-600/10 hover:text-red-400 transition"
+            title="Cut this connection"
+          >
+            ✂ Cut
+          </button>
+        </div>
       </div>
     </div>
   );
