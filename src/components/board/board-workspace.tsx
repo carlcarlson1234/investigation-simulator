@@ -306,9 +306,9 @@ export function BoardWorkspace({
   // Panel visibility — progressive reveal during onboarding
   const STEP_ORDER_INDEX: Record<string, number> = {
     "place-epstein": 0, "place-evidence": 1, "pick-person": 2,
-    "create-connection": 3, "connection-confirmed": 4, "open-investigation": 5,
+    "create-connection": 3, "connection-confirmed": 4, "tutorial-complete": 5, "open-investigation": 6,
   };
-  const stepIdx = investigation.isStartMode ? (STEP_ORDER_INDEX[investigation.step] ?? 5) : 5;
+  const stepIdx = investigation.isStartMode ? (STEP_ORDER_INDEX[investigation.step] ?? 6) : 6;
   const showRightPanel = true;                                           // always visible
   const showBoard = true;                                                // always visible
   const showLeftPanel = !investigation.isStartMode || stepIdx >= 1;      // place-evidence+

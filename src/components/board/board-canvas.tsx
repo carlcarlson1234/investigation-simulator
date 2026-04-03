@@ -857,14 +857,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       data-connect-handle={node.id}
                       onMouseDown={(e) => handleConnectHandleDown(e, node.id)}
                     >
-                      <div className={`w-6 h-6 rounded-full border-2 cursor-crosshair transition-all ${
+                      <div className={`rounded-full border-2 cursor-crosshair transition-all ${
                         isConnectSource
-                          ? "bg-red-500 border-red-400 shadow-[0_0_16px_4px_rgba(239,68,68,0.6)]"
+                          ? "w-6 h-6 bg-red-500 border-red-400 shadow-[0_0_16px_4px_rgba(239,68,68,0.6)]"
                           : isConnectTarget
-                            ? "bg-red-500/60 border-red-400/80 shadow-[0_0_12px_3px_rgba(239,68,68,0.4)] scale-110"
-                            : "bg-red-600/40 border-red-500/50 shadow-[0_0_8px_2px_rgba(239,68,68,0.25)] hover:bg-red-500/70 hover:shadow-[0_0_14px_4px_rgba(239,68,68,0.5)] hover:scale-110"
+                            ? "w-6 h-6 bg-red-500/60 border-red-400/80 shadow-[0_0_12px_3px_rgba(239,68,68,0.4)] scale-110"
+                            : investigationStep === "create-connection"
+                              ? "w-8 h-8 bg-red-500 border-red-300 shadow-[0_0_30px_8px_rgba(239,68,68,0.8),0_0_60px_16px_rgba(239,68,68,0.4)] scale-110"
+                              : "w-6 h-6 bg-red-600/40 border-red-500/50 shadow-[0_0_8px_2px_rgba(239,68,68,0.25)] hover:bg-red-500/70 hover:shadow-[0_0_14px_4px_rgba(239,68,68,0.5)] hover:scale-110"
                       }`}>
-                        <div className="w-full h-full rounded-full bg-red-400/30 animate-ping" style={{ animationDuration: '2s' }} />
+                        <div className="w-full h-full rounded-full bg-red-400/30 animate-ping" style={{ animationDuration: investigationStep === "create-connection" ? '1s' : '2s' }} />
                       </div>
                     </div>
                   </div>

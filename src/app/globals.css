@@ -531,6 +531,19 @@ body {
   animation: bounce-arrow 1s ease-in-out infinite;
 }
 
+@keyframes bounce-arrow-left {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-16px);
+  }
+}
+
+.animate-bounce-arrow-left {
+  animation: bounce-arrow-left 1s ease-in-out infinite;
+}
+
 /* Scale in — celebration card */
 @keyframes scale-in {
   0% {

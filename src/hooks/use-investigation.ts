@@ -43,6 +43,7 @@ const STEP_ORDER: InvestigationStep[] = [
   "pick-person",
   "create-connection",
   "connection-confirmed",
+  "tutorial-complete",
   "open-investigation",
 ];
 

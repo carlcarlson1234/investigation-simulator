@@ -48,7 +48,7 @@ export function InvestigationOverlay({
     return (
       <StepCard
         headline="DRAG EPSTEIN ONTO THE BOARD"
-        sub="Find the highlighted card in the right panel and drag it here."
+        sub="Find the highlighted card in the right panel"
         arrow="right"
         score={score}
       />
@@ -59,8 +59,8 @@ export function InvestigationOverlay({
   if (step === "place-evidence") {
     return (
       <StepCard
-        headline="ADD EVIDENCE"
-        sub="Drag a piece of evidence from the left panel onto the board."
+        headline="DRAG EVIDENCE ONTO THE BOARD"
+        sub="Grab a photo or email from the left panel"
         arrow="left"
         score={score}
       />
@@ -72,7 +72,7 @@ export function InvestigationOverlay({
     return (
       <StepCard
         headline="ADD A PERSON OF INTEREST"
-        sub="Drag someone from the right panel onto the board."
+        sub="Drag someone from the right panel onto the board"
         arrow="right"
         score={score}
       />
@@ -84,7 +84,7 @@ export function InvestigationOverlay({
     return (
       <StepCard
         headline="CONNECT THE DOTS"
-        sub="Drag from the glowing red handle on one card to another."
+        sub="Drag from the glowing red handle on one card to another"
         score={score}
       />
     );
@@ -128,6 +128,45 @@ export function InvestigationOverlay({
     );
   }
 
+  // ─── TUTORIAL COMPLETE ──────────────────────────────────────────────
+  if (step === "tutorial-complete") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 bg-black/40" />
+
+        <div className="relative z-10 max-w-xl text-center" style={{ pointerEvents: "auto" }}>
+          <div className="rounded-2xl border border-red-500/30 bg-[#050505]/95 backdrop-blur-xl p-10 shadow-[0_0_60px_rgba(220,38,38,0.15)]">
+            <h2 className="font-[family-name:var(--font-display)] text-4xl md:text-5xl text-white tracking-wider leading-tight mb-6">
+              YOU&apos;RE AN <span className="text-red-500">INVESTIGATOR</span> NOW
+            </h2>
+
+            <div className="space-y-3 text-left max-w-md mx-auto mb-8">
+              <p className="text-[15px] text-[#aaa] leading-relaxed">
+                <span className="text-green-400 font-bold">Earn points</span> when others make the same connections you do — and when you confirm theirs.
+              </p>
+              <p className="text-[15px] text-[#aaa] leading-relaxed">
+                <span className="text-red-400 font-bold">Bonus points</span> for discovering new connections that go viral.
+              </p>
+              <p className="text-[15px] text-[#888] leading-relaxed">
+                There are millions of files. Most have never been seen.
+              </p>
+            </div>
+
+            <button
+              onClick={onAdvance}
+              className="group inline-flex items-center gap-3 rounded-xl border-2 border-red-500/40 bg-red-600/10 px-10 py-4 font-[family-name:var(--font-display)] text-2xl text-white tracking-wider hover:bg-red-600/20 hover:border-red-500/60 transition-all duration-300 hover:scale-105"
+            >
+              <span>GO INVESTIGATE</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-red-400 group-hover:translate-x-1 transition-transform">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -146,63 +185,54 @@ function StepCard({
 }) {
   return (
     <>
-      {/* Directional arrow overlay */}
-      {arrow && (
+      {/* Large directional arrow */}
+      {arrow === "right" && (
         <div
-          className="fixed z-40 pointer-events-none"
-          style={{
-            top: "50%",
-            transform: "translateY(-50%)",
-            ...(arrow === "right" ? { right: 356 } : { left: 356 }),
-          }}
+          className="fixed z-40 pointer-events-none animate-bounce-arrow"
+          style={{ top: 200, right: 350 }}
         >
-          <svg
-            width="80"
-            height="80"
-            viewBox="0 0 80 80"
-            fill="none"
-            className="animate-bounce-arrow"
-            style={{ transform: arrow === "left" ? "scaleX(-1)" : undefined }}
-          >
+          <svg width="120" height="120" viewBox="0 0 120 120" fill="none" style={{ filter: "drop-shadow(0 0 12px rgba(239,68,68,0.6))" }}>
             <path
-              d="M15 40h45M45 20l20 20-20 20"
+              d="M20 60h70M65 25l30 35-30 35"
               stroke="#ef4444"
-              strokeWidth="5"
+              strokeWidth="7"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.7"
+            />
+          </svg>
+        </div>
+      )}
+      {arrow === "left" && (
+        <div
+          className="fixed z-40 pointer-events-none animate-bounce-arrow-left"
+          style={{ top: 200, left: 350 }}
+        >
+          <svg width="120" height="120" viewBox="0 0 120 120" fill="none" style={{ filter: "drop-shadow(0 0 12px rgba(239,68,68,0.6))" }}>
+            <path
+              d="M100 60H30M55 25L25 60l30 35"
+              stroke="#ef4444"
+              strokeWidth="7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
         </div>
       )}
 
-      {/* Instruction card at bottom center */}
-      <div
-        className="absolute z-40 pointer-events-none"
-        style={{
-          bottom: 24,
-          left: "50%",
-          transform: "translateX(-50%)",
-        }}
-      >
-        <div className="w-[480px] rounded-xl border border-[#1a1a1a] bg-[#060606]/95 backdrop-blur-md px-6 py-4 shadow-2xl shadow-black/80">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-red-500/60">
-                Tutorial
-              </span>
-            </div>
+      {/* Instruction text — top area */}
+      <div className="fixed z-40 pointer-events-none" style={{ top: 64, left: 0, right: 0 }}>
+        <div className="flex justify-center px-8">
+          <div className="rounded-2xl border border-red-500/30 bg-[#050505]/95 backdrop-blur-xl px-12 py-6 shadow-[0_0_40px_rgba(220,38,38,0.15)]">
             {score > 0 && (
-              <div className="flex items-center gap-1.5 rounded bg-green-500/10 border border-green-500/20 px-2 py-0.5">
-                <span className="font-[family-name:var(--font-mono)] text-[10px] text-green-400 font-bold">{score} pts</span>
+              <div className="flex items-center justify-center gap-1.5 rounded bg-green-500/10 border border-green-500/20 px-3 py-1 mb-4 mx-auto w-fit">
+                <span className="font-[family-name:var(--font-mono)] text-xs text-green-400 font-bold">{score} pts</span>
               </div>
             )}
+            <h2 className="font-[family-name:var(--font-display)] text-4xl md:text-5xl text-white tracking-wider leading-tight mb-3 text-center">
+              {headline}
+            </h2>
+            <p className="text-lg text-[#888] leading-relaxed text-center">{sub}</p>
           </div>
-          <h3 className="font-[family-name:var(--font-display)] text-xl text-white tracking-wider mb-1">
-            {headline}
-          </h3>
-          <p className="text-sm text-[#777] leading-relaxed">{sub}</p>
         </div>
       </div>
     </>

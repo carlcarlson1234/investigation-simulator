@@ -19,6 +19,7 @@ export type InvestigationStep =
   | "pick-person"             // Pick Clinton or Maxwell from right panel
   | "create-connection"       // Connect two nodes
   | "connection-confirmed"    // Green glow celebration + points
+  | "tutorial-complete"       // Closing message — how scoring works
   | "open-investigation";     // Done — free investigation
 
 // ─── Starter Packet ─────────────────────────────────────────────────────────
