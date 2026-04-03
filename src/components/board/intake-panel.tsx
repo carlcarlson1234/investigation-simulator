@@ -8,7 +8,7 @@ import {
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
 
-type PanelTab = "emails" | "photos" | "search";
+type PanelTab = "emails" | "photos";
 
 interface IntakePanelProps {
   isOnBoard: (id: string) => boolean;
@@ -29,12 +29,10 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
   // When search is opened, switch to search tab; when closed, go back to emails
   const handleOpenSearch = () => {
     setSearchOpen(true);
-    setActiveTab("search");
   };
   const handleCloseSearch = () => {
     setSearchOpen(false);
     setSearchQuery("");
-    setActiveTab("emails");
   };
 
   return (
@@ -64,16 +62,6 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
           }`}
         >
           📷 Photos
-        </button>
-        <button
-          onClick={handleOpenSearch}
-          className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-            searchOpen
-              ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
-              : "text-[#555] hover:text-white"
-          }`}
-        >
-          🔍 Search
         </button>
       </div>
 
@@ -335,25 +323,8 @@ function EmailInbox({
 
   return (
     <>
-      {/* Search + Filters */}
-      <div className="flex-shrink-0 border-b border-[#1a1a1a] p-3 space-y-2">
-        <div className="relative">
-          <svg
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
-            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-          >
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search emails…"
-            className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-9 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none focus:ring-1 focus:ring-red-600/20 transition"
-            id="email-search"
-          />
-        </div>
-
+      {/* Sort + Filters (search removed — handled by top bar) */}
+      <div className="flex-shrink-0 border-b border-[#1a1a1a] px-3 py-2">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSort(sort === "newest" ? "oldest" : "newest")}
@@ -590,27 +561,9 @@ function PhotoGallery({
 
   return (
     <>
-      {/* Search + Filters */}
-      <div className="flex-shrink-0 border-b border-[#1a1a1a] p-3 space-y-2">
-        <div className="relative">
-          <svg
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
-            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-          >
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search photo descriptions…"
-            className="w-full rounded border border-[#2a2a2a] bg-[#141414] py-2 pl-9 pr-3 text-sm font-bold text-white placeholder:text-[#555] focus:border-red-600/40 focus:outline-none focus:ring-1 focus:ring-red-600/20 transition"
-            id="photo-search"
-          />
-        </div>
-
-        {/* Person filter chip */}
-        {personFilterName && (
+      {/* Filters (search removed — handled by top bar) */}
+      {personFilterName && (
+        <div className="flex-shrink-0 border-b border-[#1a1a1a] px-3 py-2">
           <div className="flex items-center gap-1.5">
             <span className="rounded-full border border-red-600/30 bg-red-600/10 px-2.5 py-0.5 text-[10px] font-bold text-red-400 flex items-center gap-1">
               👤 {personFilterName}
@@ -622,8 +575,8 @@ function PhotoGallery({
               </button>
             </span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Status bar */}
       <div className="flex-shrink-0 px-3 py-1.5 text-[10px] font-bold text-[#555] border-b border-[#1a1a1a] flex items-center justify-between">
