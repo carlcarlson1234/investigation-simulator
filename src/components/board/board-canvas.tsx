@@ -78,18 +78,32 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   },
   ref
 ) {
-  /* ── Score glow ───────────────────────────────────────────────────────── */
+  /* ── Score glow + new connection flash ─────────────────────────────────── */
   const [scoreGlow, setScoreGlow] = useState(false);
+  const [newConnectionId, setNewConnectionId] = useState<string | null>(null);
   const prevScoreRef = useRef(score);
+  const prevConnectionCountRef = useRef(connections.length);
   useEffect(() => {
     if (score > prevScoreRef.current) {
       setScoreGlow(true);
-      const t = setTimeout(() => setScoreGlow(false), 800);
+      const t = setTimeout(() => setScoreGlow(false), 1200);
       prevScoreRef.current = score;
       return () => clearTimeout(t);
     }
     prevScoreRef.current = score;
   }, [score]);
+  useEffect(() => {
+    if (connections.length > prevConnectionCountRef.current) {
+      const newest = connections[connections.length - 1];
+      if (newest) {
+        setNewConnectionId(newest.id);
+        const t = setTimeout(() => setNewConnectionId(null), 1200);
+        prevConnectionCountRef.current = connections.length;
+        return () => clearTimeout(t);
+      }
+    }
+    prevConnectionCountRef.current = connections.length;
+  }, [connections]);
 
   /* ── Refs ──────────────────────────────────────────────────────────────── */
   const viewportRef = useRef<HTMLDivElement>(null);   // the outer scrollable viewport
@@ -532,35 +546,47 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header bar */}
-      <div className="flex-shrink-0 border-b border-[#1a1a1a] bg-[#0e0e0e] px-5 py-2.5">
-        <div className="flex items-center gap-3">
-          <h1 className="font-[family-name:var(--font-display)] text-xl uppercase tracking-[0.08em] text-white" id="board-title">
-            {archiveTitle}
-          </h1>
-          <span className={`evidence-badge border border-red-600/30 bg-red-600/10 text-red-500 text-[10px] transition-opacity duration-300 ${
-            investigationStep ? "opacity-30" : ""
-          }`}>
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+      <div className="flex-shrink-0 border-b border-[#1a1a1a] bg-[#0e0e0e] px-5 py-2">
+        <div className="flex items-center">
+          {/* Left: board label + live */}
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-[#bbb]" id="board-title">
+              Evidence Board
+            </h1>
+            <span className={`evidence-badge border border-red-500/50 bg-red-600/20 text-red-400 text-[10px] font-bold transition-opacity duration-300 ${
+              investigationStep ? "opacity-30" : ""
+            }`}>
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-90" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+              LIVE
             </span>
-            LIVE
-          </span>
-          <span className={`ml-auto flex items-center gap-2 font-[family-name:var(--font-mono)] text-sm tabular-nums tracking-wider transition-opacity duration-300 ${
+          </div>
+
+          {/* Center: score — prominent */}
+          <div className={`flex-1 flex items-center justify-center gap-3 transition-opacity duration-300 ${
             investigationStep ? "opacity-20" : ""
           }`}>
-            <span className="text-[#555] text-[11px] uppercase">Score</span>
+            <span className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.2em] text-white font-bold">Score</span>
             <span
-              className="font-black text-lg"
+              className="font-[family-name:var(--font-display)] font-black text-3xl tracking-wide"
               style={{
-                color: scoreGlow ? "#4ade80" : (score > 0 ? "#22c55e" : "#555"),
-                textShadow: scoreGlow ? "0 0 12px #4ade80, 0 0 24px #22c55e80" : "none",
-                transition: "color 0.3s, text-shadow 0.5s",
+                color: scoreGlow ? "#fff" : (score > 0 ? "#86efac" : "#fff"),
+                textShadow: scoreGlow
+                  ? "0 0 20px #4ade80, 0 0 40px #22c55e, 0 0 60px #16a34a"
+                  : score > 0 ? "0 0 14px #4ade8080, 0 0 30px #22c55e40" : "none",
+                transition: "color 0.3s, text-shadow 0.6s, transform 0.3s",
+                transform: scoreGlow ? "scale(1.2)" : "scale(1)",
+                display: "inline-block",
               }}
             >
               {score.toLocaleString()}
             </span>
-          </span>
+          </div>
+
+          {/* Right spacer to balance the layout */}
+          <div className="w-[120px]" />
         </div>
       </div>
 
@@ -651,6 +677,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       <feMergeNode in="SourceGraphic" />
                     </feMerge>
                   </filter>
+                  <filter id="string-glow-green">
+                    <feGaussianBlur stdDeviation="8" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                 </defs>
                 {connections.map((conn) => {
                   const from = getNodeCenter(conn.sourceId);
@@ -659,6 +694,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const vis = getEdgeVis(conn.id);
                   const isHighlight = vis === "highlight";
                   const isSelected = conn.id === selectedConnectionId;
+                  const isNew = conn.id === newConnectionId;
+                  const lineColor = isNew ? "#4ade80" : isSelected ? "#f87171" : "#ef4444";
+                  const dotColor = isNew ? "#4ade80" : "#ef4444";
+                  const lineFilter = isNew ? "url(#string-glow-green)" : isSelected ? "url(#string-glow-strong)" : isHighlight ? "url(#string-glow)" : "url(#string-glow)";
                   return (
                     <g key={conn.id}>
                       {/* Invisible fat hit area for clicking */}
@@ -676,16 +715,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       {/* Visible line — bright and thick */}
                       <line
                         x1={from.cx} y1={from.cy} x2={to.cx} y2={to.cy}
-                        stroke={isSelected ? "#f87171" : "#ef4444"}
-                        strokeWidth={isSelected ? 4 : isHighlight ? 3.5 : 3}
-                        strokeOpacity={isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
-                        filter={isSelected ? "url(#string-glow-strong)" : isHighlight ? "url(#string-glow)" : "url(#string-glow)"}
+                        stroke={lineColor}
+                        strokeWidth={isNew ? 5 : isSelected ? 4 : isHighlight ? 3.5 : 3}
+                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? 0.08 : 0.7}
+                        filter={lineFilter}
                         strokeLinecap="round"
-                        className="transition-all duration-300 pointer-events-none"
+                        className="transition-all duration-500 pointer-events-none"
                       />
                       {/* Endpoint dots */}
-                      <circle cx={from.cx} cy={from.cy} r={4} fill="#ef4444" fillOpacity={vis === "faded" ? 0.08 : 0.6} className="pointer-events-none" />
-                      <circle cx={to.cx} cy={to.cy} r={4} fill="#ef4444" fillOpacity={vis === "faded" ? 0.08 : 0.6} className="pointer-events-none" />
+                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className="pointer-events-none transition-all duration-500" />
+                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? 0.08 : isNew ? 1 : 0.6} className="pointer-events-none transition-all duration-500" />
                       {/* Note indicator dot at midpoint */}
                       {conn.note && (
                         <circle

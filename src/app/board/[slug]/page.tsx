@@ -8,10 +8,15 @@ export const metadata: Metadata = {
     "Search evidence, map connections, and build your investigation board.",
 };
 
-export default async function BoardPage() {
-  const [people, stats] = await Promise.all([
+export default async function BoardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>;
+}) {
+  const [people, stats, params] = await Promise.all([
     getAllPeople(),
     getArchiveStats(),
+    searchParams,
   ]);
 
   return (
@@ -19,6 +24,7 @@ export default async function BoardPage() {
       archiveTitle="Investigate Epstein"
       people={people}
       stats={stats}
+      urlMode={params.mode ?? null}
     />
   );
 }

@@ -1,63 +1,12 @@
-import { Suspense } from "react";
 import Link from "next/link";
-import { getArchiveStats } from "@/lib/queries";
-
-async function StatsGrid() {
-  const stats = await getArchiveStats();
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {[
-        { label: "Emails", value: stats.emailCount.toLocaleString(), icon: "✉️" },
-        { label: "Documents", value: stats.documentCount.toLocaleString(), icon: "📄" },
-        { label: "Photos", value: stats.photoCount.toLocaleString(), icon: "📸" },
-        { label: "Persons", value: String(stats.personCount), icon: "🔍" },
-      ].map((stat, i) => (
-        <div
-          key={stat.label}
-          className="stat-animate glass-card flex flex-col items-center gap-1.5 p-5"
-          style={{ animationDelay: `${i * 0.08}s` }}
-        >
-          <span className="text-2xl">{stat.icon}</span>
-          <span className="text-2xl font-black tabular-nums text-white">
-            {stat.value}
-          </span>
-          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#666]">
-            {stat.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatsFallback() {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {["Emails", "Documents", "Photos", "Persons"].map((label, i) => (
-        <div
-          key={label}
-          className="stat-animate glass-card flex flex-col items-center gap-1.5 p-5"
-          style={{ animationDelay: `${i * 0.08}s` }}
-        >
-          <span className="text-2xl opacity-30">⏳</span>
-          <span className="text-2xl font-black tabular-nums text-[#333]">—</span>
-          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#666]">
-            {label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function HomePage() {
   return (
-    <div className="relative overflow-hidden scanline-overlay">
+    <div className="relative overflow-hidden scanline-overlay min-h-[calc(100vh-3rem)] flex flex-col items-center justify-center">
       <div className="hero-orb hero-orb-1" />
       <div className="hero-orb hero-orb-2" />
 
-      {/* ─── Hero ─────────────────────────────────────────────── */}
-      <section className="relative mx-auto max-w-4xl px-4 pt-16 pb-10 text-center sm:px-6">
+      <section className="relative mx-auto max-w-4xl px-4 py-16 text-center sm:px-6">
         <div className="animate-in">
           <span className="evidence-badge mb-5 inline-flex border border-red-600/30 bg-red-600/10 text-red-500">
             <span className="relative flex h-2 w-2">
@@ -93,7 +42,7 @@ export default function HomePage() {
 
         <div className="animate-in animate-delay-3 mt-10 flex flex-col items-center gap-4">
           <Link
-            href="/board/investigate"
+            href="/board/investigate?mode=start"
             id="hero-cta"
             className="inline-flex h-14 items-center gap-3 rounded bg-red-600 px-10 text-base font-black uppercase tracking-widest text-white shadow-xl shadow-red-600/25 transition hover:bg-red-700 hover:shadow-red-600/40 hover:scale-105 active:scale-100"
           >
@@ -113,14 +62,6 @@ export default function HomePage() {
           </Link>
         </div>
       </section>
-
-      {/* ─── Stats ────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-        <Suspense fallback={<StatsFallback />}>
-          <StatsGrid />
-        </Suspense>
-      </section>
-
     </div>
   );
 }

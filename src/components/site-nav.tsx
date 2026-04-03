@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 const STORAGE_KEY = "board-state";
 
@@ -13,13 +13,11 @@ const links = [
 
 export function SiteNav() {
   const pathname = usePathname();
-  const router = useRouter();
 
   const handleReset = () => {
     if (!confirm("Reset your investigation? All board progress will be cleared.")) return;
     try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
-    router.push("/board/investigate");
-    router.refresh();
+    window.location.href = "/board/investigate";
   };
 
   return (

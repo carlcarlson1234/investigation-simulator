@@ -14,7 +14,6 @@ import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
-import { InvestigationModeChooser } from "./investigation-mode-chooser";
 import { InvestigationOverlay } from "./investigation-overlay";
 import { useInvestigation } from "@/hooks/use-investigation";
 import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
@@ -23,12 +22,14 @@ interface BoardWorkspaceProps {
   archiveTitle: string;
   people: Person[];
   stats: ArchiveStats;
+  urlMode?: string | null;
 }
 
 export function BoardWorkspace({
   archiveTitle,
   people,
   stats,
+  urlMode,
 }: BoardWorkspaceProps) {
   // ─── Restore saved state (lazy initializers — run once on mount) ────────
   const [saved] = useState(() => loadBoardState());
@@ -49,7 +50,7 @@ export function BoardWorkspace({
   const canvasRef = useRef<BoardCanvasHandle>(null);
 
   // ─── Investigation Flow ─────────────────────────────────────────────────
-  const investigation = useInvestigation(boardNodes, boardConnections, people, saved?.mode);
+  const investigation = useInvestigation(boardNodes, boardConnections, people, saved?.mode, urlMode);
   const { autoDetectCompletion } = investigation as ReturnType<typeof useInvestigation> & { autoDetectCompletion: boolean };
 
   // Auto-advance when step conditions are met
@@ -315,17 +316,6 @@ export function BoardWorkspace({
   const showRightPanel = !investigation.isStartMode || stepIdx >= 1;     // intro-people+
   const showBoard = !investigation.isStartMode || stepIdx >= 2;          // intro-board+
   const showLeftPanel = !investigation.isStartMode || stepIdx >= 4;      // intro-evidence+
-
-  // Show mode chooser if no mode selected
-  if (investigation.mode === null) {
-    return (
-      <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-        <InvestigationModeChooser
-          onChoose={investigation.setMode}
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">

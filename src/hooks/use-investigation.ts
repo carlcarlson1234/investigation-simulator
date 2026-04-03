@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import type { InvestigationMode, InvestigationStep, Nudge, ExpansionChoice } from "@/lib/investigation-types";
 import type { BoardNode, BoardConnection } from "@/lib/board-types";
 import type { SearchResult, Person } from "@/lib/types";
@@ -56,17 +55,18 @@ export function useInvestigation(
   boardConnections: BoardConnection[],
   people: Person[],
   savedMode?: InvestigationMode | null,
+  urlMode?: string | null,
 ): UseInvestigationReturn {
-  const searchParams = useSearchParams();
-  const urlMode = searchParams.get("mode");
-  // Priority: saved session > URL param > default
-  const initialMode: InvestigationMode = savedMode ?? (urlMode === "free" ? "free" : "start");
+  // Priority: saved session > URL param > default to free explore
+  const initialMode: InvestigationMode = savedMode ?? (urlMode === "start" ? "start" : "free");
 
   const [mode, setMode] = useState<InvestigationMode>(initialMode);
-  // If restoring a session with existing nodes, skip to open investigation
-  const [step, setStep] = useState<InvestigationStep>(() =>
-    savedMode && boardNodes.length > 0 ? "open-investigation" : "welcome"
-  );
+  // Free mode always skips to open board; start mode begins at welcome
+  const [step, setStep] = useState<InvestigationStep>(() => {
+    if (savedMode && boardNodes.length > 0) return "open-investigation";
+    if (initialMode === "free") return "open-investigation";
+    return "welcome";
+  });
   const [completedSteps, setCompletedSteps] = useState<Set<InvestigationStep>>(new Set());
   const [chosenExpansionId, setChosenExpansionId] = useState<string | null>(null);
   const [score, setScore] = useState(0);
