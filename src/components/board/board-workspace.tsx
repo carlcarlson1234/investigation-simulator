@@ -12,7 +12,7 @@ import type {
 import { IntakePanel } from "./intake-panel";
 import { BoardCanvas } from "./board-canvas";
 import type { BoardCanvasHandle } from "./board-canvas";
-import { ContextPanel } from "./context-panel";
+import { ContextPanel, DetailsTab, EmailDetailView } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
 import { InvestigationModeChooser } from "./investigation-mode-chooser";
@@ -156,7 +156,6 @@ export function BoardWorkspace({
 
   const selectNode = useCallback((id: string | null) => {
     setSelectedNodeId(id);
-    if (id) setRightTab("details");
   }, []);
 
   const focusNode = useCallback((id: string | null) => {
@@ -293,7 +292,6 @@ export function BoardWorkspace({
 
   const handleSelectEmail = useCallback(async (emailId: string) => {
     setSelectedEmailId(emailId);
-    setRightTab("details");
     // Fetch full email detail
     try {
       const res = await fetch(`/api/evidence/${emailId}?type=email`);
@@ -452,6 +450,55 @@ export function BoardWorkspace({
             )}
           </div>
         </div>
+
+        {/* ── DETAILS BOTTOM DRAWER ── */}
+        {(() => {
+          const hasDetail = selectedNode || (selectedEmailDetail && !selectedNode);
+          return (
+            <div className={`absolute bottom-0 left-0 right-0 z-20 border-t border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-md transition-transform duration-300 ease-out ${
+              hasDetail ? "translate-y-0" : "translate-y-full"
+            }`}
+            style={{ maxHeight: "45%" }}
+            >
+              {/* Drag handle + close */}
+              <div className="flex items-center justify-between border-b border-[#1a1a1a] px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-red-500">
+                    {selectedNode?.kind === "person" ? "👤" : "📋"} Details
+                  </span>
+                  {selectedNode && (
+                    <span className="text-[10px] text-[#555]">
+                      — {selectedNode.kind === "person" ? selectedNode.data.name : selectedNode.data.title}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setSelectedNodeId(null); setSelectedEmailDetail(null); setSelectedEmailId(null); }}
+                  className="text-[#555] hover:text-white transition p-1"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Content */}
+              <div className="overflow-y-auto" style={{ maxHeight: "calc(45vh - 42px)" }}>
+                {selectedEmailDetail && !selectedNode ? (
+                  <EmailDetailView email={selectedEmailDetail} />
+                ) : (
+                  <DetailsTab
+                    selectedNode={selectedNode}
+                    boardConnections={boardConnections}
+                    boardNodes={boardNodes}
+                    onFocusNode={focusNode}
+                    onSelectNode={selectNode}
+                    focusedNodeId={focusedNodeId}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Investigation Overlay (only in start mode) */}

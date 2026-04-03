@@ -37,7 +37,6 @@ interface ContextPanelProps {
 
 const TABS: { key: RightPanelTab; label: string }[] = [
   { key: "persons", label: "Persons" },
-  { key: "details", label: "Details" },
 ];
 
 export function ContextPanel({
@@ -75,34 +74,19 @@ export function ContextPanel({
     <aside className={`context-panel flex h-full w-80 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden transition-all duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
-      {/* Tab bar — muted during onboarding */}
-      <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
+      {/* Header */}
+      <div className={`flex flex-shrink-0 items-center border-b border-[#1a1a1a] px-3 py-2.5 transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""
       }`}>
-        {TABS.map((tab) => (
-          <button key={tab.key} onClick={() => onTabChange(tab.key)}
-            className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-              activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#555] hover:text-white"
-            }`}>
-            {tab.label}
-          </button>
-        ))}
+        <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-red-500">
+          👤 Persons of Interest
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        {activeTab === "persons" && (
-          <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
-            isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
-            suggestedPeople={suggestedPeople} investigationStep={investigationStep} />
-        )}
-        {activeTab === "details" && (
-          selectedEmailDetail && !selectedNode ? (
-            <EmailDetailView email={selectedEmailDetail} />
-          ) : (
-            <DetailsTab selectedNode={selectedNode} boardConnections={boardConnections} boardNodes={boardNodes}
-              onFocusNode={onFocusNode} onSelectNode={onSelectNode} focusedNodeId={focusedNodeId} />
-          )
-        )}
+        <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
+          isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
+          suggestedPeople={suggestedPeople} investigationStep={investigationStep} />
       </div>
     </aside>
   );
@@ -331,7 +315,7 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
 
 // ─── Email Detail View (full email reader) ──────────────────────────────────
 
-function EmailDetailView({ email }: { email: EmailEvidence }) {
+export function EmailDetailView({ email }: { email: EmailEvidence }) {
   function formatFullDate(dateStr: string | null): string {
     if (!dateStr) return "Unknown date";
     try {
@@ -430,7 +414,7 @@ function EmailDetailView({ email }: { email: EmailEvidence }) {
 
 // ─── Details Tab ────────────────────────────────────────────────────────────
 
-function DetailsTab({
+export function DetailsTab({
   selectedNode, boardConnections, boardNodes, onFocusNode, onSelectNode, focusedNodeId,
 }: {
   selectedNode: BoardNode | null; boardConnections: BoardConnection[];
@@ -610,7 +594,7 @@ function DetailsTab({
   );
 }
 
-function getFullContent(ev: Evidence): string {
+export function getFullContent(ev: Evidence): string {
   switch (ev.type) {
     case "email": return ev.body || ev.snippet;
     case "document": return ev.fulltext || ev.snippet;
