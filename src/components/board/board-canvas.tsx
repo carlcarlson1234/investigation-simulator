@@ -8,6 +8,10 @@ import {
   EVIDENCE_TYPE_ICON,
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
+import cytoscape from "cytoscape";
+import fcose from "cytoscape-fcose";
+
+cytoscape.use(fcose);
 
 /* ── Zoom constants ─────────────────────────────────────────────────────── */
 const MIN_ZOOM = 0.2;
@@ -183,6 +187,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     return hidden;
   }, [personEvidenceGroups, collapsedGroups]);
 
+  // Orphan nodes — no connections at all
+  const orphanNodeIds = useMemo(() => {
+    const connected = new Set<string>();
+    for (const c of connections) {
+      connected.add(c.sourceId);
+      connected.add(c.targetId);
+    }
+    const orphans = new Set<string>();
+    for (const n of nodes) {
+      if (!connected.has(n.id)) orphans.add(n.id);
+    }
+    return orphans;
+  }, [nodes, connections]);
+
   // Connected evidence counts per person (for display on card)
   const personEvidenceCounts = useMemo(() => {
     const counts: Record<string, { emails: number; documents: number; photos: number; total: number }> = {};
@@ -310,6 +328,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [pathFocus, setPathFocus] = useState<FocusState | null>(null);
   const [pathDrillNode, setPathDrillNode] = useState<string | null>(null);
   const [showAllInCompare, setShowAllInCompare] = useState(false);
+  const [hideOrphans, setHideOrphans] = useState(true);
   const compareNodeIdsRef = useRef<Set<string> | null>(null);
   // Default path focus (5 core columns) and full focus (includes indirect)
   const pathDefaultFocusRef = useRef<FocusState | null>(null);
@@ -580,70 +599,329 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const orphanNodes = nodes.filter(n => !hasConnection.has(n.id));
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ALGORITHM GOES HERE — replace everything between the ═══ lines
-    // Input: connectedNodes, connections, sizes
-    // Output: pos (Record<string, { x: number; y: number }>)
+    // fCoSE (constrained force-directed) via Cytoscape.js
+    // iVis-at-Bilkent — spectral init + force-directed refinement
     // ═══════════════════════════════════════════════════════════════════════
 
-    // Placeholder: simple force-directed (same as Network mode)
-    type Body = { id: string; x: number; y: number; vx: number; vy: number; w: number; h: number };
-    const bodies: Body[] = connectedNodes.map((n) => {
+    // Build cytoscape elements
+    const cyNodes: cytoscape.ElementDefinition[] = connectedNodes.map((n) => {
       const s = sizes.get(n.id) ?? { w: 260, h: 300 };
       return {
-        id: n.id,
-        x: n.position.x + s.w / 2,
-        y: n.position.y + s.h / 2,
-        vx: 0, vy: 0,
-        w: s.w, h: s.h,
+        group: "nodes" as const,
+        data: { id: n.id, width: s.w, height: s.h },
+        position: { x: n.position.x + s.w / 2, y: n.position.y + s.h / 2 },
       };
     });
 
-    const ITERATIONS = 200;
-    const REPULSION = 200000;
-    const ATTRACTION = 0.005;
-    const REST_LENGTH = 180;
-    const DAMPING = 0.85;
-    const MIN_DIST = 60;
+    const usedEdgeKeys = new Set<string>();
+    const cyEdges: cytoscape.ElementDefinition[] = [];
+    for (const c of connections) {
+      const key = `${c.sourceId}-${c.targetId}`;
+      if (usedEdgeKeys.has(key)) continue;
+      if (!connectedNodes.some(n => n.id === c.sourceId) || !connectedNodes.some(n => n.id === c.targetId)) continue;
+      usedEdgeKeys.add(key);
+      cyEdges.push({
+        group: "edges" as const,
+        data: { id: `e-${c.id}`, source: c.sourceId, target: c.targetId },
+      });
+    }
+
+    // Run fCoSE headlessly (styleEnabled: true so node dimensions are respected)
+    const cy = cytoscape({
+      elements: [...cyNodes, ...cyEdges],
+      headless: true,
+      styleEnabled: true,
+      style: cyNodes.map((n) => ({
+        selector: `#${CSS.escape(n.data.id as string)}`,
+        style: { width: n.data.width as number, height: n.data.height as number },
+      })),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const layout = cy.layout({
+      name: "fcose",
+      quality: "proof",
+      randomize: true,
+      animate: false,
+      fit: false,
+      padding: 50,
+      nodeSeparation: 150,
+      nodeRepulsion: () => 10000,
+      idealEdgeLength: () => 250,
+      edgeElasticity: () => 0.35,
+      numIter: 5000,
+      gravity: 0.12,
+      gravityRange: 3.8,
+      packComponents: true,
+      nodeDimensionsIncludeLabels: false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    layout.run();
+
+    // Post-process: pull outliers toward the center of mass
+    // Only affects nodes that are far from the group — doesn't touch the core layout
+    let cx = 0, cy2 = 0, count = 0;
+    cy.nodes().forEach((node) => {
+      const p = node.position();
+      cx += p.x; cy2 += p.y; count++;
+    });
+    cx /= count || 1; cy2 /= count || 1;
+
+    // Find the average distance from center
+    let avgDist = 0;
+    cy.nodes().forEach((node) => {
+      const p = node.position();
+      avgDist += Math.sqrt((p.x - cx) ** 2 + (p.y - cy2) ** 2);
+    });
+    avgDist /= count || 1;
+
+    // Anything beyond 1.8x the average distance gets pulled in aggressively
+    const OUTLIER_THRESHOLD = 1.5;
+    const PULL_STRENGTH = 0.75; // pull 75% of the way toward the threshold boundary
+    cy.nodes().forEach((node) => {
+      const p = node.position();
+      const dx = p.x - cx, dy = p.y - cy2;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = avgDist * OUTLIER_THRESHOLD;
+      if (dist > maxDist) {
+        const scale = maxDist / dist;
+        const newX = cx + dx * (scale + (1 - scale) * (1 - PULL_STRENGTH));
+        const newY = cy2 + dy * (scale + (1 - scale) * (1 - PULL_STRENGTH));
+        node.position({ x: newX, y: newY });
+      }
+    });
+
+    // Read positions back, normalize to top-left at (100, 80)
+    let minX = Infinity, minY = Infinity;
+    cy.nodes().forEach((node) => {
+      const p = node.position();
+      const s = sizes.get(node.id()) ?? { w: 260, h: 300 };
+      if (p.x - s.w / 2 < minX) minX = p.x - s.w / 2;
+      if (p.y - s.h / 2 < minY) minY = p.y - s.h / 2;
+    });
+    const offsetX = 100 - minX, offsetY = 80 - minY;
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    cy.nodes().forEach((node) => {
+      const p = node.position();
+      const s = sizes.get(node.id()) ?? { w: 260, h: 300 };
+      pos[node.id()] = { x: p.x + offsetX - s.w / 2, y: p.y + offsetY - s.h / 2 };
+    });
+
+    cy.destroy();
+
+    // ═══════════════════════════════════════════════════════════════════════
+
+    stackSidebar(orphanNodes.map(n => n.id), pos);
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
+
+  // ── LAB 2: Fruchterman-Reingold force-directed layout ────────────────────
+  // Ported from github.com/Samuelk0nrad/sociogram (Kotlin → TypeScript)
+  // Pure simulation — no Cytoscape dependency.
+  const arrangeTest2 = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
+
+    const sizes = new Map<string, { w: number; h: number }>();
+    for (const node of nodes) sizes.set(node.id, getCardSize(node.id));
+
+    const hasConnection = new Set<string>();
+    for (const c of connections) {
+      hasConnection.add(c.sourceId);
+      hasConnection.add(c.targetId);
+    }
+    const connectedNodes = nodes.filter(n => hasConnection.has(n.id));
+    const orphanNodes = nodes.filter(n => !hasConnection.has(n.id));
+
+    if (connectedNodes.length === 0) return;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Fruchterman-Reingold simulation
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Simulation area — scaled up to give large cards room to breathe
+    // Compute average card diagonal to scale the sim space
+    let avgCardDiag = 0;
+    for (const n of connectedNodes) {
+      const s = sizes.get(n.id) ?? { w: 260, h: 300 };
+      avgCardDiag += Math.sqrt(s.w * s.w + s.h * s.h);
+    }
+    avgCardDiag /= connectedNodes.length;
+    const simW = Math.max(4000, connectedNodes.length * avgCardDiag * 0.8);
+    const simH = Math.max(3000, connectedNodes.length * avgCardDiag * 0.6);
+    const maxDist = Math.sqrt(simW * simW + simH * simH);
+    // k = ideal edge length — scaled to card size so nodes don't stack
+    const k = avgCardDiag * 2.8;
+
+    // Build body array with random initial positions
+    type FRBody = { id: string; x: number; y: number; fx: number; fy: number; w: number; h: number };
+    const bodies: FRBody[] = connectedNodes.map((n) => {
+      const s = sizes.get(n.id) ?? { w: 260, h: 300 };
+      return {
+        id: n.id,
+        x: Math.random() * simW,
+        y: Math.random() * simH,
+        fx: 0, fy: 0,
+        w: s.w, h: s.h,
+      };
+    });
+    const bodyMap = new Map<string, FRBody>();
+    for (const b of bodies) bodyMap.set(b.id, b);
+
+    // Build edge list (deduplicated, connected only)
+    const edgeSet = new Set<string>();
+    const frEdges: { src: FRBody; tgt: FRBody; weight: number }[] = [];
+    for (const c of connections) {
+      const key = [c.sourceId, c.targetId].sort().join("||");
+      if (edgeSet.has(key)) continue;
+      const src = bodyMap.get(c.sourceId);
+      const tgt = bodyMap.get(c.targetId);
+      if (!src || !tgt) continue;
+      edgeSet.add(key);
+      frEdges.push({ src, tgt, weight: c.strength || 1 });
+    }
+
+    // Pre-build adjacency lookup for O(1) edge detection
+    const adjacency = new Map<string, Set<string>>();
+    for (const b of bodies) adjacency.set(b.id, new Set());
+    for (const e of frEdges) {
+      adjacency.get(e.src.id)!.add(e.tgt.id);
+      adjacency.get(e.tgt.id)!.add(e.src.id);
+    }
+
+    // Simulation parameters
+    const ITERATIONS = 500;
+    let temperature = 2.0;
+    const COOLING_FACTOR = 0.97;
 
     for (let iter = 0; iter < ITERATIONS; iter++) {
-      const temp = 1 - iter / ITERATIONS;
-      for (let i = 0; i < bodies.length; i++) {
-        for (let j = i + 1; j < bodies.length; j++) {
-          const a = bodies[i], b = bodies[j];
-          let dx = a.x - b.x, dy = a.y - b.y;
-          let dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < MIN_DIST) dist = MIN_DIST;
-          const force = REPULSION / (dist * dist);
-          const fx = (dx / dist) * force * temp, fy = (dy / dist) * force * temp;
-          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+      // Calculate forces for each node
+      for (const v of bodies) {
+        v.fx = 0; v.fy = 0;
+        const forces: { x: number; y: number }[] = [];
+        const vAdj = adjacency.get(v.id)!;
+
+        for (const u of bodies) {
+          if (v === u) continue;
+          const dx = u.x - v.x;
+          const dy = u.y - v.y;
+          const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+
+          if (vAdj.has(u.id)) {
+            // Attractive force: d²/k (or -k/(d*d) when close)
+            const edgeWeight = frEdges.find(e =>
+              (e.src === v && e.tgt === u) || (e.src === u && e.tgt === v)
+            )?.weight ?? 1;
+            const newK = k / edgeWeight;
+            let force = dist > k ? (dist * dist) / newK : -(newK / (dist * dist));
+            force = Math.min(force, maxDist);
+            forces.push({ x: v.x + force * dx / dist, y: v.y + force * dy / dist });
+          } else {
+            // Repulsive force: -k²/d
+            const force = -(k * k) / dist;
+            forces.push({ x: v.x + force * dx / dist, y: v.y + force * dy / dist });
+          }
+        }
+
+        if (forces.length > 0) {
+          v.fx = forces.reduce((s, f) => s + f.x, 0) / forces.length;
+          v.fy = forces.reduce((s, f) => s + f.y, 0) / forces.length;
         }
       }
-      for (const conn of connections) {
-        const a = bodies.find(b => b.id === conn.sourceId);
-        const b = bodies.find(b => b.id === conn.targetId);
-        if (!a || !b) continue;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 1) continue;
-        const force = ATTRACTION * (dist - REST_LENGTH) * temp;
-        const fx = (dx / dist) * force, fy = (dy / dist) * force;
-        a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+
+      // Apply forces with cooling
+      for (const v of bodies) {
+        const dx = v.fx - v.x;
+        const dy = v.fy - v.y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+        const factor = dist * temperature;
+        const newX = v.x + factor * dx / dist;
+        const newY = v.y + factor * dy / dist;
+        // Clamp to simulation bounds
+        v.x = Math.max(0, Math.min(simW, newX));
+        v.y = Math.max(0, Math.min(simH, newY));
       }
-      for (const body of bodies) {
-        body.vx *= DAMPING; body.vy *= DAMPING;
-        body.x += body.vx; body.y += body.vy;
+
+      // Cool down
+      temperature = Math.max(temperature * COOLING_FACTOR, 0.01);
+    }
+
+    // ── Post-process step 1: compact spread ──────────────────────────────
+    // Pull ALL nodes toward center of mass to tighten the layout.
+    // Outer nodes get pulled more aggressively (proportional to distance).
+    let cx = 0, cy2 = 0;
+    for (const b of bodies) { cx += b.x; cy2 += b.y; }
+    cx /= bodies.length; cy2 /= bodies.length;
+
+    // Global compaction: shrink distance from center by a factor
+    const COMPACT_FACTOR = 0.55; // pull 45% closer to center
+    for (const b of bodies) {
+      b.x = cx + (b.x - cx) * COMPACT_FACTOR;
+      b.y = cy2 + (b.y - cy2) * COMPACT_FACTOR;
+    }
+
+    // Extra pull on outliers beyond 1.5x average distance
+    let avgDist = 0;
+    for (const b of bodies) avgDist += Math.sqrt((b.x - cx) ** 2 + (b.y - cy2) ** 2);
+    avgDist /= bodies.length;
+    const OUTLIER_THRESHOLD = 1.5;
+    const OUTLIER_PULL = 0.7;
+    for (const b of bodies) {
+      const dx = b.x - cx, dy = b.y - cy2;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxD = avgDist * OUTLIER_THRESHOLD;
+      if (dist > maxD) {
+        const scale = maxD / dist;
+        b.x = cx + dx * (scale + (1 - scale) * (1 - OUTLIER_PULL));
+        b.y = cy2 + dy * (scale + (1 - scale) * (1 - OUTLIER_PULL));
       }
     }
 
+    // ── Post-process step 2: gentle overlap repulsion ──────────────────
+    // A few passes of pushing overlapping cards apart, but softly.
+    const OVERLAP_PASSES = 25;
+    const OVERLAP_PUSH = 0.3; // push 30% of the overlap per pass
+    const PADDING = 30; // minimum gap between cards
+    for (let pass = 0; pass < OVERLAP_PASSES; pass++) {
+      for (let i = 0; i < bodies.length; i++) {
+        for (let j = i + 1; j < bodies.length; j++) {
+          const a = bodies[i], b = bodies[j];
+          // Check bounding-box overlap (with padding)
+          const overlapX = (a.w / 2 + b.w / 2 + PADDING) - Math.abs(a.x - b.x);
+          const overlapY = (a.h / 2 + b.h / 2 + PADDING) - Math.abs(a.y - b.y);
+          if (overlapX > 0 && overlapY > 0) {
+            // Push apart along the axis of least overlap
+            if (overlapX < overlapY) {
+              const push = overlapX * OVERLAP_PUSH;
+              const dir = a.x < b.x ? -1 : 1;
+              a.x += dir * push;
+              b.x -= dir * push;
+            } else {
+              const push = overlapY * OVERLAP_PUSH;
+              const dir = a.y < b.y ? -1 : 1;
+              a.y += dir * push;
+              b.y -= dir * push;
+            }
+          }
+        }
+      }
+    }
+
+    // Normalize positions to top-left at (100, 80), accounting for card sizes
     let minX = Infinity, minY = Infinity;
     for (const b of bodies) {
       if (b.x - b.w / 2 < minX) minX = b.x - b.w / 2;
       if (b.y - b.h / 2 < minY) minY = b.y - b.h / 2;
     }
-    const offsetX = 100 - minX, offsetY = 80 - minY;
+    const offX = 100 - minX, offY = 80 - minY;
+
     const pos: Record<string, { x: number; y: number }> = {};
     for (const b of bodies) {
-      pos[b.id] = { x: b.x + offsetX - b.w / 2, y: b.y + offsetY - b.h / 2 };
+      pos[b.id] = { x: b.x + offX - b.w / 2, y: b.y + offY - b.h / 2 };
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1549,6 +1827,27 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           </button>
         )}
 
+        {/* ── Show Unconnected toggle (top-right of board) ─────────────── */}
+        {orphanNodeIds.size > 0 && (
+          <button
+            onClick={() => { setHideOrphans(h => !h); setTimeout(() => zoomFit(), 350); }}
+            className={`absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition shadow-lg shadow-black/40 ${
+              !hideOrphans
+                ? "border-red-500/40 bg-red-600/15 text-red-400 hover:bg-red-600/25"
+                : "border-[#2a2a2a] bg-[#141414]/90 text-[#666] hover:bg-[#222] hover:text-white"
+            } backdrop-blur-sm`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {!hideOrphans
+                ? <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>
+                : <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></>
+              }
+            </svg>
+            {hideOrphans ? "Unconnected" : "Unconnected"}
+            <span className="rounded bg-[#333] px-1 py-0 text-[9px] font-bold text-[#777]">{orphanNodeIds.size}</span>
+          </button>
+        )}
+
         {/*
           VIEWPORT: The scrollable container. overflow:auto creates scrollbars.
           The sizer div inside provides scrollable dimensions.
@@ -1792,7 +2091,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               {/* Nodes */}
               {nodes.filter(n => !hiddenNodeIds.has(n.id)).map((node) => {
                 const vis = getNodeVis(node.id);
-                const opc = vis === "dimmed" ? (pathFocus && !showAllInCompare ? "opacity-0 pointer-events-none" : "opacity-15") : vis === "second" ? "opacity-45" : "opacity-100";
+                const isOrphan = orphanNodeIds.has(node.id);
+                const opc = (isOrphan && hideOrphans) ? "opacity-0 pointer-events-none" : vis === "dimmed" ? (pathFocus && !showAllInCompare ? "opacity-0 pointer-events-none" : "opacity-15") : vis === "second" ? "opacity-45" : "opacity-100";
                 const isConnectSource = connectDrag?.sourceId === node.id;
                 const isConnectTarget = connectDrag && connectDrag.sourceId !== node.id;
                 return (
@@ -2073,13 +2373,27 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             onClick={arrangeTest}
             disabled={nodes.length < 2 || isArranging}
             className="flex h-8 items-center gap-1.5 rounded px-2 text-amber-500/70 hover:bg-amber-600/10 hover:text-amber-400 transition disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Lab: experimental layout algorithm"
+            title="Lab: fCoSE force-directed layout"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 3h6v6l4 8H5l4-8V3z" />
               <line x1="9" y1="3" x2="15" y2="3" />
             </svg>
             <span className="text-[10px] font-bold uppercase tracking-wider">Lab</span>
+          </button>
+
+          <button
+            onClick={arrangeTest2}
+            disabled={nodes.length < 2 || isArranging}
+            className="flex h-8 items-center gap-1.5 rounded px-2 text-cyan-500/70 hover:bg-cyan-600/10 hover:text-cyan-400 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Lab 2: Fruchterman-Reingold force-directed layout"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 3h6v6l4 8H5l4-8V3z" />
+              <line x1="9" y1="3" x2="15" y2="3" />
+              <circle cx="12" cy="14" r="1.5" fill="currentColor" />
+            </svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Lab 2</span>
           </button>
 
           <div className="relative">

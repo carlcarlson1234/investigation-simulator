@@ -12,6 +12,8 @@
     "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
+    "cytoscape": "^3.31.0",
+    "cytoscape-fcose": "^2.2.0",
     "drizzle-orm": "^0.45.2",
     "next": "16.2.1",
     "postgres": "^3.4.8",
