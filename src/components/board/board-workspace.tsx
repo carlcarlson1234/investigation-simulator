@@ -307,6 +307,17 @@ export function BoardWorkspace({
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
 
+  // Auto-switch to details only when selection changes (not continuously)
+  const prevSelectedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedNode && selectedNode.id !== prevSelectedId.current) {
+      setRightTab("details");
+    } else if (!selectedNode && !selectedEmailId && prevSelectedId.current) {
+      setRightTab("persons");
+    }
+    prevSelectedId.current = selectedNode?.id ?? null;
+  }, [selectedNode, selectedEmailId]);
+
   // ─── Email selection from inbox ───────────────────────────────────────────
 
   const handleSelectEmail = useCallback(async (emailId: string) => {
@@ -345,7 +356,7 @@ export function BoardWorkspace({
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
       {/* LEFT: Email Inbox + Search — hidden until intro-evidence */}
-      <div className={`transition-all duration-700 ease-out h-full ${showLeftPanel ? "w-[340px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
+      <div className={`transition-all duration-700 ease-out h-full ${showLeftPanel ? "w-[230px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
         {showLeftPanel && (
           <IntakePanel
             isOnBoard={isOnBoard}
@@ -405,7 +416,7 @@ export function BoardWorkspace({
       )}
 
       {/* RIGHT: Persons + Email Detail + Context — hidden until intro-people */}
-      <div className={`transition-all duration-700 ease-out h-full ${showRightPanel ? "w-[340px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
+      <div className={`transition-all duration-700 ease-out h-full ${showRightPanel ? "w-[230px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
         {showRightPanel && (
           <ContextPanel
             activeTab={rightTab}

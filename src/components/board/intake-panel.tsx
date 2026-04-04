@@ -38,30 +38,32 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
   });
 
   return (
-    <aside className={`intake-panel flex h-full w-80 flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
+    <aside className={`intake-panel flex h-full w-[230px] flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
-      {/* Tab bar */}
-      <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
+      {/* Tab bar — 2x2 grid */}
+      <div className={`flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""
       }`}>
-        {([
-          { key: "photos" as const, label: "📷 Photos" },
-          { key: "emails" as const, label: "✉️ Emails" },
-          { key: "files" as const, label: "📄 Files" },
-        ]).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => { setActiveTab(tab.key); setSearchOpen(false); }}
-            className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-              activeTab === tab.key && !searchOpen
-                ? "text-red-500 border-b-2 border-red-500 bg-red-600/5"
-                : "text-[#aaa] hover:text-white hover:border-b-2 hover:border-[#555]"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        <div className="grid grid-cols-2">
+          {([
+            { key: "photos" as const, label: "📷 Photos" },
+            { key: "emails" as const, label: "✉️ Emails" },
+            { key: "files" as const, label: "📄 Files" },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => { setActiveTab(tab.key); setSearchOpen(false); }}
+              className={`py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.12em] transition ${
+                activeTab === tab.key && !searchOpen
+                  ? "text-red-500 bg-red-600/5 border-b-2 border-red-500"
+                  : "text-[#aaa] hover:text-white border-b-2 border-transparent hover:border-[#555]"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── SEARCH BAR (collapsible, above everything) ── */}
@@ -590,7 +592,7 @@ function PhotoGallery({
 
       {/* Photo Grid */}
       <div className="flex-1 overflow-y-auto p-2">
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5">
           {photos.map((photo) => {
             const onBoard = isOnBoard(photo.id);
             return (

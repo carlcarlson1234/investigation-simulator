@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import type { Person, Evidence, EvidenceType, EmailEvidence } from "@/lib/types";
 import type { InvestigationStep } from "@/lib/investigation-types";
 import type {
@@ -59,18 +59,46 @@ export function ContextPanel({
   const [personSearch, setPersonSearch] = useState("");
   const isOnboarding = investigationStep != null;
 
+  // Track which imageUrls actually load (not 404)
+  const [validImages, setValidImages] = useState<Set<string>>(new Set());
+  const checkedImages = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const p of people) {
+      if (!p.imageUrl || checkedImages.current.has(p.id)) continue;
+      checkedImages.current.add(p.id);
+      const img = new Image();
+      img.onload = () => setValidImages(prev => new Set(prev).add(p.id));
+      img.src = p.imageUrl;
+    }
+  }, [people]);
+
   const filteredPeople = useMemo(() => {
-    if (!personSearch.trim()) return people;
-    const q = personSearch.toLowerCase();
-    return people.filter((p) =>
-      p.name.toLowerCase().includes(q) ||
-      (p.source && p.source.toLowerCase().includes(q)) ||
-      p.aliases.some((a) => a.toLowerCase().includes(q))
-    );
-  }, [people, personSearch]);
+    let list = people;
+    if (personSearch.trim()) {
+      const q = personSearch.toLowerCase();
+      list = people.filter((p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.source && p.source.toLowerCase().includes(q)) ||
+        p.aliases.some((a) => a.toLowerCase().includes(q))
+      );
+    }
+    // Pinned order, then photos by fame, then alphabetical
+    const pinned = ["donald-trump", "bill-clinton", "bill-gates", "jeffrey-epstein", "ghislaine-maxwell"];
+    const pinnedIdx = (id: string) => { const i = pinned.indexOf(id); return i >= 0 ? i : Infinity; };
+    return [...list].sort((a, b) => {
+      const pa = pinnedIdx(a.id), pb = pinnedIdx(b.id);
+      if (pa !== pb) return pa - pb;
+      const aHasImg = validImages.has(a.id) ? 1 : 0;
+      const bHasImg = validImages.has(b.id) ? 1 : 0;
+      if (aHasImg !== bHasImg) return bHasImg - aHasImg;
+      if (aHasImg && bHasImg) return b.photoCount - a.photoCount;
+      return a.name.localeCompare(b.name);
+    });
+  }, [people, personSearch, validImages]);
 
   return (
-    <aside className={`context-panel flex h-full w-80 flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden transition-all duration-300 ${
+    <aside className={`context-panel flex h-full w-[230px] flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden transition-all duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
       {/* Tab bar — muted during onboarding */}
@@ -255,6 +283,9 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
   onFocusNode: (id: string | null) => void;
   connectionCount: number;
 }) {
+  const [imgLoaded, setImgLoaded] = useState(true);
+  const hasImage = person.imageUrl && imgLoaded;
+
   return (
     <div
       draggable={!isOnBoard}
@@ -274,42 +305,37 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
           : "border-[#1e1e1e] bg-[#0e0e0e] hover:border-[#333] hover:bg-[#111] cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-black/30"
       }`}
     >
-      {/* Large photo */}
-      <div className="relative w-full h-24 bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a] overflow-hidden">
-        {person.imageUrl ? (
-          <img src={person.imageUrl} alt={person.name} className="h-full w-full object-cover"
-            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-        ) : (
-          <div className="h-full w-full flex items-center justify-center">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.7" className="text-[#222]">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e0e] via-transparent to-transparent" />
-        {/* POI badge + connection count */}
-        <div className="absolute top-1.5 left-1.5 flex items-center gap-1.5">
-          <div className="flex items-center gap-1 rounded bg-black/70 border border-red-900/40 px-1.5 py-0.5 backdrop-blur-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-            <span className="font-[family-name:var(--font-mono)] text-[8px] uppercase tracking-wider text-red-400">POI</span>
-          </div>
-          {connectionCount > 0 && (
-            <div className="flex items-center gap-1 rounded bg-black/70 border border-green-600/30 px-1.5 py-0.5 backdrop-blur-sm">
-              <span className="font-[family-name:var(--font-mono)] text-[8px] text-green-400">{connectionCount} 🔗</span>
+      {/* Photo — only rendered when image actually loads */}
+      {hasImage && (
+        <div className="relative w-full h-32 bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a] overflow-hidden">
+          <img src={person.imageUrl!} alt={person.name} className="h-full w-full object-cover"
+            onError={() => setImgLoaded(false)} />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e0e] via-transparent to-transparent" />
+          {isOnBoard && (
+            <div className="absolute top-1 right-1 rounded bg-green-900/50 border border-green-600/30 px-1 py-0.5 backdrop-blur-sm">
+              <span className="text-[7px] font-bold text-green-400">✓ Board</span>
             </div>
           )}
         </div>
-        {/* On-board check */}
-        {isOnBoard && (
-          <div className="absolute top-1.5 right-1.5 rounded bg-green-900/50 border border-green-600/30 px-1.5 py-0.5 backdrop-blur-sm">
-            <span className="text-[8px] font-bold text-green-400">✓ On Board</span>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Info */}
-      <div className="px-3 py-2.5">
+      <div className="px-2 py-1.5">
+        {/* Badges */}
+        <div className="flex items-center gap-1 mb-0.5">
+          <div className="flex items-center gap-0.5 rounded bg-black/50 border border-red-900/40 px-1 py-px">
+            <span className="h-1 w-1 rounded-full bg-red-500" />
+            <span className="font-[family-name:var(--font-mono)] text-[7px] uppercase tracking-wider text-red-400">POI</span>
+          </div>
+          {connectionCount > 0 && (
+            <div className="flex items-center gap-0.5 rounded bg-black/50 border border-green-600/30 px-1 py-px">
+              <span className="font-[family-name:var(--font-mono)] text-[7px] text-green-400">{connectionCount} 🔗</span>
+            </div>
+          )}
+          {!hasImage && isOnBoard && (
+            <span className="text-[7px] font-bold text-green-400 ml-auto">✓ Board</span>
+          )}
+        </div>
         <p className="font-[family-name:var(--font-display)] text-[15px] font-bold text-white tracking-wide leading-tight truncate">{person.name}</p>
         {person.photoCount > 0 && (
           <p className="text-[11px] text-[#999] mt-0.5">📸 Tagged in {person.photoCount} {person.photoCount === 1 ? "photo" : "photos"}</p>

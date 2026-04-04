@@ -271,8 +271,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const cards = vp.querySelectorAll<HTMLElement>("[data-node-id]");
     if (cards.length === 0) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let count = 0;
     for (const el of cards) {
-      // Position is set via inline style transform — parse from the element's style
+      // Skip hidden/dimmed cards (compare mode puts off-path nodes far away)
+      const classes = el.className;
+      if (classes.includes("opacity-0") || classes.includes("opacity-15")) continue;
       const x = parseFloat(el.style.left) || 0;
       const y = parseFloat(el.style.top) || 0;
       const w = el.offsetWidth;
@@ -281,7 +284,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x + w);
       maxY = Math.max(maxY, y + h);
+      count++;
     }
+    if (count === 0) return;
     const padding = 60;
     const contentW = maxX - minX + padding * 2;
     const contentH = maxY - minY + padding * 2;
