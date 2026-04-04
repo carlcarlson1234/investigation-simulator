@@ -1377,38 +1377,28 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const sizerH = WORLD_H * zoom;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header bar */}
-      <div className="flex-shrink-0 border-b border-[#1a1a1a] bg-[#0e0e0e] px-5 py-2">
-        <div className="flex items-center">
-          {/* Left: board label + live */}
-          <div className="flex items-center gap-2.5">
-            <h1 className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-[#bbb]" id="board-title">
-              Evidence Board
-            </h1>
-            <span className={`evidence-badge border border-red-500/50 bg-red-600/20 text-red-400 text-[10px] font-bold transition-opacity duration-300 ${
-              investigationStep ? "opacity-30" : ""
-            }`}>
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-90" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-              </span>
-              LIVE
-            </span>
-          </div>
-
-          {/* Center: score — prominent */}
-          <div className={`flex-1 flex items-center justify-center gap-3 transition-opacity duration-300 ${
-            investigationStep ? "opacity-20" : ""
-          }`}>
-            <span className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.2em] text-white font-bold">Score</span>
+    <div className="flex flex-1 flex-col overflow-hidden border-l border-r border-[#222]">
+      {/* Header bar — score strip, whole bar glows green on score */}
+      <div className={`relative flex-shrink-0 border-b px-5 py-0.5 transition-all duration-500 ${
+        investigationStep ? "opacity-20" : ""
+      }`} style={{
+        backgroundColor: scoreGlow ? "rgba(22, 163, 106, 0.15)" : "#0e0e0e",
+        borderColor: scoreGlow ? "rgba(74, 222, 128, 0.3)" : "#1a1a1a",
+        boxShadow: scoreGlow
+          ? "inset 0 0 30px rgba(74,222,128,0.1), 0 0 20px rgba(74,222,128,0.1)"
+          : score > 0 ? "inset 0 0 20px rgba(74,222,128,0.03)" : "none",
+        transition: "background-color 0.5s, border-color 0.5s, box-shadow 0.6s",
+      }}>
+        <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-[family-name:var(--font-mono)] text-sm uppercase tracking-[0.2em] text-white font-bold">Score</span>
             <span
-              className="font-[family-name:var(--font-display)] font-black text-3xl tracking-wide"
+              className="font-[family-name:var(--font-display)] font-black text-4xl tracking-wide"
               style={{
-                color: scoreGlow ? "#fff" : (score > 0 ? "#86efac" : "#fff"),
+                color: scoreGlow ? "#fff" : (score > 0 ? "#4ade80" : "#666"),
                 textShadow: scoreGlow
-                  ? "0 0 20px #4ade80, 0 0 40px #22c55e, 0 0 60px #16a34a"
-                  : score > 0 ? "0 0 14px #4ade8080, 0 0 30px #22c55e40" : "none",
+                  ? "0 0 20px #4ade80, 0 0 40px #22c55e, 0 0 80px #16a34a"
+                  : score > 0 ? "0 0 20px #4ade8088, 0 0 40px #22c55e50, 0 0 60px #16a34a30" : "none",
                 transition: "color 0.3s, text-shadow 0.6s, transform 0.3s",
                 transform: scoreGlow ? "scale(1.2)" : "scale(1)",
                 display: "inline-block",
@@ -1417,9 +1407,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               {score.toLocaleString()}
             </span>
           </div>
-
-          {/* Right spacer to balance the layout */}
-          <div className="w-[120px]" />
         </div>
       </div>
 

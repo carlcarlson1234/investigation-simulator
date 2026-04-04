@@ -21,17 +21,18 @@ export function SiteNav() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b border-[#1a1a1a] bg-[#0a0a0a]/70 backdrop-blur-md">
       <nav className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-3 group" id="nav-logo">
-          <span className="flex h-8 w-8 items-center justify-center rounded bg-red-600/15 text-red-500 transition group-hover:bg-red-600/25 group-hover:shadow-lg group-hover:shadow-red-600/10">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
+          <span className="hidden sm:inline font-[family-name:var(--font-display)] text-lg tracking-[0.08em]">
+            <span className="text-white">INVESTIGATE</span><span className="text-red-500">EPSTEIN</span>
           </span>
-          <span className="font-[family-name:var(--font-display)] text-lg tracking-[0.08em] text-white hidden sm:inline">
-            INVESTIGATE<span className="text-red-500">EPSTEIN</span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-600/10 text-red-400/80 text-[8px] font-bold py-0.5 px-2 leading-none font-[family-name:var(--font-mono)] uppercase tracking-[0.12em]">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_3px_rgba(239,68,68,0.4)]" />
+            </span>
+            LIVE
           </span>
         </Link>
 
