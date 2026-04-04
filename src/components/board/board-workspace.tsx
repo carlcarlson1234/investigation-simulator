@@ -335,6 +335,24 @@ export function BoardWorkspace({
     }
   }, []);
 
+  // ─── Test Board ─────────────────────────────────────────────────────────
+  const loadTestBoard = useCallback(async () => {
+    try {
+      const res = await fetch("/api/test-board");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.nodes && data.connections) {
+        setBoardNodes(data.nodes);
+        setBoardConnections(data.connections);
+        setSelectedNodeId(null);
+        setFocusedNodeId(null);
+        setConnectingFrom(null);
+      }
+    } catch (err) {
+      console.error("Failed to load test board:", err);
+    }
+  }, []);
+
   // ─── Render ──────────────────────────────────────────────────────────────
 
   // Investigation-mode suggested people (for right panel)
@@ -370,7 +388,14 @@ export function BoardWorkspace({
       </div>
 
       {/* CENTER: Board Canvas — hidden until intro-board */}
-      <div className={`flex flex-col flex-1 min-h-0 transition-all duration-700 ease-out ${showBoard ? "opacity-100" : "opacity-0"}`}>
+      <div className={`relative flex flex-col flex-1 min-h-0 transition-all duration-700 ease-out ${showBoard ? "opacity-100" : "opacity-0"}`}>
+        {/* Test board loader */}
+        <button
+          onClick={loadTestBoard}
+          className="absolute top-1 right-3 z-50 rounded border border-[#333] bg-[#1a1a1a]/90 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#666] hover:border-red-500/40 hover:bg-red-600/10 hover:text-red-400 transition"
+        >
+          Test
+        </button>
         {showBoard && (
           <BoardCanvas
             ref={canvasRef}
