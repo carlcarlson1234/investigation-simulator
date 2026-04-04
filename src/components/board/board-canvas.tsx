@@ -1472,6 +1472,24 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               onSelectNode(null);
             }
           }}
+          onDoubleClick={(e) => {
+            if (!isBackgroundTarget(e.target)) return;
+            const vp = viewportRef.current;
+            if (!vp) return;
+            const rect = vp.getBoundingClientRect();
+            const cursorX = e.clientX - rect.left;
+            const cursorY = e.clientY - rect.top;
+            setZoom((prev) => {
+              const next = clampZoom(prev + ZOOM_STEP * 3);
+              const worldX = (vp.scrollLeft + cursorX) / prev;
+              const worldY = (vp.scrollTop + cursorY) / prev;
+              requestAnimationFrame(() => {
+                vp.scrollLeft = worldX * next - cursorX;
+                vp.scrollTop = worldY * next - cursorY;
+              });
+              return next;
+            });
+          }}
           onDragOver={handleDragOver}
           onDragLeave={() => setDropHighlight(false)}
           onDrop={handleDrop}
@@ -2070,120 +2088,75 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
   onToggleCollapse?: (evType: EvidenceType) => void;
 }) {
   return (
-    <div className={`board-entity-card w-[260px] rounded-xl bg-[#111] border-2 cursor-grab active:cursor-grabbing transition-all ${
+    <div className={`board-entity-card w-[220px] rounded-xl bg-[#111] border-2 cursor-grab active:cursor-grabbing transition-all ${
       isSelected ? "shadow-2xl shadow-red-600/20 border-red-500/40" : "shadow-xl shadow-black/60 border-[#222] hover:border-[#333]"
     }`}>
-      {/* Photo area */}
-      <div className="relative aspect-[4/3] rounded-t-xl overflow-hidden bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a]">
+      {/* Photo area — compact */}
+      <div className="relative h-28 rounded-t-xl overflow-hidden bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a]">
         {data.imageUrl ? (
           <>
-            <img
-              src={data.imageUrl}
-              alt={data.name}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                // Hide broken image and show fallback silhouette
-                const target = e.currentTarget;
-                target.style.display = 'none';
-                const fallback = target.nextElementSibling as HTMLElement;
-                if (fallback) fallback.style.display = 'flex';
-              }}
-            />
+            <img src={data.imageUrl} alt={data.name} className="w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none'; const f = e.currentTarget.nextElementSibling as HTMLElement; if (f) f.style.display = 'flex'; }} />
             <div className="items-center justify-center h-full hidden">
-              <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-red-900/25">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-red-900/25">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
               </svg>
             </div>
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <svg
-              width="72"
-              height="72"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="0.5"
-              className="text-red-900/25"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-red-900/25">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
             </svg>
           </div>
         )}
+        <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#111] to-transparent" />
 
-        {/* Red gradient overlay at bottom */}
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111] to-transparent" />
-
-        {/* Label badge */}
-        <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-[#0a0a0a]/80 border border-red-900/30 px-2 py-0.5 backdrop-blur-sm">
-          <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.15em] text-red-500/80">
-            POI
-          </span>
+        {/* POI badge */}
+        <div className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded bg-[#0a0a0a]/80 border border-red-900/30 px-1.5 py-px backdrop-blur-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+          <span className="font-[family-name:var(--font-mono)] text-[8px] font-bold uppercase tracking-[0.12em] text-red-500/80">POI</span>
         </div>
-
-        {/* Photo count */}
         {data.photoCount > 0 && (
-          <div className="absolute top-2 right-2 rounded bg-[#0a0a0a]/80 border border-[#333] px-1.5 py-0.5 backdrop-blur-sm flex items-center gap-1">
-            <span className="text-[10px]">📸</span>
-            <span className="text-[9px] font-bold text-[#999]">{data.photoCount}</span>
+          <div className="absolute top-1.5 right-1.5 rounded bg-[#0a0a0a]/80 border border-[#333] px-1 py-px backdrop-blur-sm flex items-center gap-0.5">
+            <span className="text-[8px]">📸</span>
+            <span className="text-[8px] font-bold text-[#999]">{data.photoCount}</span>
           </div>
         )}
       </div>
 
       {/* Info area */}
-      <div className="px-3.5 py-3">
-        <h4 className="font-[family-name:var(--font-display)] text-lg leading-tight text-white tracking-wide">{data.name}</h4>
-        {data.source && (
-          <p className="mt-0.5 text-[9px] text-[#555]">{data.source}</p>
-        )}
+      <div className="px-2.5 py-1.5">
+        <h4 className="font-[family-name:var(--font-display)] text-lg leading-none text-white tracking-wide">{data.name}</h4>
 
-        {/* Evidence group badges with collapse toggle */}
-        {evidenceGroups && evidenceGroups.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {evidenceGroups.filter(g => g.count >= 2).map(g => {
-              const key = `${data.id}:${g.type}`;
-              const isCollapsed = collapsedGroups?.[key];
-              const icons: Record<string, string> = { email: "✉️", document: "📄", photo: "📸", imessage: "💬" };
-              const labels: Record<string, string> = { email: "Emails", document: "Docs", photo: "Photos", imessage: "Msgs" };
-              return (
-                <button
-                  key={g.type}
-                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleCollapse?.(g.type); }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[9px] font-bold transition ${
-                    isCollapsed
-                      ? "border-red-600/20 bg-red-950/20 text-red-400/80"
-                      : "border-[#2a2a2a] bg-[#0e0e0e] text-[#666] hover:border-[#444] hover:text-white"
-                  }`}
-                >
-                  <span>{icons[g.type] || "📄"}</span>
-                  <span>{g.count} {labels[g.type] || g.type}</span>
-                  <span className="text-[8px] ml-0.5 opacity-60">
-                    {isCollapsed ? "▸" : "▾"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Simple evidence count for groups with only 1 item */}
-        {connectedEvidence && connectedEvidence.total > 0 && (
-          <div className="mt-1.5 flex gap-2 text-[9px] font-bold text-[#444]">
-            {connectedEvidence.emails === 1 && <span>✉️ 1 email</span>}
-            {connectedEvidence.documents === 1 && <span>📄 1 doc</span>}
-            {connectedEvidence.photos === 1 && <span>📸 1 photo</span>}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="mt-2.5 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
+        {/* Evidence badges + Focus on one row */}
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          {evidenceGroups && evidenceGroups.filter(g => g.count >= 2).map(g => {
+            const key = `${data.id}:${g.type}`;
+            const isCollapsed = collapsedGroups?.[key];
+            const icons: Record<string, string> = { email: "✉️", document: "📄", photo: "📸", imessage: "💬" };
+            const labels: Record<string, string> = { email: "Emails", document: "Docs", photo: "Photos", imessage: "Msgs" };
+            return (
+              <button key={g.type}
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onToggleCollapse?.(g.type); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[8px] font-bold transition ${
+                  isCollapsed
+                    ? "border-red-600/20 bg-red-950/20 text-red-400/80"
+                    : "border-[#2a2a2a] bg-[#0e0e0e] text-[#666] hover:border-[#444] hover:text-white"
+                }`}>
+                <span>{icons[g.type] || "📄"}</span>
+                <span>{g.count} {labels[g.type] || g.type}</span>
+                <span className="text-[7px] ml-0.5 opacity-60">{isCollapsed ? "▸" : "▾"}</span>
+              </button>
+            );
+          })}
+          {connectedEvidence && connectedEvidence.emails === 1 && <span className="text-[8px] font-bold text-[#444]">✉️ 1</span>}
+          {connectedEvidence && connectedEvidence.documents === 1 && <span className="text-[8px] font-bold text-[#444]">📄 1</span>}
+          {connectedEvidence && connectedEvidence.photos === 1 && <span className="text-[8px] font-bold text-[#444]">📸 1</span>}
           <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+            className="rounded bg-red-600/10 border border-red-600/20 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition opacity-0 [.board-node:hover_&]:opacity-100">
             Focus
           </button>
         </div>
@@ -2205,7 +2178,7 @@ function EvidenceCard({ data, evidenceType, isSelected, onFocus }: {
   if (evidenceType === "photo") {
     const thumbnailUrl = `${PHOTO_CDN}/cdn-cgi/image/width=500,quality=80,format=auto/photos-deboned/${data.id}`;
     return (
-      <div className={`board-evidence-card w-[280px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
+      <div className={`board-evidence-card w-[220px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
         isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
       }`}>
         {/* Photo image */}
@@ -2260,24 +2233,14 @@ function EvidenceCard({ data, evidenceType, isSelected, onFocus }: {
           )}
         </div>
 
-        {/* Caption area */}
-        <div className="px-3 py-2.5">
-          <h4 className="text-[11px] font-bold leading-tight text-[#888] truncate">{data.title}</h4>
-          {data.snippet && (
-            <p className="mt-1 text-[10px] leading-relaxed text-[#555] line-clamp-2">{data.snippet}</p>
-          )}
-
-          {data.starCount > 0 && (
-            <div className="mt-1 text-[9px] font-bold text-yellow-500/60">★ {data.starCount.toLocaleString()}</div>
-          )}
-
-          <div className="mt-2 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
-            <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
-              Focus
-            </button>
-          </div>
+        {/* Caption area — compact */}
+        <div className="px-2.5 py-1.5 flex items-center gap-1.5">
+          <h4 className="text-[11px] font-bold leading-tight text-[#888] truncate flex-1">{data.title}</h4>
+          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="shrink-0 rounded bg-red-600/10 border border-red-600/20 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition opacity-0 [.board-node:hover_&]:opacity-100">
+            Focus
+          </button>
         </div>
       </div>
     );
@@ -2285,31 +2248,23 @@ function EvidenceCard({ data, evidenceType, isSelected, onFocus }: {
 
   // Non-photo evidence (email, document, imessage)
   return (
-    <div className={`board-evidence-card w-[190px] rounded-lg bg-[#141414] border border-[#2a2a2a] p-3.5 pt-5 cursor-grab active:cursor-grabbing ${
+    <div className={`board-evidence-card w-[170px] rounded-lg bg-[#141414] border border-[#2a2a2a] p-2.5 pt-3 cursor-grab active:cursor-grabbing ${
       isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50"
     }`}>
-      <div className="flex items-center gap-1.5 mb-1.5">
+      <div className="flex items-center gap-1 mb-0.5">
         <span className="text-sm">{EVIDENCE_TYPE_ICON[evidenceType]}</span>
-        <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#666]">
+        <span className="text-[9px] font-black uppercase tracking-[0.12em] text-[#666]">
           {EVIDENCE_TYPE_LABEL[evidenceType]}
         </span>
-      </div>
-      <h4 className="text-[12px] font-bold leading-tight text-white line-clamp-2">{data.title}</h4>
-      {data.date && <p className="mt-1 text-[10px] font-bold text-[#555] tabular-nums">{data.date}</p>}
-      {data.sender && <p className="mt-0.5 text-[10px] text-[#555] truncate">{data.sender}</p>}
-      <p className="mt-1.5 text-[10px] leading-relaxed text-[#444] line-clamp-2">{data.snippet}</p>
-
-      {data.starCount > 0 && (
-        <div className="mt-1.5 text-[9px] font-bold text-yellow-500/60">★ {data.starCount.toLocaleString()}</div>
-      )}
-
-      <div className="mt-2 flex gap-1.5 opacity-0 [.board-node:hover_&]:opacity-100 transition">
         <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onFocus(); }}
           onMouseDown={(e) => e.stopPropagation()}
-          className="rounded bg-red-600/10 border border-red-600/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition">
+          className="ml-auto shrink-0 rounded bg-red-600/10 border border-red-600/20 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-red-500/70 hover:bg-red-600/20 hover:text-red-400 transition opacity-0 [.board-node:hover_&]:opacity-100">
           Focus
         </button>
       </div>
+      <h4 className="text-[12px] font-bold leading-tight text-white line-clamp-2">{data.title}</h4>
+      {data.date && <p className="mt-0.5 text-[10px] font-bold text-[#555] tabular-nums">{data.date}</p>}
+      {data.sender && <p className="mt-0.5 text-[10px] text-[#555] truncate">{data.sender}</p>}
     </div>
   );
 }
