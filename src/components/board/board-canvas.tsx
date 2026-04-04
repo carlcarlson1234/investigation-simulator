@@ -560,6 +560,100 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
 
+  // ── LAB MODE: experimental layout algorithm ─────────────────────────────
+  // Swap the algorithm inside this function to test different approaches.
+  // Does NOT affect any other organize mode.
+  const arrangeTest = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
+
+    // Measure card sizes
+    const sizes = new Map<string, { w: number; h: number }>();
+    for (const node of nodes) sizes.set(node.id, getCardSize(node.id));
+
+    const hasConnection = new Set<string>();
+    for (const c of connections) {
+      hasConnection.add(c.sourceId);
+      hasConnection.add(c.targetId);
+    }
+    const connectedNodes = nodes.filter(n => hasConnection.has(n.id));
+    const orphanNodes = nodes.filter(n => !hasConnection.has(n.id));
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ALGORITHM GOES HERE — replace everything between the ═══ lines
+    // Input: connectedNodes, connections, sizes
+    // Output: pos (Record<string, { x: number; y: number }>)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Placeholder: simple force-directed (same as Network mode)
+    type Body = { id: string; x: number; y: number; vx: number; vy: number; w: number; h: number };
+    const bodies: Body[] = connectedNodes.map((n) => {
+      const s = sizes.get(n.id) ?? { w: 260, h: 300 };
+      return {
+        id: n.id,
+        x: n.position.x + s.w / 2,
+        y: n.position.y + s.h / 2,
+        vx: 0, vy: 0,
+        w: s.w, h: s.h,
+      };
+    });
+
+    const ITERATIONS = 200;
+    const REPULSION = 200000;
+    const ATTRACTION = 0.005;
+    const REST_LENGTH = 180;
+    const DAMPING = 0.85;
+    const MIN_DIST = 60;
+
+    for (let iter = 0; iter < ITERATIONS; iter++) {
+      const temp = 1 - iter / ITERATIONS;
+      for (let i = 0; i < bodies.length; i++) {
+        for (let j = i + 1; j < bodies.length; j++) {
+          const a = bodies[i], b = bodies[j];
+          let dx = a.x - b.x, dy = a.y - b.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < MIN_DIST) dist = MIN_DIST;
+          const force = REPULSION / (dist * dist);
+          const fx = (dx / dist) * force * temp, fy = (dy / dist) * force * temp;
+          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+        }
+      }
+      for (const conn of connections) {
+        const a = bodies.find(b => b.id === conn.sourceId);
+        const b = bodies.find(b => b.id === conn.targetId);
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) continue;
+        const force = ATTRACTION * (dist - REST_LENGTH) * temp;
+        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+        a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+      }
+      for (const body of bodies) {
+        body.vx *= DAMPING; body.vy *= DAMPING;
+        body.x += body.vx; body.y += body.vy;
+      }
+    }
+
+    let minX = Infinity, minY = Infinity;
+    for (const b of bodies) {
+      if (b.x - b.w / 2 < minX) minX = b.x - b.w / 2;
+      if (b.y - b.h / 2 < minY) minY = b.y - b.h / 2;
+    }
+    const offsetX = 100 - minX, offsetY = 80 - minY;
+    const pos: Record<string, { x: number; y: number }> = {};
+    for (const b of bodies) {
+      pos[b.id] = { x: b.x + offsetX - b.w / 2, y: b.y + offsetY - b.h / 2 };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+
+    stackSidebar(orphanNodes.map(n => n.id), pos);
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, onBatchMoveNodes, getCardSize, zoomFitIfNeeded]);
+
   const arrangeEgo = useCallback(() => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
     setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
@@ -1973,6 +2067,19 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               <circle cx="12" cy="12" r="11" fill="none" strokeDasharray="3 3" />
             </svg>
             <span className="text-[10px] font-bold uppercase tracking-wider">Ego</span>
+          </button>
+
+          <button
+            onClick={arrangeTest}
+            disabled={nodes.length < 2 || isArranging}
+            className="flex h-8 items-center gap-1.5 rounded px-2 text-amber-500/70 hover:bg-amber-600/10 hover:text-amber-400 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Lab: experimental layout algorithm"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 3h6v6l4 8H5l4-8V3z" />
+              <line x1="9" y1="3" x2="15" y2="3" />
+            </svg>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Lab</span>
           </button>
 
           <div className="relative">
