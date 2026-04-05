@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, JetBrains_Mono, DM_Sans } from "next/font/google";
+import { Bebas_Neue, JetBrains_Mono, DM_Sans, Inter } from "next/font/google";
 import { SiteNav } from "@/components/site-nav";
 import "./globals.css";
 
@@ -19,8 +19,14 @@ const dmSans = DM_Sans({
   subsets: ["latin"],
 });
 
+const inter = Inter({
+  variable: "--font-brand",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+});
+
 export const metadata: Metadata = {
-  title: "Investigate Epstein",
+  title: "OpenCase — Investigate Epstein",
   description:
     "Search, analyze, and connect evidence from the Epstein archive. Build your investigation board.",
 };
@@ -33,7 +39,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${bebasNeue.variable} ${jetbrainsMono.variable} ${dmSans.variable} h-full antialiased`}
+      className={`${bebasNeue.variable} ${jetbrainsMono.variable} ${dmSans.variable} ${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground font-[family-name:var(--font-body)]">
         <SiteNav />
