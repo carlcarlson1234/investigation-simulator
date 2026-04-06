@@ -236,6 +236,32 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     }
     return counts;
   }, [personEvidenceGroups]);
+
+  // Connection count per person (for node scaling)
+  const personConnectionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const conn of connections) {
+      counts[conn.sourceId] = (counts[conn.sourceId] ?? 0) + 1;
+      counts[conn.targetId] = (counts[conn.targetId] ?? 0) + 1;
+    }
+    return counts;
+  }, [connections]);
+
+  // Importance scale factor per person node
+  const getNodeScale = useCallback((nodeId: string): number => {
+    const connCount = personConnectionCounts[nodeId] ?? 0;
+    const evCount = personEvidenceCounts[nodeId]?.total ?? 0;
+    return 1.0 + Math.min(0.4, (connCount + evCount) * 0.03);
+  }, [personConnectionCounts, personEvidenceCounts]);
+
+  // Card dimensions accounting for importance scaling
+  const getScaledCardSize = useCallback((node: BoardNode): { w: number; h: number } => {
+    const baseW = node.kind === "person" ? 260 : 190;
+    const baseH = node.kind === "person" ? 300 : 160;
+    const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
+    return { w: baseW * scale, h: baseH * scale };
+  }, [getNodeScale]);
+
   const [dropHighlight, setDropHighlight] = useState(false);
 
   // ─── Focus visibility ──────────────────────────────────────────────────
@@ -1614,24 +1640,23 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       dragVelocityRef.current = { ...dragVelocityRef.current, vx, lastX: e.clientX, lastY: e.clientY };
       dragRotationRef.current = Math.max(-1, Math.min(1, vx * 0.15));
 
-      // Repel nearby cards
+      // Repel nearby cards (accounting for importance scaling)
       const dragged = nodesRef.current.find(n => n.id === dragState.nodeId);
       if (dragged) {
-        const dw = dragged.kind === "person" ? 260 : 190;
-        const dh = dragged.kind === "person" ? 300 : 160;
-        const dcx = nx + dw / 2;
-        const dcy = ny + dh / 2;
+        const ds = getScaledCardSize(dragged);
+        const dcx = nx + ds.w / 2;
+        const dcy = ny + ds.h / 2;
         const offsets: Record<string, { dx: number; dy: number }> = {};
         for (const other of nodesRef.current) {
           if (other.id === dragState.nodeId) continue;
-          const ow = other.kind === "person" ? 260 : 190;
-          const oh = other.kind === "person" ? 300 : 160;
+          const os = getScaledCardSize(other);
+          const ow = os.w;
           const ocx = other.position.x + ow / 2;
-          const ocy = other.position.y + oh / 2;
+          const ocy = other.position.y + os.h / 2;
           const ddx = ocx - dcx;
           const ddy = ocy - dcy;
           const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-          const minDist = (dw + ow) / 2 + REPEL_RADIUS;
+          const minDist = (ds.w + ow) / 2 + REPEL_RADIUS;
           if (dist < minDist && dist > 0) {
             const force = ((minDist - dist) / minDist) * REPEL_STRENGTH;
             offsets[other.id] = { dx: (ddx / dist) * force, dy: (ddy / dist) * force };
@@ -1641,18 +1666,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       }
     };
     const onUp = () => {
-      // Nudge if overlapping another card
+      // Nudge if overlapping another card (accounting for importance scaling)
       const dragged = nodes.find(n => n.id === dragState.nodeId);
       if (dragged) {
         const PAD = 20;
-        const dw = dragged.kind === "person" ? 260 : 190;
-        const dh = dragged.kind === "person" ? 300 : 160;
+        const ds = getScaledCardSize(dragged);
+        const dw = ds.w;
+        const dh = ds.h;
         let { x, y } = dragged.position;
         let nudged = false;
         for (const other of nodes) {
           if (other.id === dragState.nodeId) continue;
-          const ow = other.kind === "person" ? 260 : 190;
-          const oh = other.kind === "person" ? 300 : 160;
+          const os = getScaledCardSize(other);
+          const ow = os.w;
+          const oh = os.h;
           if (x < other.position.x + ow + PAD && x + dw + PAD > other.position.x &&
               y < other.position.y + oh + PAD && y + dh + PAD > other.position.y) {
             const overlapR = (x + dw + PAD) - other.position.x;
@@ -1731,13 +1758,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       let closestDist = Infinity;
       for (const node of nodesRef.current) {
         if (node.id === connectDrag.sourceId) continue;
-        const nw = node.kind === "person" ? 260 : 190;
-        const nh = node.kind === "person" ? 300 : 160;
-        const ncx = node.position.x + nw / 2;
-        const ncy = node.position.y + nh / 2;
+        const ns = getScaledCardSize(node);
+        const ncx = node.position.x + ns.w / 2;
+        const ncy = node.position.y + ns.h / 2;
         const dx = worldX - ncx;
         const dy = worldY - ncy;
-        const dist = Math.sqrt(dx * dx + dy * dy) - Math.max(nw, nh) / 2;
+        const dist = Math.sqrt(dx * dx + dy * dy) - Math.max(ns.w, ns.h) / 2;
         if (dist < GLOW_RADIUS && dist < closestDist) {
           closestDist = dist;
           closestId = node.id;
@@ -1848,9 +1874,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         return { cx: node.position.x + w / 2, cy: node.position.y + h };
       }
     }
-    // Fallback to estimates
-    const w = node.kind === "person" ? 260 : 190;
-    const h = node.kind === "person" ? 340 : 160;
+    // Fallback to estimates (accounting for importance scaling)
+    const s = getScaledCardSize(node);
+    const w = s.w;
+    const h = node.kind === "person" ? s.h + 40 : s.h;
     return { cx: node.position.x + w / 2, cy: node.position.y + h };
   }
 
@@ -2118,8 +2145,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         id={`conn-path-${conn.id}`}
                         d={curvePath}
                         stroke={lineColor}
-                        strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && !showAllInCompare && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 3.5 : 3}
-                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : 0.7}
+                        strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && !showAllInCompare && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 1 + conn.strength * 0.8 : 1 + conn.strength * 0.8}
+                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : 0.35 + conn.strength * 0.12}
                         fill="none"
                         filter={lineFilter}
                         strokeLinecap="round"
@@ -2257,10 +2284,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       ...(dragState?.nodeId === node.id ? {
                         transform: `scale(1.05) rotate(${dragRotationRef.current}deg)`,
                         boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(220,38,38,0.3)",
-                      } : {}),
-                      ...(dragState && dragState.nodeId !== node.id && repelOffsetsRef.current[node.id] ? {
+                      } : dragState && dragState.nodeId !== node.id && repelOffsetsRef.current[node.id] ? {
                         transform: `translate(${repelOffsetsRef.current[node.id].dx}px, ${repelOffsetsRef.current[node.id].dy}px)`,
                         transition: "transform 0.15s ease-out",
+                      } : node.kind === "person" && getNodeScale(node.id) > 1.0 ? {
+                        transform: `scale(${getNodeScale(node.id)})`,
+                        transformOrigin: "center center",
                       } : {}),
                     }}
                     onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
@@ -2697,7 +2726,7 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
   onToggleCollapse?: (evType: EvidenceType) => void;
 }) {
   return (
-    <div className={`board-entity-card w-[220px] rounded-xl bg-[#111] border-2 cursor-grab active:cursor-grabbing transition-all ${
+    <div className={`board-entity-card w-[220px] rounded-xl bg-[#111] border-2 border-l-4 border-l-red-500/60 cursor-grab active:cursor-grabbing transition-all ${
       isSelected ? "shadow-2xl shadow-red-600/20 border-red-500/40" : "shadow-xl shadow-black/60 border-[#222] hover:border-[#333]"
     }`}>
       {/* Photo area — compact */}
@@ -2736,7 +2765,7 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
 
       {/* Info area */}
       <div className="px-2.5 py-1.5">
-        <h4 className="font-[family-name:var(--font-display)] text-lg leading-none text-white tracking-wide">{data.name}</h4>
+        <h4 className="font-[family-name:var(--font-display)] text-xl leading-none text-white tracking-wide">{data.name}</h4>
 
         {/* Evidence badges + Focus on one row */}
         <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -2855,9 +2884,13 @@ function EvidenceCard({ data, evidenceType, isSelected, onFocus }: {
     );
   }
 
-  // Non-photo evidence (email, document, imessage)
+  // Non-photo evidence (email, document, imessage) — type-specific left accent
+  const typeAccent = evidenceType === "email" ? "border-l-2 border-l-[#4A6D8C]"
+    : evidenceType === "imessage" ? "border-l-2 border-l-[#6B5B95]"
+    : evidenceType === "document" ? "border-l-2 border-l-[#555]"
+    : "";
   return (
-    <div className={`board-evidence-card w-[170px] rounded-lg bg-[#141414] border border-[#2a2a2a] p-2.5 pt-3 cursor-grab active:cursor-grabbing ${
+    <div className={`board-evidence-card w-[170px] rounded-lg bg-[#141414] border border-[#2a2a2a] ${typeAccent} p-2.5 pt-3 cursor-grab active:cursor-grabbing ${
       isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50"
     }`}>
       <div className="flex items-center gap-1 mb-0.5">
