@@ -359,10 +359,6 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
       <div className="px-2 py-1.5">
         {/* Badges */}
         <div className="flex items-center gap-1 mb-0.5">
-          <div className="flex items-center gap-0.5 rounded bg-black/50 border border-red-900/40 px-1 py-px">
-            <span className="h-1 w-1 rounded-full bg-red-500" />
-            <span className="font-[family-name:var(--font-mono)] text-[7px] uppercase tracking-wider text-red-400">POI</span>
-          </div>
           {connectionCount > 0 && (
             <div className="flex items-center gap-0.5 rounded bg-black/50 border border-green-600/30 px-1 py-px">
               <span className="font-[family-name:var(--font-mono)] text-[7px] text-green-400">{connectionCount} 🔗</span>
