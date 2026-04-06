@@ -130,12 +130,18 @@ body {
 /* ─── Corkboard grid (the investigation board background) ───────────────── */
 
 .dot-grid {
+  background-color: transparent;
+}
+
+/* Parallax depth layer — moves slower than the board for a 3D feel */
+.parallax-bg {
   background-color: #0e0e0e;
   background-image:
-    radial-gradient(circle, rgba(220, 38, 38, 0.08) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    radial-gradient(circle, rgba(220, 38, 38, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
   background-size: 30px 30px, 60px 60px, 60px 60px;
+  z-index: 0;
 }
 
 /* ─── Red string connection (SVG lines styled in canvas) ────────────────── */

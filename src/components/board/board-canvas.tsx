@@ -113,9 +113,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   /* ── Refs ──────────────────────────────────────────────────────────────── */
   const viewportRef = useRef<HTMLDivElement>(null);   // the outer scrollable viewport
+  const parallaxRef = useRef<HTMLDivElement>(null);   // the slower-moving background layer
 
   /* ── Zoom state ────────────────────────────────────────────────────────── */
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+
+  /* ── Parallax depth factor (surface scrolls at this fraction of content) */
+  const PARALLAX_SPEED = 0.2;
 
   /* ── Drag-to-pan state ─────────────────────────────────────────────────── */
   const [isPanning, setIsPanning] = useState(false);
@@ -1482,6 +1486,21 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     return () => vp.removeEventListener("wheel", onWheel);
   }, []);
 
+  /* ── Parallax background ───────────────────────────────────────────────── */
+  useEffect(() => {
+    const vp = viewportRef.current;
+    const bg = parallaxRef.current;
+    if (!vp || !bg) return;
+
+    const update = () => {
+      bg.style.backgroundPosition = `${-vp.scrollLeft * PARALLAX_SPEED}px ${-vp.scrollTop * PARALLAX_SPEED}px`;
+    };
+
+    update();
+    vp.addEventListener("scroll", update, { passive: true });
+    return () => vp.removeEventListener("scroll", update);
+  }, []);
+
   /* ── Click-drag-to-pan ─────────────────────────────────────────────────── */
 
   // Helper: is the target a background element (not a card/button)?
@@ -1847,6 +1866,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             <span className="rounded bg-[#333] px-1 py-0 text-[9px] font-bold text-[#777]">{orphanNodeIds.size}</span>
           </button>
         )}
+
+        {/* PARALLAX: Slower-moving background layer for depth effect */}
+        <div
+          ref={parallaxRef}
+          className="parallax-bg absolute inset-0 pointer-events-none"
+          aria-hidden="true"
+        />
 
         {/*
           VIEWPORT: The scrollable container. overflow:auto creates scrollbars.
@@ -2491,6 +2517,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               Clear
             </button>
           )}
+
 
         </div>
 
