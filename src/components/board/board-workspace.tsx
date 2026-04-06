@@ -14,7 +14,7 @@ import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
-import { EvidenceFolderButton, EvidenceFolderOverlay } from "./evidence-folder";
+import { EvidenceFolderButton, EvidenceTray } from "./evidence-folder";
 import { InvestigationOverlay } from "./investigation-overlay";
 import { useInvestigation } from "@/hooks/use-investigation";
 import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
@@ -501,11 +501,23 @@ export function BoardWorkspace({
         </button>
 
         {/* Evidence Folder button */}
-        {(!investigation.isStartMode || investigation.step === "open-investigation") && (
+        {(!investigation.isStartMode || investigation.step === "open-investigation") && !folderOpen && (
           <div className="absolute bottom-4 left-4 z-40">
             <EvidenceFolderButton onClick={fetchEvidenceFolder} loading={folderLoading} />
           </div>
         )}
+
+        {/* Evidence Tray — split-screen above board */}
+        {folderOpen && (
+          <EvidenceTray
+            items={folderItems}
+            onAddToBoard={addFolderItemToBoard}
+            onDismiss={dismissFolderItem}
+            onClose={() => setFolderOpen(false)}
+            isOnBoard={isOnBoard}
+          />
+        )}
+
         {showBoard && (
           <BoardCanvas
             ref={canvasRef}
@@ -637,16 +649,6 @@ export function BoardWorkspace({
         />
       )}
 
-      {/* Evidence Folder overlay */}
-      {folderOpen && (
-        <EvidenceFolderOverlay
-          items={folderItems}
-          onAddToBoard={addFolderItemToBoard}
-          onDismiss={dismissFolderItem}
-          onClose={() => setFolderOpen(false)}
-          isOnBoard={isOnBoard}
-        />
-      )}
     </div>
   );
 }

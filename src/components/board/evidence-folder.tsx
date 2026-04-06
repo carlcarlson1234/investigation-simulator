@@ -31,6 +31,15 @@ function PlusIcon() {
   );
 }
 
+function MagnifyingGlass() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="12" stroke="#E24B4A" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
+      <line x1="25" y1="25" x2="34" y2="34" stroke="#E24B4A" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
+    </svg>
+  );
+}
+
 const TYPE_ICON: Record<string, string> = {
   email: "\u2709\uFE0F",
   document: "\uD83D\uDCC4",
@@ -43,6 +52,12 @@ const TYPE_LABEL: Record<string, string> = {
   document: "Document",
   photo: "Photo",
   imessage: "iMessage",
+};
+
+const CATEGORY_COLOR: Record<string, string> = {
+  direct: "#E24B4A",
+  cryptic: "#B8860B",
+  fodder: "#555",
 };
 
 // ─── Evidence Folder Button ─────────────────────────────────────────────────
@@ -65,7 +80,6 @@ export function EvidenceFolderButton({ onClick, loading }: EvidenceFolderButtonP
       <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.12em]">
         {loading ? "Loading..." : "New Evidence"}
       </span>
-      {/* Pulsing dot */}
       {!loading && (
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#E24B4A] opacity-60" />
@@ -76,94 +90,104 @@ export function EvidenceFolderButton({ onClick, loading }: EvidenceFolderButtonP
   );
 }
 
-// ─── Evidence Card (inside folder) ──────────────────────────────────────────
+// ─── Flip Card ──────────────────────────────────────────────────────────────
 
-interface FolderCardProps {
+function FlipCard({ item, isFlipped, onFlip, onAdd, onDismiss, isOnBoard }: {
   item: EvidenceFolderItem;
+  isFlipped: boolean;
+  onFlip: () => void;
   onAdd: () => void;
   onDismiss: () => void;
   isOnBoard: boolean;
-}
-
-function FolderCard({ item, onAdd, onDismiss, isOnBoard }: FolderCardProps) {
+}) {
   const [imgError, setImgError] = useState(false);
+  const categoryColor = CATEGORY_COLOR[item.folderCategory] || "#555";
 
   return (
-    <div className="folder-card-animate group relative flex flex-col rounded-lg border border-[#222] bg-[#111]/95 overflow-hidden transition hover:border-[#E24B4A]/30">
-      {/* Photo thumbnail */}
-      {item.type === "photo" && item.thumbnailUrl && !imgError && (
-        <div className="h-28 w-full overflow-hidden bg-black/50">
-          <img
-            src={item.thumbnailUrl}
-            alt={item.snippet || "Evidence photo"}
-            className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-            onError={() => setImgError(true)}
-          />
-        </div>
-      )}
-
-      <div className="flex flex-col gap-1.5 p-3 flex-1">
-        {/* Type badge */}
-        <div className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-1 text-[10px] font-[family-name:var(--font-mono)] uppercase tracking-wider text-[#888]">
-            <span>{TYPE_ICON[item.type] ?? ""}</span>
-            {TYPE_LABEL[item.type] ?? item.type}
+    <div
+      className="flip-card tray-card-enter shrink-0"
+      style={{ width: 155, height: 210 }}
+      onClick={() => !isFlipped && onFlip()}
+    >
+      <div className={`flip-card-inner ${isFlipped ? "flipped" : ""}`}>
+        {/* Back face — card back with OpenCase logo */}
+        <div className="flip-card-back flex flex-col items-center justify-center bg-[#141414] border border-[#2a2a2a] shadow-lg shadow-black/50">
+          <MagnifyingGlass />
+          <span className="mt-2 font-[family-name:var(--font-brand)] text-[10px] text-[#444] tracking-tight">
+            <span className="text-[#E24B4A]/40">Open</span><span className="text-[#666]/40">Case</span>
           </span>
-          {item.starCount > 0 && (
-            <span className="text-[9px] text-amber-500/70 font-[family-name:var(--font-mono)]">
-              {"★".repeat(Math.min(item.starCount, 5))}
-            </span>
-          )}
+          {/* Category color hint at bottom */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full" style={{ backgroundColor: categoryColor, opacity: 0.4 }} />
         </div>
 
-        {/* Title */}
-        <h4 className="text-[12px] font-medium text-white/90 leading-snug line-clamp-2">
-          {item.title}
-        </h4>
-
-        {/* Snippet */}
-        <p className="text-[10px] text-[#777] leading-relaxed line-clamp-3 flex-1">
-          {item.snippet}
-        </p>
-
-        {/* Date */}
-        {item.date && (
-          <span className="text-[9px] text-[#555] font-[family-name:var(--font-mono)]">
-            {item.date}
-          </span>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-[#1a1a1a]">
-          {isOnBoard ? (
-            <span className="flex-1 text-center text-[9px] font-[family-name:var(--font-mono)] uppercase tracking-wider text-[#555]">
-              On Board
-            </span>
-          ) : (
-            <button
-              onClick={onAdd}
-              className="flex-1 flex items-center justify-center gap-1 rounded border border-[#E24B4A]/30 bg-[#E24B4A]/10 px-2 py-1.5 text-[9px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.1em] text-[#E24B4A] transition hover:bg-[#E24B4A]/20 hover:border-[#E24B4A]/50"
-            >
-              <PlusIcon />
-              Add to Board
-            </button>
+        {/* Front face — evidence content */}
+        <div className="flip-card-front flex flex-col bg-[#111] border border-[#2a2a2a] shadow-lg shadow-black/50">
+          {/* Photo thumbnail */}
+          {item.type === "photo" && item.thumbnailUrl && !imgError && (
+            <div className="h-20 w-full overflow-hidden bg-black/50 shrink-0">
+              <img
+                src={item.thumbnailUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                onError={() => setImgError(true)}
+              />
+            </div>
           )}
-          <button
-            onClick={onDismiss}
-            className="rounded border border-[#333] p-1.5 text-[#555] transition hover:text-white hover:border-[#555]"
-            title="Dismiss"
-          >
-            <CloseIcon />
-          </button>
+
+          <div className="flex flex-col gap-1 p-2.5 flex-1 min-h-0">
+            {/* Type badge */}
+            <div className="flex items-center gap-1">
+              <span className="text-[9px]">{TYPE_ICON[item.type] ?? ""}</span>
+              <span className="font-[family-name:var(--font-mono)] text-[8px] uppercase tracking-wider text-[#777]">
+                {TYPE_LABEL[item.type] ?? item.type}
+              </span>
+              {item.starCount > 0 && (
+                <span className="ml-auto text-[8px] text-amber-500/70">{"★".repeat(Math.min(item.starCount, 5))}</span>
+              )}
+            </div>
+
+            {/* Title */}
+            <h4 className="text-[11px] font-medium text-white/90 leading-snug line-clamp-2">{item.title}</h4>
+
+            {/* Snippet */}
+            <p className="text-[9px] text-[#666] leading-relaxed line-clamp-2 flex-1">{item.snippet}</p>
+
+            {/* Date */}
+            {item.date && (
+              <span className="text-[8px] text-[#555] font-[family-name:var(--font-mono)]">{item.date}</span>
+            )}
+
+            {/* Action */}
+            <div className="mt-auto pt-1">
+              {isOnBoard ? (
+                <span className="text-center block text-[8px] font-[family-name:var(--font-mono)] uppercase tracking-wider text-[#555]">On Board</span>
+              ) : (
+                <div className="flex gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAdd(); }}
+                    className="flex-1 flex items-center justify-center gap-1 rounded border border-[#E24B4A]/30 bg-[#E24B4A]/10 px-1.5 py-1 text-[8px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] text-[#E24B4A] transition hover:bg-[#E24B4A]/20"
+                  >
+                    <PlusIcon /> Add
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+                    className="rounded border border-[#333] p-1 text-[#555] transition hover:text-white hover:border-[#555]"
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Evidence Folder Overlay ────────────────────────────────────────────────
+// ─── Evidence Tray (split-screen, replaces overlay) ─────────────────────────
 
-interface EvidenceFolderOverlayProps {
+interface EvidenceTrayProps {
   items: EvidenceFolderItem[];
   onAddToBoard: (item: EvidenceFolderItem) => void;
   onDismiss: (itemId: string) => void;
@@ -171,70 +195,70 @@ interface EvidenceFolderOverlayProps {
   isOnBoard: (id: string) => boolean;
 }
 
-export function EvidenceFolderOverlay({
+export function EvidenceTray({
   items,
   onAddToBoard,
   onDismiss,
   onClose,
   isOnBoard,
-}: EvidenceFolderOverlayProps) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm folder-backdrop-enter"
-        onClick={onClose}
-      />
+}: EvidenceTrayProps) {
+  const [flippedIds, setFlippedIds] = useState<Set<string>>(new Set());
 
-      {/* Folder container */}
-      <div className="evidence-folder-enter relative z-10 w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 rounded-t-xl border border-b-0 border-[#222] bg-[#0d0d0d]">
-          <div className="flex items-center gap-3">
-            <span className="text-[#E24B4A]">
-              <FolderIcon size={22} />
-            </span>
-            <div>
-              <h3 className="font-[family-name:var(--font-brand)] text-[15px] font-medium text-white tracking-tight">
-                Evidence Folder
-              </h3>
-              <p className="text-[9px] font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-[#555]">
-                {items.length} item{items.length !== 1 ? "s" : ""} — Review and add to your board
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* CLASSIFIED stamp */}
-            <span className="hidden sm:inline font-[family-name:var(--font-display)] text-[11px] tracking-[0.2em] text-[#E24B4A]/30 uppercase border border-[#E24B4A]/15 rounded px-2 py-0.5 rotate-[-2deg]">
-              Classified
-            </span>
-            <button
-              onClick={onClose}
-              className="rounded p-1 text-[#555] transition hover:text-white hover:bg-white/5"
-            >
-              <CloseIcon />
-            </button>
+  const flipCard = (id: string) => {
+    setFlippedIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const flippedCount = flippedIds.size;
+  const totalCount = items.length;
+
+  return (
+    <div className="evidence-tray border-b border-[#222] bg-[#111] shrink-0">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2">
+        <div className="flex items-center gap-3">
+          <span className="text-[#E24B4A]"><FolderIcon size={18} /></span>
+          <div>
+            <h3 className="font-[family-name:var(--font-brand)] text-[13px] font-medium text-white tracking-tight">
+              Evidence Pack
+            </h3>
+            <p className="text-[8px] font-[family-name:var(--font-mono)] uppercase tracking-[0.15em] text-[#555]">
+              {flippedCount} of {totalCount} revealed — Click cards to flip
+            </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="hidden sm:inline font-[family-name:var(--font-display)] text-[10px] tracking-[0.2em] text-[#E24B4A]/25 uppercase border border-[#E24B4A]/10 rounded px-2 py-0.5 rotate-[-2deg]">
+            Classified
+          </span>
+          <button onClick={onClose} className="rounded p-1 text-[#555] transition hover:text-white hover:bg-white/5">
+            <CloseIcon />
+          </button>
+        </div>
+      </div>
 
-        {/* Cards grid */}
-        <div className="overflow-y-auto rounded-b-xl border border-[#222] bg-[#0a0a0a]/95 p-4">
+      {/* Card row */}
+      <div className="px-4 pb-3 overflow-x-auto">
+        <div className="flex items-start gap-2 justify-center min-w-min">
           {items.length === 0 ? (
-            <div className="py-12 text-center text-[#555] text-sm font-[family-name:var(--font-mono)]">
-              No new evidence available. Check back later.
+            <div className="py-8 text-center text-[#555] text-sm font-[family-name:var(--font-mono)]">
+              No new evidence available.
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {items.map((item) => (
-                <FolderCard
-                  key={item.id}
-                  item={item}
-                  onAdd={() => onAddToBoard(item)}
-                  onDismiss={() => onDismiss(item.id)}
-                  isOnBoard={isOnBoard(item.id)}
-                />
-              ))}
-            </div>
+            items.map((item) => (
+              <FlipCard
+                key={item.id}
+                item={item}
+                isFlipped={flippedIds.has(item.id)}
+                onFlip={() => flipCard(item.id)}
+                onAdd={() => onAddToBoard(item)}
+                onDismiss={() => onDismiss(item.id)}
+                isOnBoard={isOnBoard(item.id)}
+              />
+            ))
           )}
         </div>
       </div>
