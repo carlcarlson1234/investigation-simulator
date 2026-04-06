@@ -8,6 +8,7 @@ import {
   EVIDENCE_TYPE_ICON,
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
+import { useBoardSounds } from "@/hooks/use-board-sounds";
 import cytoscape from "cytoscape";
 import fcose from "cytoscape-fcose";
 
@@ -84,6 +85,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   },
   ref
 ) {
+  /* ── Sounds ────────────────────────────────────────────────────────────── */
+  const { play: playSound, muted: soundMuted, toggleMute: toggleSoundMute } = useBoardSounds();
+
   /* ── Score glow + new connection flash ─────────────────────────────────── */
   const [scoreGlow, setScoreGlow] = useState(false);
   const [newConnectionId, setNewConnectionId] = useState<string | null>(null);
@@ -142,6 +146,18 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [connectDrag, setConnectDrag] = useState<{
     sourceId: string; mouseX: number; mouseY: number;
   } | null>(null);
+
+  /* ── Interaction polish state ─────────────────────────────────────────── */
+  const [droppingNodeId, setDroppingNodeId] = useState<string | null>(null);
+  const [justDroppedNodeId, setJustDroppedNodeId] = useState<string | null>(null);
+  const [dropRipple, setDropRipple] = useState<{ x: number; y: number } | null>(null);
+  const [nearbyTargetId, setNearbyTargetId] = useState<string | null>(null);
+  const [connectionSnapping, setConnectionSnapping] = useState(false);
+  const dragVelocityRef = useRef({ vx: 0, vy: 0, lastX: 0, lastY: 0 });
+  const dragRotationRef = useRef(0);
+  const repelOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
 
   const toggleCollapse = useCallback((personId: string, evType: EvidenceType) => {
     const key = `${personId}:${evType}`;
@@ -1571,23 +1587,58 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         offsetY: worldY - node.position.y,
       });
       onSelectNode(nodeId);
+      playSound("pickup");
+      dragVelocityRef.current = { vx: 0, vy: 0, lastX: e.clientX, lastY: e.clientY };
+      dragRotationRef.current = 0;
+      repelOffsetsRef.current = {};
     },
-    [nodes, zoom, onSelectNode]
+    [nodes, zoom, onSelectNode, playSound]
   );
 
   useEffect(() => {
     if (!dragState) return;
+    const REPEL_RADIUS = 80;
+    const REPEL_STRENGTH = 8;
     const onMove = (e: MouseEvent) => {
       const vp = viewportRef.current;
       if (!vp) return;
       const rect = vp.getBoundingClientRect();
       const worldX = (e.clientX - rect.left + vp.scrollLeft) / zoom;
       const worldY = (e.clientY - rect.top + vp.scrollTop) / zoom;
-      onMoveNode(
-        dragState.nodeId,
-        Math.max(0, worldX - dragState.offsetX),
-        Math.max(0, worldY - dragState.offsetY)
-      );
+      const nx = Math.max(0, worldX - dragState.offsetX);
+      const ny = Math.max(0, worldY - dragState.offsetY);
+      onMoveNode(dragState.nodeId, nx, ny);
+
+      // Velocity tracking for rotation
+      const vx = e.clientX - dragVelocityRef.current.lastX;
+      dragVelocityRef.current = { ...dragVelocityRef.current, vx, lastX: e.clientX, lastY: e.clientY };
+      dragRotationRef.current = Math.max(-1, Math.min(1, vx * 0.15));
+
+      // Repel nearby cards
+      const dragged = nodesRef.current.find(n => n.id === dragState.nodeId);
+      if (dragged) {
+        const dw = dragged.kind === "person" ? 260 : 190;
+        const dh = dragged.kind === "person" ? 300 : 160;
+        const dcx = nx + dw / 2;
+        const dcy = ny + dh / 2;
+        const offsets: Record<string, { dx: number; dy: number }> = {};
+        for (const other of nodesRef.current) {
+          if (other.id === dragState.nodeId) continue;
+          const ow = other.kind === "person" ? 260 : 190;
+          const oh = other.kind === "person" ? 300 : 160;
+          const ocx = other.position.x + ow / 2;
+          const ocy = other.position.y + oh / 2;
+          const ddx = ocx - dcx;
+          const ddy = ocy - dcy;
+          const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+          const minDist = (dw + ow) / 2 + REPEL_RADIUS;
+          if (dist < minDist && dist > 0) {
+            const force = ((minDist - dist) / minDist) * REPEL_STRENGTH;
+            offsets[other.id] = { dx: (ddx / dist) * force, dy: (ddy / dist) * force };
+          }
+        }
+        repelOffsetsRef.current = offsets;
+      }
     };
     const onUp = () => {
       // Nudge if overlapping another card
@@ -1604,7 +1655,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           const oh = other.kind === "person" ? 300 : 160;
           if (x < other.position.x + ow + PAD && x + dw + PAD > other.position.x &&
               y < other.position.y + oh + PAD && y + dh + PAD > other.position.y) {
-            // Push in the shortest direction
             const overlapR = (x + dw + PAD) - other.position.x;
             const overlapL = (other.position.x + ow + PAD) - x;
             const overlapD = (y + dh + PAD) - other.position.y;
@@ -1618,13 +1668,22 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           }
         }
         if (nudged) onMoveNode(dragState.nodeId, Math.max(0, x), Math.max(0, y));
+
+        // Bounce + ripple + sound
+        playSound("drop");
+        setDroppingNodeId(dragState.nodeId);
+        setDropRipple({ x: dragged.position.x + dw / 2, y: dragged.position.y + dh / 2 });
+        setTimeout(() => setDroppingNodeId(null), 250);
+        setTimeout(() => setDropRipple(null), 350);
       }
+      dragRotationRef.current = 0;
+      repelOffsetsRef.current = {};
       setDragState(null);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [dragState, zoom, onMoveNode, nodes]);
+  }, [dragState, zoom, onMoveNode, nodes, playSound]);
 
   // ─── ESC ──────────────────────────────────────────────────────────────
 
@@ -1658,6 +1717,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   useEffect(() => {
     if (!connectDrag) return;
+    const GLOW_RADIUS = 50;
     const onMove = (e: MouseEvent) => {
       const vp = viewportRef.current;
       if (!vp) return;
@@ -1665,8 +1725,28 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       const worldX = (e.clientX - rect.left + vp.scrollLeft) / zoom;
       const worldY = (e.clientY - rect.top + vp.scrollTop) / zoom;
       setConnectDrag(prev => prev ? { ...prev, mouseX: worldX, mouseY: worldY } : null);
+
+      // Proximity detection for target glow
+      let closestId: string | null = null;
+      let closestDist = Infinity;
+      for (const node of nodesRef.current) {
+        if (node.id === connectDrag.sourceId) continue;
+        const nw = node.kind === "person" ? 260 : 190;
+        const nh = node.kind === "person" ? 300 : 160;
+        const ncx = node.position.x + nw / 2;
+        const ncy = node.position.y + nh / 2;
+        const dx = worldX - ncx;
+        const dy = worldY - ncy;
+        const dist = Math.sqrt(dx * dx + dy * dy) - Math.max(nw, nh) / 2;
+        if (dist < GLOW_RADIUS && dist < closestDist) {
+          closestDist = dist;
+          closestId = node.id;
+        }
+      }
+      setNearbyTargetId(closestId);
     };
     const onUp = (e: MouseEvent) => {
+      setNearbyTargetId(null);
       // Use elementFromPoint for reliable hit detection
       const elUnder = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       let targetId: string | null = null;
@@ -1681,14 +1761,22 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       }
       if (targetId && targetId !== connectDrag.sourceId) {
-        if (onDirectConnection) {
-          onDirectConnection(connectDrag.sourceId, targetId);
-        } else {
-          onStartConnection(connectDrag.sourceId);
-          requestAnimationFrame(() => onCompleteConnection(targetId!));
-        }
+        // Snap animation: briefly show solid line, then complete
+        setConnectionSnapping(true);
+        playSound("connection");
+        setTimeout(() => {
+          if (onDirectConnection) {
+            onDirectConnection(connectDrag.sourceId, targetId!);
+          } else {
+            onStartConnection(connectDrag.sourceId);
+            requestAnimationFrame(() => onCompleteConnection(targetId!));
+          }
+          setConnectionSnapping(false);
+          setConnectDrag(null);
+        }, 100);
+      } else {
+        setConnectDrag(null);
       }
-      setConnectDrag(null);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -1696,7 +1784,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [connectDrag, zoom, onStartConnection, onCompleteConnection, onDirectConnection]);
+  }, [connectDrag, zoom, onStartConnection, onCompleteConnection, onDirectConnection, playSound]);
 
   // ─── Drop ─────────────────────────────────────────────────────────────
 
@@ -1722,17 +1810,28 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
         // First-placement: place where the user dropped, no forced snap
 
+        let droppedId: string | null = null;
         if (parsed.kind === "person") {
           onAddPerson(parsed.id, x, y);
+          droppedId = parsed.id;
           if (firstPlacementMode && onFirstPlacement) {
             onFirstPlacement(parsed.id);
           }
         } else if (parsed.kind === "evidence" && parsed.data) {
           onAddEvidence(parsed.data as SearchResult, x, y);
+          droppedId = parsed.data.id ?? parsed.id;
+        }
+        // Bounce + ripple + sound for intake drops
+        if (droppedId) {
+          playSound("drop");
+          setJustDroppedNodeId(droppedId);
+          setDropRipple({ x: x + 90, y: y + 45 });
+          setTimeout(() => setJustDroppedNodeId(null), 300);
+          setTimeout(() => setDropRipple(null), 350);
         }
       } catch { /* ignore */ }
     },
-    [zoom, onAddEvidence, onAddPerson, firstPlacementMode, onFirstPlacement]
+    [zoom, onAddEvidence, onAddPerson, firstPlacementMode, onFirstPlacement, playSound]
   );
 
   // Returns the bottom-edge center of the card (where the handle is)
@@ -2016,6 +2115,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       />
                       {/* Visible curved line */}
                       <path
+                        id={`conn-path-${conn.id}`}
                         d={curvePath}
                         stroke={lineColor}
                         strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && !showAllInCompare && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 3.5 : 3}
@@ -2028,6 +2128,22 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       {/* Endpoint dots */}
                       <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
                       <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                      {/* Pulse traveling along new connection */}
+                      {isNew && (
+                        <>
+                          <path d={curvePath} stroke="#4ade80" strokeWidth={8} fill="none" strokeLinecap="round" className="pointer-events-none">
+                            <animate attributeName="stroke-opacity" values="0.4;0" dur="0.5s" fill="freeze" />
+                            <animate attributeName="stroke-width" values="8;2" dur="0.5s" fill="freeze" />
+                          </path>
+                          <circle r={5} fill="#4ade80" filter="url(#string-glow-green)" className="pointer-events-none">
+                            <animateMotion dur="0.35s" fill="freeze">
+                              <mpath href={`#conn-path-${conn.id}`} />
+                            </animateMotion>
+                            <animate attributeName="r" values="5;8;5" dur="0.35s" />
+                            <animate attributeName="opacity" values="1;0.8;0" dur="0.45s" fill="freeze" />
+                          </circle>
+                        </>
+                      )}
                       {/* Note indicator dot at curve midpoint */}
                       {conn.note && (
                         <circle
@@ -2055,14 +2171,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   return (
                     <path
                       d={`M ${from.cx} ${from.cy} Q ${cmx} ${cmy} ${connectDrag.mouseX} ${connectDrag.mouseY}`}
-                      stroke="#f87171"
-                      strokeWidth={3}
-                      strokeOpacity={0.8}
-                      strokeDasharray="8 4"
+                      stroke={connectionSnapping ? "#4ade80" : "#f87171"}
+                      strokeWidth={connectionSnapping ? 4 : 3}
+                      strokeOpacity={connectionSnapping ? 1 : 0.8}
+                      strokeDasharray={connectionSnapping ? "0" : "8 4"}
                       strokeLinecap="round"
                       fill="none"
-                      filter="url(#string-glow)"
+                      filter={connectionSnapping ? "url(#string-glow-green)" : "url(#string-glow)"}
                       className="pointer-events-none"
+                      style={{ transition: "stroke-width 100ms, stroke-opacity 100ms" }}
                     />
                   );
                 })()}
@@ -2126,7 +2243,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     key={node.id}
                     data-node-id={node.id}
                     className={`board-node absolute select-none ${opc} ${
-                      dragState?.nodeId === node.id ? "board-node--dragging" : isArranging ? "board-node--arranging" : ""
+                      dragState?.nodeId === node.id ? "board-node--dragging" : droppingNodeId === node.id ? "board-node--dropping" : justDroppedNodeId === node.id ? "board-node--just-dropped" : isArranging ? "board-node--arranging" : ""
+                    } ${nearbyTargetId === node.id ? "board-node--connect-glow" : ""
                     } ${selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
                     } ${vis === "focused" ? "ring-2 ring-red-500 shadow-xl shadow-red-600/20 rounded-xl" : ""} ${
                       isConnectSource ? "ring-2 ring-red-400 shadow-xl shadow-red-500/30 rounded-xl" : ""
@@ -2135,7 +2253,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     }`}
                     style={{
                       left: node.position.x, top: node.position.y,
-                      zIndex: vis === "focused" ? 30 : selectedNodeId === node.id ? 20 : vis === "dimmed" ? 5 : 10,
+                      zIndex: dragState?.nodeId === node.id ? 100 : vis === "focused" ? 30 : selectedNodeId === node.id ? 20 : vis === "dimmed" ? 5 : 10,
+                      ...(dragState?.nodeId === node.id ? {
+                        transform: `scale(1.05) rotate(${dragRotationRef.current}deg)`,
+                        boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(220,38,38,0.3)",
+                      } : {}),
+                      ...(dragState && dragState.nodeId !== node.id && repelOffsetsRef.current[node.id] ? {
+                        transform: `translate(${repelOffsetsRef.current[node.id].dx}px, ${repelOffsetsRef.current[node.id].dy}px)`,
+                        transition: "transform 0.15s ease-out",
+                      } : {}),
                     }}
                     onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                     onClick={(e) => {
@@ -2242,6 +2368,17 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     </div>
                   );
                 })
+              )}
+
+              {/* Drop ripple effect */}
+              {dropRipple && (
+                <div className="drop-ripple" style={{
+                  position: "absolute",
+                  left: dropRipple.x - 60,
+                  top: dropRipple.y - 60,
+                  width: 120, height: 120,
+                  zIndex: 50,
+                }} />
               )}
 
               {/* Drop target crosshair during onboarding */}
@@ -2518,6 +2655,30 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             </button>
           )}
 
+          <div className="mx-0.5 h-5 w-px bg-[#333]" />
+
+          {/* Sound mute toggle */}
+          <button
+            onClick={toggleSoundMute}
+            className={`flex h-8 w-8 items-center justify-center rounded transition ${soundMuted ? "text-[#555] hover:text-white" : "text-[#888] hover:text-white"}`}
+            title={soundMuted ? "Unmute sounds" : "Mute sounds"}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {soundMuted ? (
+                <>
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </>
+              ) : (
+                <>
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                </>
+              )}
+            </svg>
+          </button>
 
         </div>
 

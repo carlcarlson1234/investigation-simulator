@@ -292,7 +292,9 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
       onDragStart={(e) => {
         e.dataTransfer.setData("application/board-item", JSON.stringify({ id: person.id, kind: "person" }));
         e.dataTransfer.effectAllowed = "move";
+        e.currentTarget.classList.add("dragging-source");
       }}
+      onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
       className={`group rounded-xl border overflow-hidden transition-all ${
         isActiveTarget
           ? "border-red-500/50 bg-red-950/20 shadow-lg shadow-red-600/15 ring-1 ring-red-500/30 cursor-grab active:cursor-grabbing"
