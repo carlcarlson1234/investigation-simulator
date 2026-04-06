@@ -125,6 +125,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   /* ── Zoom state ────────────────────────────────────────────────────────── */
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  // Bumped after zoom/scroll to force connection endpoint recomputation
+  const [connRefresh, setConnRefresh] = useState(0);
 
   /* ── Parallax depth factor (surface scrolls at this fraction of content) */
   const PARALLAX_SPEED = 0.2;
@@ -349,6 +351,14 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refresh connection endpoints after zoom changes (DOM needs a frame to reflow)
+  useEffect(() => {
+    const t1 = requestAnimationFrame(() => setConnRefresh(n => n + 1));
+    // Also refresh after smooth scroll completes (~400ms)
+    const t2 = setTimeout(() => setConnRefresh(n => n + 1), 450);
+    return () => { cancelAnimationFrame(t1); clearTimeout(t2); };
+  }, [zoom]);
 
   /* ── Zoom helpers ──────────────────────────────────────────────────────── */
   const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
@@ -2104,7 +2114,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 transform: `scale(${zoom})`,
               }}
             >
-              {/* Red string connections — bright & thick */}
+              {/* Red string connections */}
               <svg className="absolute inset-0" style={{ zIndex: 5, width: "100%", height: "100%", pointerEvents: "none" }}>
                 <defs>
                   <filter id="string-glow">
