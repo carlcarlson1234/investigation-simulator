@@ -251,7 +251,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const getNodeScale = useCallback((nodeId: string): number => {
     const connCount = personConnectionCounts[nodeId] ?? 0;
     const evCount = personEvidenceCounts[nodeId]?.total ?? 0;
-    return 1.0 + Math.min(0.4, (connCount + evCount) * 0.03);
+    return 1.0 + Math.min(0.25, (connCount + evCount) * 0.02);
   }, [personConnectionCounts, personEvidenceCounts]);
 
   // Card dimensions accounting for importance scaling
@@ -381,12 +381,20 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const pathFullFocusRef = useRef<FocusState | null>(null);
   // Saved positions before drill-down so we can restore them
   const pathSavedPositionsRef = useRef<Record<string, { x: number; y: number }> | null>(null);
-  // Measure actual card dimensions from the DOM
+  // Measure actual card dimensions from the DOM, with scaled fallback
   const getCardSize = useCallback((nodeId: string) => {
     const el = viewportRef.current?.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null;
     if (el) return { w: el.offsetWidth, h: el.offsetHeight };
-    return { w: 260, h: 300 }; // fallback
-  }, []);
+    // Fallback: use scaled estimates for person nodes
+    const node = nodesRef.current.find(n => n.id === nodeId);
+    if (node) {
+      const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
+      const baseW = node.kind === "person" ? 260 : 190;
+      const baseH = node.kind === "person" ? 300 : 160;
+      return { w: baseW * scale, h: baseH * scale };
+    }
+    return { w: 260, h: 300 };
+  }, [getNodeScale]);
 
   // Only zoom-to-fit if any node card is outside the visible viewport
   const zoomFitIfNeeded = useCallback((newPositions: Record<string, { x: number; y: number }>) => {
