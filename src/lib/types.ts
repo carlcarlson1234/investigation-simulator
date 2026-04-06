@@ -167,3 +167,12 @@ export interface ReleaseBatch {
   releaseDate: string | null;
   documentCount: number | null;
 }
+
+// ─── Evidence Folder ────────────────────────────────────────────────────────
+
+export type EvidenceFolderCategory = "direct" | "cryptic" | "fodder";
+
+export interface EvidenceFolderItem extends SearchResult {
+  folderCategory: EvidenceFolderCategory;
+  thumbnailUrl?: string | null;
+}

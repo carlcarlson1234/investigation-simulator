@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import type { Person, SearchResult, ArchiveStats, EmailEvidence } from "@/lib/types";
+import type { Person, SearchResult, ArchiveStats, EmailEvidence, EvidenceFolderItem } from "@/lib/types";
 import type {
   BoardNode,
   BoardConnection,
@@ -14,6 +14,7 @@ import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
+import { EvidenceFolderButton, EvidenceFolderOverlay } from "./evidence-folder";
 import { InvestigationOverlay } from "./investigation-overlay";
 import { useInvestigation } from "@/hooks/use-investigation";
 import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
@@ -46,6 +47,15 @@ export function BoardWorkspace({
   const [subjectFocusPersonId, setSubjectFocusPersonId] = useState<string | null>(null);
   const [photoFocusId, setPhotoFocusId] = useState<string | null>(null);
 
+  // ─── Evidence Folder State ──────────────────────────────────────────────
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderItems, setFolderItems] = useState<EvidenceFolderItem[]>([]);
+  const [folderLoading, setFolderLoading] = useState(false);
+  const [seenEvidenceIds, setSeenEvidenceIds] = useState<Set<string>>(() => {
+    const saved_seen = saved?.seenEvidenceIds;
+    return saved_seen ? new Set(saved_seen) : new Set();
+  });
+
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
 
@@ -63,7 +73,7 @@ export function BoardWorkspace({
   }, [autoDetectCompletion, investigation.isStartMode]);
 
   // ─── Persist board state to sessionStorage ──────────────────────────────
-  useBoardPersistence(boardNodes, boardConnections, investigation.mode);
+  useBoardPersistence(boardNodes, boardConnections, investigation.mode, seenEvidenceIds);
 
   // ─── Focus computation ───────────────────────────────────────────────────
 
@@ -303,6 +313,53 @@ export function BoardWorkspace({
     []
   );
 
+  // ─── Evidence Folder ─────────────────────────────────────────────────────
+
+  const fetchEvidenceFolder = useCallback(async () => {
+    setFolderLoading(true);
+    try {
+      const personIds = boardNodes
+        .filter((n) => n.kind === "person")
+        .map((n) => n.id);
+
+      const res = await fetch("/api/evidence-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personIds,
+          excludeIds: Array.from(seenEvidenceIds),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setFolderItems(data.items);
+        setSeenEvidenceIds((prev) => {
+          const next = new Set(prev);
+          for (const item of data.items) next.add(item.id);
+          return next;
+        });
+        setFolderOpen(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch evidence folder:", err);
+    } finally {
+      setFolderLoading(false);
+    }
+  }, [boardNodes, seenEvidenceIds]);
+
+  const addFolderItemToBoard = useCallback(
+    (item: EvidenceFolderItem) => {
+      addEvidenceToBoard(item);
+      setFolderItems((prev) => prev.filter((i) => i.id !== item.id));
+    },
+    [addEvidenceToBoard]
+  );
+
+  const dismissFolderItem = useCallback((itemId: string) => {
+    setFolderItems((prev) => prev.filter((i) => i.id !== itemId));
+  }, []);
+
   // ─── Selected node ──────────────────────────────────────────────────────
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
@@ -396,6 +453,13 @@ export function BoardWorkspace({
         >
           Test
         </button>
+
+        {/* Evidence Folder button */}
+        {(!investigation.isStartMode || investigation.step === "open-investigation") && (
+          <div className="absolute bottom-4 left-4 z-40">
+            <EvidenceFolderButton onClick={fetchEvidenceFolder} loading={folderLoading} />
+          </div>
+        )}
         {showBoard && (
           <BoardCanvas
             ref={canvasRef}
@@ -519,6 +583,17 @@ export function BoardWorkspace({
           onAddEvidence={addEvidenceToBoard}
           onAddPerson={addPersonToBoard}
           onFocusNode={focusNode}
+        />
+      )}
+
+      {/* Evidence Folder overlay */}
+      {folderOpen && (
+        <EvidenceFolderOverlay
+          items={folderItems}
+          onAddToBoard={addFolderItemToBoard}
+          onDismiss={dismissFolderItem}
+          onClose={() => setFolderOpen(false)}
+          isOnBoard={isOnBoard}
         />
       )}
     </div>
