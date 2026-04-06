@@ -242,6 +242,43 @@ body {
   background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
 }
 
+/* Panel resize handle */
+.panel-resize-handle {
+  width: 6px;
+  cursor: col-resize;
+  background: #1a1a1a;
+  border-left: 1px solid #222;
+  border-right: 1px solid #222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  z-index: 10;
+}
+.panel-resize-handle:hover,
+.panel-resize-handle.active {
+  background: #E24B4A20;
+  border-left-color: #E24B4A40;
+  border-right-color: #E24B4A40;
+}
+.panel-resize-handle-dots {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.panel-resize-handle-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #444;
+  transition: background 0.15s ease;
+}
+.panel-resize-handle:hover .panel-resize-handle-dots span,
+.panel-resize-handle.active .panel-resize-handle-dots span {
+  background: #E24B4A;
+}
+
 /* board-canvas styles now handled inline in component */
 
 .board-node {

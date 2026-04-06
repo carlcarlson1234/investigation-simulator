@@ -17,9 +17,10 @@ interface IntakePanelProps {
   selectedEmailId: string | null;
   starterLeads?: SearchResult[];
   investigationStep?: InvestigationStep | null;
+  isWideMode?: boolean;
 }
 
-export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep }: IntakePanelProps) {
+export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep, isWideMode }: IntakePanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>("photos");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,7 +39,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
   });
 
   return (
-    <aside className={`intake-panel flex h-full w-[230px] flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
+    <aside className={`intake-panel flex h-full w-full flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
       {/* Tab bar — 2x2 grid */}
@@ -196,16 +197,17 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
 
             {/* Tab content */}
             {activeTab === "photos" ? (
-              <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+              <PhotoGallery isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             ) : activeTab === "emails" ? (
               <EmailInbox
                 isOnBoard={isOnBoard}
                 onAddEvidence={onAddEvidence}
                 onSelectEmail={onSelectEmail}
                 selectedEmailId={selectedEmailId}
+                isWideMode={isWideMode}
               />
             ) : (
-              <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} />
+              <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             )}
           </>
         )}
@@ -222,11 +224,13 @@ function EmailInbox({
   onAddEvidence,
   onSelectEmail,
   selectedEmailId,
+  isWideMode,
 }: {
   isOnBoard: (id: string) => boolean;
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   onSelectEmail: (emailId: string) => void;
   selectedEmailId: string | null;
+  isWideMode?: boolean;
 }) {
   const [emails, setEmails] = useState<EmailListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -379,7 +383,9 @@ function EmailInbox({
                 e.currentTarget.classList.add("dragging-source");
               }}
               onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
-              className={`group border-b border-[#1a1a1a] px-3 py-2.5 cursor-pointer transition ${
+              className={`group border-b border-[#1a1a1a] cursor-pointer transition ${
+                isWideMode ? "px-5 py-4" : "px-3 py-2.5"
+              } ${
                 isSelected
                   ? "bg-red-600/8 border-l-2 border-l-red-500"
                   : onBoard
@@ -391,40 +397,49 @@ function EmailInbox({
               {/* Row 1: Sender + Date */}
               <div className="flex items-center gap-2 mb-0.5">
                 {email.epsteinIsSender && (
-                  <span className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" title="Sent by Epstein" />
+                  <span className={`rounded-full bg-red-500 flex-shrink-0 ${isWideMode ? "h-2.5 w-2.5" : "h-2 w-2"}`} title="Sent by Epstein" />
                 )}
-                <span className={`text-[12px] font-bold truncate ${
-                  email.epsteinIsSender ? "text-red-400" : "text-white"
-                }`}>
+                <span className={`font-bold truncate ${
+                  isWideMode ? "text-[14px]" : "text-[12px]"
+                } ${email.epsteinIsSender ? "text-red-400" : "text-white"}`}>
                   {email.sender}
                 </span>
-                <span className="ml-auto text-[10px] text-[#555] tabular-nums flex-shrink-0">
+                <span className={`ml-auto text-[#555] tabular-nums flex-shrink-0 ${isWideMode ? "text-[12px]" : "text-[10px]"}`}>
                   {formatEmailDate(email.sentAt)}
                 </span>
               </div>
 
               {/* Row 2: Subject */}
-              <div className="text-[11px] font-bold text-[#ccc] truncate">
+              <div className={`font-bold text-[#ccc] ${isWideMode ? "text-[14px] mt-1" : "text-[11px] truncate"}`}>
                 {email.subject}
               </div>
 
-              {/* Row 3: Preview */}
-              <div className="text-[10px] text-[#555] truncate mt-0.5">
+              {/* Row 3: Preview — much more text in wide mode */}
+              <div className={`text-[#666] mt-1 ${
+                isWideMode
+                  ? "text-[13px] leading-relaxed line-clamp-6"
+                  : "text-[10px] truncate"
+              }`}>
                 {email.bodyPreview || "No preview available"}
               </div>
 
               {/* Row 4: Meta */}
-              <div className="flex items-center gap-2 mt-1">
+              <div className={`flex items-center gap-2 ${isWideMode ? "mt-2" : "mt-1"}`}>
                 {email.recipientCount > 0 && (
-                  <span className="text-[9px] text-[#444]">
+                  <span className={`text-[#444] ${isWideMode ? "text-[11px]" : "text-[9px]"}`}>
                     → {email.recipientCount} recipient{email.recipientCount > 1 ? "s" : ""}
                   </span>
                 )}
                 {email.hasCc && (
-                  <span className="text-[9px] text-[#444]">CC</span>
+                  <span className={`text-[#444] ${isWideMode ? "text-[11px]" : "text-[9px]"}`}>CC</span>
+                )}
+                {email.starCount > 0 && (
+                  <span className={`text-amber-500/60 ${isWideMode ? "text-[11px]" : "text-[9px]"}`}>
+                    {"★".repeat(Math.min(email.starCount, 5))}
+                  </span>
                 )}
                 {onBoard && (
-                  <span className="text-[9px] font-bold text-red-500/60 ml-auto">✓ On board</span>
+                  <span className={`font-bold text-red-500/60 ml-auto ${isWideMode ? "text-[11px]" : "text-[9px]"}`}>✓ On board</span>
                 )}
                 {!onBoard && (
                   <button
@@ -432,7 +447,7 @@ function EmailInbox({
                       e.stopPropagation();
                       onAddEvidence(emailToSearchResult(email));
                     }}
-                    className="ml-auto text-[9px] font-bold uppercase tracking-wider text-red-500/60 opacity-0 group-hover:opacity-100 hover:text-red-400 transition"
+                    className={`ml-auto font-bold uppercase tracking-wider text-red-500/60 opacity-0 group-hover:opacity-100 hover:text-red-400 transition ${isWideMode ? "text-[11px]" : "text-[9px]"}`}
                   >
                     + Board
                   </button>
@@ -469,9 +484,11 @@ function EmailInbox({
 function PhotoGallery({
   isOnBoard,
   onAddEvidence,
+  isWideMode,
 }: {
   isOnBoard: (id: string) => boolean;
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+  isWideMode?: boolean;
 }) {
   const [photos, setPhotos] = useState<PhotoListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -596,7 +613,7 @@ function PhotoGallery({
 
       {/* Photo Grid */}
       <div className="flex-1 overflow-y-auto p-2">
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className={`grid gap-2 ${isWideMode ? "grid-cols-2 lg:grid-cols-3" : "grid-cols-1"}`}>
           {photos.map((photo) => {
             const onBoard = isOnBoard(photo.id);
             return (
@@ -676,6 +693,13 @@ function PhotoGallery({
                     </span>
                   )}
                 </div>
+
+                {/* Description in wide mode */}
+                {isWideMode && photo.description && (
+                  <div className="px-2 py-1.5 border-t border-[#1a1a1a]">
+                    <p className="text-[11px] text-[#666] leading-relaxed line-clamp-3">{photo.description}</p>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -778,9 +802,11 @@ interface FileItem {
 function FilesTab({
   isOnBoard,
   onAddEvidence,
+  isWideMode,
 }: {
   isOnBoard: (id: string) => boolean;
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+  isWideMode?: boolean;
 }) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -867,7 +893,9 @@ function FilesTab({
                 e.currentTarget.classList.add("dragging-source");
               }}
               onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
-              className={`group border-b border-[#1a1a1a] px-3 py-2.5 cursor-pointer transition ${
+              className={`group border-b border-[#1a1a1a] cursor-pointer transition ${
+                isWideMode ? "px-5 py-4" : "px-3 py-2.5"
+              } ${
                 onBoard
                   ? "bg-[#0f0f0f] opacity-50"
                   : "hover:bg-[#161616]"
@@ -875,17 +903,19 @@ function FilesTab({
             >
               {/* Row 1: Type icon + Title */}
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-sm">
+                <span className={isWideMode ? "text-lg" : "text-sm"}>
                   {file.kind === "document" ? "📄" : "💬"}
                 </span>
-                <span className="flex-1 text-xs font-bold text-white truncate">{file.title}</span>
+                <span className={`flex-1 font-bold text-white ${isWideMode ? "text-[14px]" : "text-xs truncate"}`}>{file.title}</span>
                 {file.date && (
-                  <span className="text-[10px] text-[#555] tabular-nums flex-shrink-0">{file.date}</span>
+                  <span className={`text-[#555] tabular-nums flex-shrink-0 ${isWideMode ? "text-[12px]" : "text-[10px]"}`}>{file.date}</span>
                 )}
               </div>
 
-              {/* Row 2: Snippet */}
-              <p className="text-[11px] text-[#777] truncate pl-6">{file.snippet}</p>
+              {/* Row 2: Snippet — more text in wide mode */}
+              <p className={`text-[#777] pl-6 ${
+                isWideMode ? "text-[13px] leading-relaxed line-clamp-6 mt-1" : "text-[11px] truncate"
+              }`}>{file.snippet}</p>
 
               {/* Row 3: Metadata */}
               <div className="flex items-center gap-2 mt-1 pl-6">

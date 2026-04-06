@@ -481,14 +481,94 @@ export function BoardWorkspace({
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
+  // ─── Resizable Evidence Panel + Evidence-Focus Mode ──────────────────────
+  const [leftPanelWidth, setLeftPanelWidth] = useState(230);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const resizeStartX = useRef(0);
+  const resizeStartW = useRef(230);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Evidence-focus mode: activates when panel > 40% of screen
+  const FOCUS_THRESHOLD = 0.40;
+  const evidenceFocusMode = !leftCollapsed && containerRef.current
+    ? leftPanelWidth / containerRef.current.clientWidth >= FOCUS_THRESHOLD
+    : leftPanelWidth >= 600; // fallback before first render
+
+  // Resize drag handlers
+  useEffect(() => {
+    if (!isResizingLeft) return;
+    const onMove = (e: MouseEvent) => {
+      const delta = e.clientX - resizeStartX.current;
+      const newW = Math.max(230, Math.min(resizeStartW.current + delta, window.innerWidth * 0.65));
+      setLeftPanelWidth(newW);
+    };
+    const onUp = () => {
+      setIsResizingLeft(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizingLeft]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizeStartX.current = e.clientX;
+    resizeStartW.current = leftPanelWidth;
+    setIsResizingLeft(true);
+  }, [leftPanelWidth]);
+
+  // Mini-board: filtered nodes/connections for evidence-focus mode
+  const miniBoardNodes = useMemo(() => {
+    if (!evidenceFocusMode) return boardNodes;
+    if (spotlightPersonIds.size === 0) return boardNodes; // show all if no filter
+    // Show spotlight people + their direct connections
+    const visibleIds = new Set<string>(spotlightPersonIds);
+    for (const conn of boardConnections) {
+      if (spotlightPersonIds.has(conn.sourceId)) visibleIds.add(conn.targetId);
+      if (spotlightPersonIds.has(conn.targetId)) visibleIds.add(conn.sourceId);
+    }
+    return boardNodes.filter(n => visibleIds.has(n.id));
+  }, [evidenceFocusMode, boardNodes, boardConnections, spotlightPersonIds]);
+
+  const miniBoardConnections = useMemo(() => {
+    if (!evidenceFocusMode) return boardConnections;
+    const nodeIds = new Set(miniBoardNodes.map(n => n.id));
+    return boardConnections.filter(c => nodeIds.has(c.sourceId) && nodeIds.has(c.targetId));
+  }, [evidenceFocusMode, boardConnections, miniBoardNodes]);
+
+  // Top connected people for quick-select chips (when no spotlight active)
+  const topConnectedPeople = useMemo(() => {
+    const personNodes = boardNodes.filter(n => n.kind === "person");
+    if (personNodes.length === 0) return [];
+    const counts: Record<string, number> = {};
+    for (const n of personNodes) counts[n.id] = 0;
+    for (const c of boardConnections) {
+      if (counts[c.sourceId] !== undefined) counts[c.sourceId]++;
+      if (counts[c.targetId] !== undefined) counts[c.targetId]++;
+    }
+    return personNodes
+      .sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0))
+      .slice(0, 8);
+  }, [boardNodes, boardConnections]);
+
   const showRightPanel = true;
   const showBoard = true;
   const showLeftPanel = !investigation.isStartMode || stepIdx >= 1;
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-      {/* LEFT: Evidence panel — collapsible */}
-      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${!showLeftPanel ? "w-0" : leftCollapsed ? "w-0" : "w-[230px]"}`}>
+    <div ref={containerRef} className="flex h-[calc(100vh-3rem)] overflow-hidden">
+      {/* LEFT: Evidence panel — resizable */}
+      <div
+        className={`h-full shrink-0 overflow-hidden ${isResizingLeft ? "" : "transition-all duration-300 ease-out"} ${!showLeftPanel ? "w-0" : leftCollapsed ? "w-0" : ""}`}
+        style={!showLeftPanel || leftCollapsed ? undefined : { width: leftPanelWidth }}
+      >
         {showLeftPanel && !leftCollapsed && (
           <IntakePanel
             isOnBoard={isOnBoard}
@@ -497,12 +577,25 @@ export function BoardWorkspace({
             selectedEmailId={selectedEmailId}
             starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
             investigationStep={investigation.isStartMode ? investigation.step : null}
+            isWideMode={evidenceFocusMode}
           />
         )}
       </div>
 
-      {/* CENTER: Board Canvas — hidden until intro-board */}
-      <div className={`relative flex flex-col flex-1 min-h-0 transition-all duration-700 ease-out ${showBoard ? "opacity-100" : "opacity-0"}`}>
+      {/* RESIZE HANDLE — draggable edge between evidence panel and board */}
+      {showLeftPanel && !leftCollapsed && (
+        <div
+          className={`panel-resize-handle shrink-0 ${isResizingLeft ? "active" : ""}`}
+          onMouseDown={handleResizeStart}
+        >
+          <div className="panel-resize-handle-dots">
+            <span /><span /><span />
+          </div>
+        </div>
+      )}
+
+      {/* CENTER: Board Canvas (or mini-board in evidence-focus mode) */}
+      <div className={`relative flex flex-col flex-1 min-h-0 ${isResizingLeft ? "" : "transition-all duration-700 ease-out"} ${showBoard ? "opacity-100" : "opacity-0"}`}>
         {/* Test board loader */}
         <button
           onClick={loadTestBoard}
@@ -514,7 +607,13 @@ export function BoardWorkspace({
         {/* Panel toggle buttons — always visible on board */}
         <div className="absolute top-2 left-3 z-40 flex gap-2">
           <button
-            onClick={() => setLeftCollapsed(prev => !prev)}
+            onClick={() => {
+              setLeftCollapsed(prev => {
+                if (prev) return false; // opening — restore
+                setLeftPanelWidth(230); // collapsing — reset width
+                return true;
+              });
+            }}
             className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
               !leftCollapsed
                 ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
@@ -526,30 +625,79 @@ export function BoardWorkspace({
             </svg>
             Evidence
           </button>
-          <button
-            onClick={() => setRightCollapsed(prev => !prev)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
-              !rightCollapsed
-                ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
-                : "border-[#333] bg-[#141414]/90 text-[#888] hover:border-[#555] hover:text-white"
-            }`}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-            </svg>
-            People
-          </button>
+          {!evidenceFocusMode && (
+            <button
+              onClick={() => setRightCollapsed(prev => !prev)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
+                !rightCollapsed
+                  ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
+                  : "border-[#333] bg-[#141414]/90 text-[#888] hover:border-[#555] hover:text-white"
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+              </svg>
+              People
+            </button>
+          )}
         </div>
 
+        {/* Evidence-focus mode: quick-select prompt when no people selected */}
+        {evidenceFocusMode && spotlightPersonIds.size === 0 && topConnectedPeople.length > 0 && (
+          <div className="absolute inset-x-0 top-12 z-30 flex justify-center pointer-events-none">
+            <div className="pointer-events-auto rounded-xl border border-[#2a2a2a] bg-[#111]/95 backdrop-blur-sm px-5 py-4 shadow-xl shadow-black/50 max-w-md">
+              <p className="text-center text-[11px] font-[family-name:var(--font-mono)] uppercase tracking-[0.12em] text-[#888] mb-3">
+                Select people to focus on
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {topConnectedPeople.map(node => {
+                  if (node.kind !== "person") return null;
+                  const name = node.data.name;
+                  return (
+                    <button
+                      key={node.id}
+                      onClick={() => toggleSpotlight(node.id)}
+                      className="flex items-center gap-1.5 rounded-full border border-[#333] bg-[#1a1a1a] px-3 py-1.5 text-[11px] text-white/80 hover:border-[#E24B4A]/40 hover:bg-[#E24B4A]/10 hover:text-white transition"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-[#E24B4A]/60" />
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Evidence-focus mode: spotlight chip bar */}
+        {evidenceFocusMode && spotlightPersonIds.size > 0 && (
+          <div className="absolute top-2 right-3 z-40 flex items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-lg border border-[#E24B4A]/20 bg-[#111]/90 backdrop-blur-sm px-2.5 py-1.5">
+              <span className="text-[9px] font-[family-name:var(--font-mono)] uppercase tracking-[0.12em] text-[#E24B4A]/60">Focus:</span>
+              {[...spotlightPersonIds].map(pid => {
+                const n = boardNodes.find(nd => nd.id === pid);
+                const name = n?.kind === "person" ? n.data.name : pid;
+                return (
+                  <span key={pid} className="flex items-center gap-1 rounded-full bg-[#E24B4A]/10 border border-[#E24B4A]/20 px-2 py-0.5 text-[10px] text-[#E24B4A]">
+                    {name}
+                    <button onClick={() => toggleSpotlight(pid)} className="text-[#E24B4A]/40 hover:text-[#E24B4A] ml-0.5">×</button>
+                  </span>
+                );
+              })}
+              <button onClick={clearSpotlight} className="text-[9px] text-[#555] hover:text-white ml-1 transition">Clear</button>
+            </div>
+          </div>
+        )}
+
         {/* Evidence Folder button */}
-        {(!investigation.isStartMode || investigation.step === "open-investigation") && !folderOpen && (
+        {(!investigation.isStartMode || investigation.step === "open-investigation") && !folderOpen && !evidenceFocusMode && (
           <div className="absolute bottom-4 left-4 z-40">
             <EvidenceFolderButton onClick={fetchEvidenceFolder} loading={folderLoading} />
           </div>
         )}
 
         {/* Evidence Tray — split-screen above board */}
-        {folderOpen && (
+        {folderOpen && !evidenceFocusMode && (
           <EvidenceTray
             items={folderItems}
             onAddToBoard={addFolderItemToBoard}
@@ -563,8 +711,8 @@ export function BoardWorkspace({
           <BoardCanvas
             ref={canvasRef}
             archiveTitle={archiveTitle}
-            nodes={boardNodes}
-            connections={boardConnections}
+            nodes={evidenceFocusMode ? miniBoardNodes : boardNodes}
+            connections={evidenceFocusMode ? miniBoardConnections : boardConnections}
             selectedNodeId={selectedNodeId}
             focusedNodeId={focusedNodeId}
             focusState={focusState}
@@ -605,9 +753,9 @@ export function BoardWorkspace({
         />
       )}
 
-      {/* RIGHT: Persons + Email Detail + Context — collapsible */}
-      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${showRightPanel ? (rightCollapsed ? "w-0" : "w-[230px]") : "w-0"}`}>
-        {showRightPanel && !rightCollapsed && (
+      {/* RIGHT: Persons + Email Detail + Context — hidden in evidence-focus mode */}
+      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${evidenceFocusMode ? "w-0" : showRightPanel ? (rightCollapsed ? "w-0" : "w-[230px]") : "w-0"}`}>
+        {showRightPanel && !rightCollapsed && !evidenceFocusMode && (
           <ContextPanel
             activeTab={rightTab}
             onTabChange={setRightTab}
