@@ -487,46 +487,17 @@ export function BoardWorkspace({
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-      {/* LEFT: Email Inbox + Search — collapsible */}
-      <div className={`transition-all duration-300 ease-out h-full flex shrink-0 ${!showLeftPanel ? "w-0 opacity-0 overflow-hidden" : leftCollapsed ? "w-8" : "w-[230px]"}`}>
-        {showLeftPanel && leftCollapsed && (
-          <button
-            onClick={() => setLeftCollapsed(false)}
-            className="w-8 h-full flex flex-col items-center justify-center gap-3 bg-[#0a0a0a] border-r border-[#1a1a1a] hover:bg-[#111] transition"
-            title="Expand evidence panel"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#555]">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-            </svg>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#555]">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22 6 12 13 2 6" />
-            </svg>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[#444]">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </button>
-        )}
+      {/* LEFT: Evidence panel — collapsible */}
+      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${!showLeftPanel ? "w-0" : leftCollapsed ? "w-0" : "w-[230px]"}`}>
         {showLeftPanel && !leftCollapsed && (
-          <div className="relative w-[230px] h-full">
-            <IntakePanel
-              isOnBoard={isOnBoard}
-              onAddEvidence={addEvidenceToBoard}
-              onSelectEmail={handleSelectEmail}
-              selectedEmailId={selectedEmailId}
-              starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
-              investigationStep={investigation.isStartMode ? investigation.step : null}
-            />
-            {/* Collapse tab */}
-            <button
-              onClick={() => setLeftCollapsed(true)}
-              className="absolute top-1/2 -translate-y-1/2 -right-3 z-30 w-6 h-12 rounded-r-lg bg-[#141414] border border-l-0 border-[#2a2a2a] flex items-center justify-center hover:bg-[#222] transition"
-              title="Collapse evidence panel"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[#555]">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-          </div>
+          <IntakePanel
+            isOnBoard={isOnBoard}
+            onAddEvidence={addEvidenceToBoard}
+            onSelectEmail={handleSelectEmail}
+            selectedEmailId={selectedEmailId}
+            starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
+            investigationStep={investigation.isStartMode ? investigation.step : null}
+          />
         )}
       </div>
 
@@ -539,6 +510,36 @@ export function BoardWorkspace({
         >
           Test
         </button>
+
+        {/* Panel toggle buttons — always visible on board */}
+        <div className="absolute top-2 left-3 z-40 flex gap-2">
+          <button
+            onClick={() => setLeftCollapsed(prev => !prev)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
+              !leftCollapsed
+                ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
+                : "border-[#333] bg-[#141414]/90 text-[#888] hover:border-[#555] hover:text-white"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+            </svg>
+            Evidence
+          </button>
+          <button
+            onClick={() => setRightCollapsed(prev => !prev)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
+              !rightCollapsed
+                ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
+                : "border-[#333] bg-[#141414]/90 text-[#888] hover:border-[#555] hover:text-white"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+            People
+          </button>
+        </div>
 
         {/* Evidence Folder button */}
         {(!investigation.isStartMode || investigation.step === "open-investigation") && !folderOpen && (
@@ -605,43 +606,15 @@ export function BoardWorkspace({
       )}
 
       {/* RIGHT: Persons + Email Detail + Context — collapsible */}
-      <div className={`transition-all duration-300 ease-out h-full flex shrink-0 ${showRightPanel ? (rightCollapsed ? "w-8" : "w-[230px]") : "w-0 opacity-0 overflow-hidden"}`}>
-        {showRightPanel && rightCollapsed && (
-          <button
-            onClick={() => setRightCollapsed(false)}
-            className="w-8 h-full flex flex-col items-center justify-center gap-3 bg-[#0a0a0a] border-l border-[#1a1a1a] hover:bg-[#111] transition"
-            title="Expand persons panel"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[#444]">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#555]">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-            </svg>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#555]">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-            </svg>
-          </button>
-        )}
+      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${showRightPanel ? (rightCollapsed ? "w-0" : "w-[230px]") : "w-0"}`}>
         {showRightPanel && !rightCollapsed && (
-          <div className="relative w-[230px] h-full">
-            {/* Collapse tab */}
-            <button
-              onClick={() => setRightCollapsed(true)}
-              className="absolute top-1/2 -translate-y-1/2 -left-3 z-30 w-6 h-12 rounded-l-lg bg-[#141414] border border-r-0 border-[#2a2a2a] flex items-center justify-center hover:bg-[#222] transition"
-              title="Collapse persons panel"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[#555]">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
-            <ContextPanel
-              activeTab={rightTab}
-              onTabChange={setRightTab}
-              people={people}
-              selectedNode={selectedNode}
-              selectedEmailDetail={selectedEmailDetail}
-              focusedNodeId={focusedNodeId}
+          <ContextPanel
+            activeTab={rightTab}
+            onTabChange={setRightTab}
+            people={people}
+            selectedNode={selectedNode}
+            selectedEmailDetail={selectedEmailDetail}
+            focusedNodeId={focusedNodeId}
             focusState={focusState}
             boardConnections={boardConnections}
             boardNodes={boardNodes}
@@ -655,7 +628,6 @@ export function BoardWorkspace({
             onToggleSpotlight={toggleSpotlight}
             onClearSpotlight={clearSpotlight}
           />
-          </div>
         )}
       </div>
 
