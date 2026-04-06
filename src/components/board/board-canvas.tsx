@@ -194,6 +194,22 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   }, [nodes, connections]);
 
   // Which evidence node IDs are currently hidden (collapsed into their group)
+  // Auto-collapse evidence groups with 3+ items
+  useEffect(() => {
+    const updates: Record<string, boolean> = {};
+    for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
+      for (const group of groups) {
+        const key = `${personId}:${group.type}`;
+        if (group.nodes.length >= 3 && collapsedGroups[key] === undefined) {
+          updates[key] = true;
+        }
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      setCollapsedGroups(prev => ({ ...prev, ...updates }));
+    }
+  }, [personEvidenceGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const hiddenNodeIds = useMemo(() => {
     const hidden = new Set<string>();
     for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
@@ -1872,15 +1888,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   function getNodeCenter(nodeId: string): { cx: number; cy: number } | null {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return null;
-    // Try to measure actual DOM element for accurate height
-    const handleEl = document.querySelector(`[data-connect-handle="${nodeId}"]`);
-    if (handleEl) {
-      const cardEl = handleEl.closest(".board-node") as HTMLElement | null;
-      if (cardEl) {
-        const w = cardEl.offsetWidth;
-        const h = cardEl.offsetHeight;
-        return { cx: node.position.x + w / 2, cy: node.position.y + h };
-      }
+    // Measure actual DOM element for accurate dimensions
+    const cardEl = viewportRef.current?.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null;
+    if (cardEl && cardEl.offsetWidth > 0) {
+      const w = cardEl.offsetWidth;
+      const h = cardEl.offsetHeight;
+      return { cx: node.position.x + w / 2, cy: node.position.y + h };
     }
     // Fallback to estimates (accounting for importance scaling)
     const s = getScaledCardSize(node);
@@ -2104,94 +2117,125 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     </feMerge>
                   </filter>
                 </defs>
-                {connections.map((conn) => {
-                  const from = getNodeCenter(conn.sourceId);
-                  const to = getNodeCenter(conn.targetId);
-                  if (!from || !to) return null;
-                  const vis = getEdgeVis(conn.id);
-                  const isHighlight = vis === "highlight";
-                  const isSelected = conn.id === selectedConnectionId;
-                  const isNew = conn.id === newConnectionId;
-                  const lineColor = isNew ? "#4ade80" : isSelected ? "#f87171" : "#ef4444";
-                  const dotColor = isNew ? "#4ade80" : "#ef4444";
-                  const lineFilter = isNew ? "url(#string-glow-green)" : isSelected ? "url(#string-glow-strong)" : isHighlight ? "url(#string-glow)" : "url(#string-glow)";
+                {(() => {
+                  // Group connections by endpoint pair for edge bundling
+                  const pairKey = (a: string, b: string) => a < b ? `${a}::${b}` : `${b}::${a}`;
+                  const bundles = new Map<string, typeof connections>();
+                  for (const conn of connections) {
+                    const key = pairKey(conn.sourceId, conn.targetId);
+                    if (!bundles.has(key)) bundles.set(key, []);
+                    bundles.get(key)!.push(conn);
+                  }
 
-                  // Curved path: arc upward, stronger curve when nodes are on similar Y
-                  const dx = to.cx - from.cx;
-                  const dy = to.cy - from.cy;
-                  const dist = Math.sqrt(dx * dx + dy * dy);
-                  // Only curve when nodes are nearly perfectly aligned vertically or horizontally
-                  const absDx = Math.abs(dx);
-                  const absDy = Math.abs(dy);
-                  const isNearlyVertical = dist > 0 && absDx < 40;
-                  const isNearlyHorizontal = dist > 0 && absDy < 40;
-                  const curveOffsetX = isNearlyVertical ? dist * 0.02 : 0;
-                  const curveOffsetY = isNearlyHorizontal ? dist * 0.02 : 0;
-                  const mx = (from.cx + to.cx) / 2 + curveOffsetX;
-                  const my = (from.cy + to.cy) / 2 - curveOffsetY;
-                  const curvePath = isNearlyVertical || isNearlyHorizontal
-                    ? `M ${from.cx} ${from.cy} Q ${mx} ${my} ${to.cx} ${to.cy}`
-                    : `M ${from.cx} ${from.cy} L ${to.cx} ${to.cy}`;
+                  return Array.from(bundles.entries()).map(([bundleKey, bundleConns]) => {
+                    // Use first connection for geometry
+                    const primary = bundleConns[0];
+                    const from = getNodeCenter(primary.sourceId);
+                    const to = getNodeCenter(primary.targetId);
+                    if (!from || !to) return null;
 
-                  return (
-                    <g key={conn.id}>
-                      {/* Invisible fat hit area for clicking */}
-                      <path
-                        d={curvePath}
-                        stroke="transparent"
-                        strokeWidth={20}
-                        fill="none"
-                        style={{ pointerEvents: "stroke", cursor: "pointer" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedConnectionId(conn.id === selectedConnectionId ? null : conn.id);
-                          onSelectNode(null);
-                        }}
-                      />
-                      {/* Visible curved line */}
-                      <path
-                        id={`conn-path-${conn.id}`}
-                        d={curvePath}
-                        stroke={lineColor}
-                        strokeWidth={isNew ? 5 : isSelected ? 4 : (pathFocus && !showAllInCompare && isHighlight) ? 2 + conn.strength * 4 : isHighlight ? 1 + conn.strength * 0.8 : 1 + conn.strength * 0.8}
-                        strokeOpacity={isNew ? 1 : isSelected ? 1 : isHighlight ? 0.9 : vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : 0.35 + conn.strength * 0.12}
-                        fill="none"
-                        filter={lineFilter}
-                        strokeLinecap="round"
-                        className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`}
-                      />
-                      {/* Endpoint dots */}
-                      <circle cx={from.cx} cy={from.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
-                      <circle cx={to.cx} cy={to.cy} r={isNew ? 6 : 4} fill={dotColor} fillOpacity={vis === "faded" ? (pathFocus && !showAllInCompare ? 0 : 0.08) : isNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
-                      {/* Pulse traveling along new connection */}
-                      {isNew && (
-                        <>
-                          <path d={curvePath} stroke="#4ade80" strokeWidth={8} fill="none" strokeLinecap="round" className="pointer-events-none">
-                            <animate attributeName="stroke-opacity" values="0.4;0" dur="0.5s" fill="freeze" />
-                            <animate attributeName="stroke-width" values="8;2" dur="0.5s" fill="freeze" />
-                          </path>
-                          <circle r={5} fill="#4ade80" filter="url(#string-glow-green)" className="pointer-events-none">
-                            <animateMotion dur="0.35s" fill="freeze">
-                              <mpath href={`#conn-path-${conn.id}`} />
-                            </animateMotion>
-                            <animate attributeName="r" values="5;8;5" dur="0.35s" />
-                            <animate attributeName="opacity" values="1;0.8;0" dur="0.45s" fill="freeze" />
-                          </circle>
-                        </>
-                      )}
-                      {/* Note indicator dot at curve midpoint */}
-                      {conn.note && (
-                        <circle
-                          cx={(from.cx + to.cx + mx) / 3}
-                          cy={(from.cy + to.cy + my) / 3}
-                          r={5}
-                          fill="#f87171"
-                          className="pointer-events-none"
+                    const bundleCount = bundleConns.length;
+                    const isBundled = bundleCount > 1;
+
+                    // Check if any connection in the bundle is new/selected
+                    const hasNew = bundleConns.some(c => c.id === newConnectionId);
+                    const hasSelected = bundleConns.some(c => c.id === selectedConnectionId);
+                    const anyVis = bundleConns.map(c => getEdgeVis(c.id));
+                    const hasHighlight = anyVis.includes("highlight");
+                    const allFaded = anyVis.every(v => v === "faded");
+                    const maxStrength = Math.max(...bundleConns.map(c => c.strength));
+
+                    const lineColor = hasNew ? "#4ade80" : hasSelected ? "#f87171" : "#ef4444";
+                    const dotColor = hasNew ? "#4ade80" : "#ef4444";
+                    const lineFilter = hasNew ? "url(#string-glow-green)" : hasSelected ? "url(#string-glow-strong)" : hasHighlight ? "url(#string-glow)" : "url(#string-glow)";
+
+                    // Curve calculation
+                    const dx = to.cx - from.cx;
+                    const dy = to.cy - from.cy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const absDx = Math.abs(dx);
+                    const absDy = Math.abs(dy);
+                    const isNearlyVertical = dist > 0 && absDx < 40;
+                    const isNearlyHorizontal = dist > 0 && absDy < 40;
+                    const curveOffsetX = isNearlyVertical ? dist * 0.02 : 0;
+                    const curveOffsetY = isNearlyHorizontal ? dist * 0.02 : 0;
+                    const mx = (from.cx + to.cx) / 2 + curveOffsetX;
+                    const my = (from.cy + to.cy) / 2 - curveOffsetY;
+                    const curvePath = isNearlyVertical || isNearlyHorizontal
+                      ? `M ${from.cx} ${from.cy} Q ${mx} ${my} ${to.cx} ${to.cy}`
+                      : `M ${from.cx} ${from.cy} L ${to.cx} ${to.cy}`;
+
+                    // Bundle visual: thicker line + count badge
+                    const bundledWidth = isBundled
+                      ? Math.min(8, 2 + bundleCount * 0.5)
+                      : (hasNew ? 5 : hasSelected ? 4 : (pathFocus && !showAllInCompare && hasHighlight) ? 2 + maxStrength * 4 : 1 + maxStrength * 0.8);
+                    const bundledOpacity = hasNew ? 1 : hasSelected ? 1 : hasHighlight ? 0.9
+                      : allFaded ? (pathFocus && !showAllInCompare ? 0 : 0.08)
+                      : isBundled ? 0.5 + Math.min(0.5, bundleCount * 0.08)
+                      : 0.35 + maxStrength * 0.12;
+
+                    const midX = (from.cx + to.cx) / 2;
+                    const midY = (from.cy + to.cy) / 2;
+
+                    return (
+                      <g key={bundleKey}>
+                        {/* Invisible fat hit area for clicking */}
+                        <path
+                          d={curvePath}
+                          stroke="transparent"
+                          strokeWidth={20}
+                          fill="none"
+                          style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedConnectionId(primary.id === selectedConnectionId ? null : primary.id);
+                            onSelectNode(null);
+                          }}
                         />
-                      )}
-                    </g>
-                  );
-                })}
+                        {/* Visible line */}
+                        <path
+                          id={`conn-path-${primary.id}`}
+                          d={curvePath}
+                          stroke={lineColor}
+                          strokeWidth={bundledWidth}
+                          strokeOpacity={bundledOpacity}
+                          fill="none"
+                          filter={lineFilter}
+                          strokeLinecap="round"
+                          className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`}
+                        />
+                        {/* Endpoint dots */}
+                        <circle cx={from.cx} cy={from.cy} r={hasNew ? 6 : 4} fill={dotColor} fillOpacity={allFaded ? (pathFocus && !showAllInCompare ? 0 : 0.08) : hasNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                        <circle cx={to.cx} cy={to.cy} r={hasNew ? 6 : 4} fill={dotColor} fillOpacity={allFaded ? (pathFocus && !showAllInCompare ? 0 : 0.08) : hasNew ? 1 : 0.6} className={`pointer-events-none ${dragState ? "" : "transition-all duration-500"}`} />
+                        {/* Bundle count badge */}
+                        {isBundled && !allFaded && (
+                          <g className="pointer-events-none">
+                            <circle cx={midX} cy={midY} r={10} fill="#0a0a0a" stroke="#ef4444" strokeWidth={1.5} strokeOpacity={0.5} />
+                            <text x={midX} y={midY + 3.5} textAnchor="middle" fill="#ef4444" fontSize="9" fontWeight="bold" fontFamily="var(--font-mono)">
+                              {bundleCount}
+                            </text>
+                          </g>
+                        )}
+                        {/* Pulse traveling along new connection */}
+                        {hasNew && (
+                          <>
+                            <path d={curvePath} stroke="#4ade80" strokeWidth={8} fill="none" strokeLinecap="round" className="pointer-events-none">
+                              <animate attributeName="stroke-opacity" values="0.4;0" dur="0.5s" fill="freeze" />
+                              <animate attributeName="stroke-width" values="8;2" dur="0.5s" fill="freeze" />
+                            </path>
+                            <circle r={5} fill="#4ade80" filter="url(#string-glow-green)" className="pointer-events-none">
+                              <animateMotion dur="0.35s" fill="freeze">
+                                <mpath href={`#conn-path-${primary.id}`} />
+                              </animateMotion>
+                              <animate attributeName="r" values="5;8;5" dur="0.35s" />
+                              <animate attributeName="opacity" values="1;0.8;0" dur="0.45s" fill="freeze" />
+                            </circle>
+                          </>
+                        )}
+                      </g>
+                    );
+                  });
+                })()}
                 {/* Live connect-drag line */}
                 {connectDrag && (() => {
                   const from = getNodeCenter(connectDrag.sourceId);
@@ -2355,14 +2399,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         }
                         collapsedGroups={collapsedGroups}
                         onToggleCollapse={(evType) => toggleCollapse(node.id, evType)}
-                        onFocus={() => onFocusNode(node.id)} />
+                        onFocus={() => onFocusNode(node.id)}
+                        zoom={zoom} />
                     ) : (
                       <EvidenceCard data={node.data} evidenceType={node.evidenceType} isSelected={selectedNodeId === node.id}
-                        onFocus={() => onFocusNode(node.id)} />
+                        onFocus={() => onFocusNode(node.id)}
+                        zoom={zoom} />
                     )}
-                    {/* Glowing connection handle at bottom center */}
+                    {/* Glowing connection handle at bottom center — hidden at low zoom */}
                     <div
-                      className="absolute left-1/2 -translate-x-1/2 -bottom-3 z-20 flex flex-col items-center"
+                      className={`absolute left-1/2 -translate-x-1/2 -bottom-3 z-20 flex flex-col items-center ${zoom < 0.6 ? "hidden" : ""}`}
                       data-connect-handle={node.id}
                       onMouseDown={(e) => handleConnectHandleDown(e, node.id)}
                     >
@@ -2726,13 +2772,40 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
 // ─── Person Card (large suspect dossier card) ──────────────────────────────
 
-function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse }: {
+function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse, zoom = 1 }: {
   data: Person; isSelected: boolean; onFocus: () => void;
   connectedEvidence?: { emails: number; documents: number; photos: number; total: number };
   evidenceGroups?: { type: EvidenceType; count: number }[];
   collapsedGroups?: Record<string, boolean>;
   onToggleCollapse?: (evType: EvidenceType) => void;
+  zoom?: number;
 }) {
+  // Mini card at low zoom — keep full photo + name, drop metadata
+  if (zoom < 0.6) {
+    return (
+      <div className={`board-entity-card w-[220px] rounded-xl bg-[#111] border-2 border-l-4 border-l-red-500/60 cursor-grab active:cursor-grabbing ${
+        isSelected ? "shadow-2xl shadow-red-600/20 border-red-500/40" : "shadow-xl shadow-black/60 border-[#222]"
+      }`}>
+        <div className="relative h-28 rounded-t-xl overflow-hidden bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a]">
+          {data.imageUrl ? (
+            <img src={data.imageUrl} alt={data.name} className="w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-red-900/25">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+          )}
+          <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#111] to-transparent" />
+        </div>
+        <div className="px-2.5 py-1.5">
+          <h4 className="font-[family-name:var(--font-display)] text-xl leading-none text-white tracking-wide">{data.name}</h4>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`board-entity-card w-[220px] rounded-xl bg-[#111] border-2 border-l-4 border-l-red-500/60 cursor-grab active:cursor-grabbing transition-all ${
       isSelected ? "shadow-2xl shadow-red-600/20 border-red-500/40" : "shadow-xl shadow-black/60 border-[#222] hover:border-[#333]"
@@ -2815,10 +2888,50 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
 
 const PHOTO_CDN = "https://assets.getkino.com";
 
-function EvidenceCard({ data, evidenceType, isSelected, onFocus }: {
-  data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onFocus: () => void;
+function EvidenceCard({ data, evidenceType, isSelected, onFocus, zoom = 1 }: {
+  data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onFocus: () => void; zoom?: number;
 }) {
   const [imgError, setImgError] = useState(false);
+
+  // Mini card at low zoom
+  if (zoom < 0.6) {
+    const typeAccent = evidenceType === "email" ? "border-l-[#4A6D8C]"
+      : evidenceType === "imessage" ? "border-l-[#6B5B95]"
+      : evidenceType === "document" ? "border-l-[#555]"
+      : "border-l-transparent";
+    if (evidenceType === "photo") {
+      const thumbUrl = `${PHOTO_CDN}/cdn-cgi/image/width=500,quality=80,format=auto/photos-deboned/${data.id}`;
+      return (
+        <div className={`board-evidence-card w-[220px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
+          isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
+        }`}>
+          <div className="relative bg-[#0a0a0a]" style={{ minHeight: imgError ? 80 : 200 }}>
+            {!imgError ? (
+              <img src={thumbUrl} alt={data.snippet || data.title} loading="lazy" className="w-full object-cover" style={{ maxHeight: 320 }}
+                onError={() => setImgError(true)} />
+            ) : (
+              <div className="flex items-center justify-center h-20">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-[#333]">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+                </svg>
+              </div>
+            )}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-red-500 bg-[#141414] z-10" />
+          </div>
+          <div className="px-2.5 py-1.5">
+            <h4 className="text-[11px] font-bold leading-tight text-[#888] truncate">{data.title}</h4>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className={`board-evidence-card flex items-center gap-1 rounded bg-[#141414] border border-[#2a2a2a] border-l-2 ${typeAccent} px-1.5 py-1 cursor-grab active:cursor-grabbing`}
+        style={{ width: 110 }}>
+        <span className="text-[10px] shrink-0">{EVIDENCE_TYPE_ICON[evidenceType]}</span>
+        <span className="text-[9px] text-white truncate">{data.title}</span>
+      </div>
+    );
+  }
 
   // Photo evidence gets a big image card
   if (evidenceType === "photo") {
