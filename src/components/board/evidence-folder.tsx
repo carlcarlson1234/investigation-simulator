@@ -92,13 +92,14 @@ export function EvidenceFolderButton({ onClick, loading }: EvidenceFolderButtonP
 
 // ─── Flip Card ──────────────────────────────────────────────────────────────
 
-function FlipCard({ item, isFlipped, onFlip, onAdd, onDismiss, isOnBoard }: {
+function FlipCard({ item, isFlipped, onFlip, onAdd, onDismiss, isOnBoard, onDraggedToBoard }: {
   item: EvidenceFolderItem;
   isFlipped: boolean;
   onFlip: () => void;
   onAdd: () => void;
   onDismiss: () => void;
   isOnBoard: boolean;
+  onDraggedToBoard?: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
   const categoryColor = CATEGORY_COLOR[item.folderCategory] || "#555";
@@ -120,8 +121,20 @@ function FlipCard({ item, isFlipped, onFlip, onAdd, onDismiss, isOnBoard }: {
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full" style={{ backgroundColor: categoryColor, opacity: 0.4 }} />
         </div>
 
-        {/* Front face — evidence content */}
-        <div className="flip-card-front flex flex-col bg-[#111] border border-[#2a2a2a] shadow-lg shadow-black/50">
+        {/* Front face — evidence content, draggable to board */}
+        <div
+          className="flip-card-front flex flex-col bg-[#111] border border-[#2a2a2a] shadow-lg shadow-black/50"
+          draggable={isFlipped && !isOnBoard}
+          onDragStart={(e) => {
+            if (!isFlipped) { e.preventDefault(); return; }
+            e.dataTransfer.setData("application/board-item", JSON.stringify({ id: item.id, kind: "evidence", data: item }));
+            e.dataTransfer.effectAllowed = "move";
+          }}
+          onDragEnd={() => {
+            // Small delay to let the drop handler add it to the board first
+            setTimeout(() => onDraggedToBoard?.(), 100);
+          }}
+        >
           {/* Photo thumbnail */}
           {item.type === "photo" && item.thumbnailUrl && !imgError && (
             <div className="h-20 w-full overflow-hidden bg-black/50 shrink-0">
@@ -234,8 +247,9 @@ export function EvidenceTray({
           <span className="hidden sm:inline font-[family-name:var(--font-display)] text-[10px] tracking-[0.2em] text-[#E24B4A]/25 uppercase border border-[#E24B4A]/10 rounded px-2 py-0.5 rotate-[-2deg]">
             Classified
           </span>
-          <button onClick={onClose} className="rounded p-1 text-[#555] transition hover:text-white hover:bg-white/5">
+          <button onClick={onClose} className="flex items-center gap-1 rounded border border-[#333] px-2 py-1 text-[#666] transition hover:text-white hover:border-[#555] hover:bg-white/5">
             <CloseIcon />
+            <span className="font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-wider">Close</span>
           </button>
         </div>
       </div>
@@ -257,6 +271,7 @@ export function EvidenceTray({
                 onAdd={() => onAddToBoard(item)}
                 onDismiss={() => onDismiss(item.id)}
                 isOnBoard={isOnBoard(item.id)}
+                onDraggedToBoard={() => { if (isOnBoard(item.id)) onDismiss(item.id); }}
               />
             ))
           )}

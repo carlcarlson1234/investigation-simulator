@@ -397,13 +397,21 @@ export function BoardWorkspace({
   const addFolderItemToBoard = useCallback(
     (item: EvidenceFolderItem) => {
       addEvidenceToBoard(item);
-      setFolderItems((prev) => prev.filter((i) => i.id !== item.id));
+      setFolderItems((prev) => {
+        const next = prev.filter((i) => i.id !== item.id);
+        if (next.length === 0) setTimeout(() => setFolderOpen(false), 300);
+        return next;
+      });
     },
     [addEvidenceToBoard]
   );
 
   const dismissFolderItem = useCallback((itemId: string) => {
-    setFolderItems((prev) => prev.filter((i) => i.id !== itemId));
+    setFolderItems((prev) => {
+      const next = prev.filter((i) => i.id !== itemId);
+      if (next.length === 0) setTimeout(() => setFolderOpen(false), 300);
+      return next;
+    });
   }, []);
 
   // ─── Selected node ──────────────────────────────────────────────────────
