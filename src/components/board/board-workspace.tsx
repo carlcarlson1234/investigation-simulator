@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import type { Person, SearchResult, ArchiveStats, EmailEvidence } from "@/lib/types";
+import type { Person, SearchResult, ArchiveStats, EmailEvidence, EvidenceFolderItem } from "@/lib/types";
 import type {
   BoardNode,
   BoardConnection,
@@ -14,6 +14,7 @@ import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
+import { EvidenceFolderButton, EvidenceTray } from "./evidence-folder";
 import { InvestigationOverlay } from "./investigation-overlay";
 import { useInvestigation } from "@/hooks/use-investigation";
 import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
@@ -46,6 +47,61 @@ export function BoardWorkspace({
   const [subjectFocusPersonId, setSubjectFocusPersonId] = useState<string | null>(null);
   const [photoFocusId, setPhotoFocusId] = useState<string | null>(null);
 
+  // ─── Evidence Folder State ──────────────────────────────────────────────
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderItems, setFolderItems] = useState<EvidenceFolderItem[]>([]);
+  const [folderLoading, setFolderLoading] = useState(false);
+  const [seenEvidenceIds, setSeenEvidenceIds] = useState<Set<string>>(() => {
+    const saved_seen = saved?.seenEvidenceIds;
+    return saved_seen ? new Set(saved_seen) : new Set();
+  });
+
+  // ─── Spotlight (multi-select person filter) ──────────────────────────────
+  const [spotlightPersonIds, setSpotlightPersonIds] = useState<Set<string>>(new Set());
+  const [spotlightPulseId, setSpotlightPulseId] = useState<string | null>(null);
+
+  const toggleSpotlight = useCallback((personId: string) => {
+    setSpotlightPersonIds(prev => {
+      const next = new Set(prev);
+      if (next.has(personId)) {
+        next.delete(personId);
+      } else {
+        next.add(personId);
+        // Pulse animation for newly added person
+        setSpotlightPulseId(personId);
+        setTimeout(() => setSpotlightPulseId(null), 400);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSpotlight = useCallback(() => {
+    setSpotlightPersonIds(new Set());
+  }, []);
+
+  // Compute spotlight focus state from multi-selected people
+  const spotlightFocusState = useMemo(() => {
+    if (spotlightPersonIds.size === 0) return null;
+
+    const directIds = new Set<string>();
+    const edgeIds = new Set<string>();
+
+    for (const conn of boardConnections) {
+      const sourceIn = spotlightPersonIds.has(conn.sourceId);
+      const targetIn = spotlightPersonIds.has(conn.targetId);
+      if (sourceIn || targetIn) {
+        edgeIds.add(conn.id);
+        if (sourceIn) directIds.add(conn.targetId);
+        if (targetIn) directIds.add(conn.sourceId);
+      }
+    }
+
+    // Remove spotlight people from directIds (they're "focused", not "direct")
+    for (const id of spotlightPersonIds) directIds.delete(id);
+
+    return { nodeIds: spotlightPersonIds, directIds, edgeIds };
+  }, [spotlightPersonIds, boardConnections]);
+
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
 
@@ -63,7 +119,7 @@ export function BoardWorkspace({
   }, [autoDetectCompletion, investigation.isStartMode]);
 
   // ─── Persist board state to sessionStorage ──────────────────────────────
-  useBoardPersistence(boardNodes, boardConnections, investigation.mode);
+  useBoardPersistence(boardNodes, boardConnections, investigation.mode, seenEvidenceIds);
 
   // ─── Focus computation ───────────────────────────────────────────────────
 
@@ -303,6 +359,61 @@ export function BoardWorkspace({
     []
   );
 
+  // ─── Evidence Folder ─────────────────────────────────────────────────────
+
+  const fetchEvidenceFolder = useCallback(async () => {
+    setFolderLoading(true);
+    try {
+      const personIds = boardNodes
+        .filter((n) => n.kind === "person")
+        .map((n) => n.id);
+
+      const res = await fetch("/api/evidence-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personIds,
+          excludeIds: Array.from(seenEvidenceIds),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setFolderItems(data.items);
+        setSeenEvidenceIds((prev) => {
+          const next = new Set(prev);
+          for (const item of data.items) next.add(item.id);
+          return next;
+        });
+        setFolderOpen(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch evidence folder:", err);
+    } finally {
+      setFolderLoading(false);
+    }
+  }, [boardNodes, seenEvidenceIds]);
+
+  const addFolderItemToBoard = useCallback(
+    (item: EvidenceFolderItem) => {
+      addEvidenceToBoard(item);
+      setFolderItems((prev) => {
+        const next = prev.filter((i) => i.id !== item.id);
+        if (next.length === 0) setTimeout(() => setFolderOpen(false), 300);
+        return next;
+      });
+    },
+    [addEvidenceToBoard]
+  );
+
+  const dismissFolderItem = useCallback((itemId: string) => {
+    setFolderItems((prev) => {
+      const next = prev.filter((i) => i.id !== itemId);
+      if (next.length === 0) setTimeout(() => setFolderOpen(false), 300);
+      return next;
+    });
+  }, []);
+
   // ─── Selected node ──────────────────────────────────────────────────────
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
@@ -367,15 +478,18 @@ export function BoardWorkspace({
     "create-connection": 3, "connection-confirmed": 4, "tutorial-complete": 5, "open-investigation": 6,
   };
   const stepIdx = investigation.isStartMode ? (STEP_ORDER_INDEX[investigation.step] ?? 6) : 6;
-  const showRightPanel = true;                                           // always visible
-  const showBoard = true;                                                // always visible
-  const showLeftPanel = !investigation.isStartMode || stepIdx >= 1;      // place-evidence+
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+
+  const showRightPanel = true;
+  const showBoard = true;
+  const showLeftPanel = !investigation.isStartMode || stepIdx >= 1;
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-      {/* LEFT: Email Inbox + Search — hidden until intro-evidence */}
-      <div className={`transition-all duration-700 ease-out h-full ${showLeftPanel ? "w-[230px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
-        {showLeftPanel && (
+      {/* LEFT: Evidence panel — collapsible */}
+      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${!showLeftPanel ? "w-0" : leftCollapsed ? "w-0" : "w-[230px]"}`}>
+        {showLeftPanel && !leftCollapsed && (
           <IntakePanel
             isOnBoard={isOnBoard}
             onAddEvidence={addEvidenceToBoard}
@@ -396,6 +510,55 @@ export function BoardWorkspace({
         >
           Test
         </button>
+
+        {/* Panel toggle buttons — always visible on board */}
+        <div className="absolute top-2 left-3 z-40 flex gap-2">
+          <button
+            onClick={() => setLeftCollapsed(prev => !prev)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
+              !leftCollapsed
+                ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
+                : "border-[#333] bg-[#141414]/90 text-[#888] hover:border-[#555] hover:text-white"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+            </svg>
+            Evidence
+          </button>
+          <button
+            onClick={() => setRightCollapsed(prev => !prev)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
+              !rightCollapsed
+                ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
+                : "border-[#333] bg-[#141414]/90 text-[#888] hover:border-[#555] hover:text-white"
+            }`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+            People
+          </button>
+        </div>
+
+        {/* Evidence Folder button */}
+        {(!investigation.isStartMode || investigation.step === "open-investigation") && !folderOpen && (
+          <div className="absolute bottom-4 left-4 z-40">
+            <EvidenceFolderButton onClick={fetchEvidenceFolder} loading={folderLoading} />
+          </div>
+        )}
+
+        {/* Evidence Tray — split-screen above board */}
+        {folderOpen && (
+          <EvidenceTray
+            items={folderItems}
+            onAddToBoard={addFolderItemToBoard}
+            onDismiss={dismissFolderItem}
+            onClose={() => setFolderOpen(false)}
+            isOnBoard={isOnBoard}
+          />
+        )}
+
         {showBoard && (
           <BoardCanvas
             ref={canvasRef}
@@ -424,6 +587,8 @@ export function BoardWorkspace({
             investigationStep={investigation.isStartMode ? investigation.step : null}
             onUpdateConnection={updateConnection}
             onDeleteConnection={deleteConnection}
+            spotlightFocusState={spotlightFocusState}
+            spotlightPulseId={spotlightPulseId}
           />
         )}
       </div>
@@ -440,9 +605,9 @@ export function BoardWorkspace({
         />
       )}
 
-      {/* RIGHT: Persons + Email Detail + Context — hidden until intro-people */}
-      <div className={`transition-all duration-700 ease-out h-full ${showRightPanel ? "w-[230px] opacity-100" : "w-0 opacity-0 overflow-hidden"}`}>
-        {showRightPanel && (
+      {/* RIGHT: Persons + Email Detail + Context — collapsible */}
+      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${showRightPanel ? (rightCollapsed ? "w-0" : "w-[230px]") : "w-0"}`}>
+        {showRightPanel && !rightCollapsed && (
           <ContextPanel
             activeTab={rightTab}
             onTabChange={setRightTab}
@@ -459,6 +624,9 @@ export function BoardWorkspace({
             onSelectNode={selectNode}
             suggestedPeople={suggestedPeople}
             investigationStep={investigation.isStartMode ? investigation.step : null}
+            spotlightPersonIds={spotlightPersonIds}
+            onToggleSpotlight={toggleSpotlight}
+            onClearSpotlight={clearSpotlight}
           />
         )}
       </div>
@@ -521,6 +689,7 @@ export function BoardWorkspace({
           onFocusNode={focusNode}
         />
       )}
+
     </div>
   );
 }

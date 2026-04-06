@@ -132,7 +132,9 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                       onDragStart={(e) => {
                         e.dataTransfer.setData("application/board-item", JSON.stringify({ kind: "evidence", data: lead }));
                         e.dataTransfer.effectAllowed = "move";
+                        e.currentTarget.classList.add("dragging-source");
                       }}
+                      onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
                       className={`rounded-xl border cursor-grab active:cursor-grabbing transition-all overflow-hidden ${
                         isOnBoard(lead.id)
                           ? "border-green-600/20 bg-green-950/10 opacity-50"
@@ -374,7 +376,9 @@ function EmailInbox({
                   JSON.stringify({ id: email.id, kind: "evidence", data: emailToSearchResult(email) })
                 );
                 e.dataTransfer.effectAllowed = "move";
+                e.currentTarget.classList.add("dragging-source");
               }}
+              onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
               className={`group border-b border-[#1a1a1a] px-3 py-2.5 cursor-pointer transition ${
                 isSelected
                   ? "bg-red-600/8 border-l-2 border-l-red-500"
@@ -605,7 +609,9 @@ function PhotoGallery({
                     JSON.stringify({ id: photo.id, kind: "evidence", data: photoToSearchResult(photo) })
                   );
                   e.dataTransfer.effectAllowed = "move";
+                  e.currentTarget.classList.add("dragging-source");
                 }}
+                onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
                 className={`group relative rounded-lg overflow-hidden border transition cursor-pointer ${
                   onBoard
                     ? "border-red-500/20 opacity-40"
@@ -858,7 +864,9 @@ function FilesTab({
                   JSON.stringify({ id: file.id, kind: "evidence", data: fileToSearchResult(file) })
                 );
                 e.dataTransfer.effectAllowed = "move";
+                e.currentTarget.classList.add("dragging-source");
               }}
+              onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
               className={`group border-b border-[#1a1a1a] px-3 py-2.5 cursor-pointer transition ${
                 onBoard
                   ? "bg-[#0f0f0f] opacity-50"
@@ -1049,7 +1057,9 @@ function EvidenceSearch({
                   JSON.stringify({ id: result.id, kind: "evidence", data: result })
                 );
                 e.dataTransfer.effectAllowed = "move";
+                e.currentTarget.classList.add("dragging-source");
               }}
+              onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
               className={`group rounded border p-2.5 transition ${
                 onBoard
                   ? "border-red-500/20 bg-red-600/5 opacity-50 cursor-default"

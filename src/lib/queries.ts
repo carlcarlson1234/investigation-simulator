@@ -20,11 +20,11 @@ import type {
 
 const PHOTO_CDN = "https://assets.getkino.com";
 
-function photoImageUrl(photoId: string): string {
+export function photoImageUrl(photoId: string): string {
   return `${PHOTO_CDN}/photos/${photoId}`;
 }
 
-function photoThumbnailUrl(photoId: string, width = 400): string {
+export function photoThumbnailUrl(photoId: string, width = 400): string {
   return `${PHOTO_CDN}/cdn-cgi/image/width=${width},quality=80,format=auto/photos-deboned/${photoId}`;
 }
 
@@ -790,6 +790,234 @@ export async function browsePhotos(opts: {
     pageSize,
     hasMore: offset + pageSize < total,
   };
+}
+
+// ─── Evidence Folder Queries ───────────────────────────────────────────────
+
+/** Generate a random offset capped to avoid going past the end of results. */
+function randOffset(total: number, batchSize: number): number {
+  const max = Math.max(0, total - batchSize);
+  return max > 0 ? Math.floor(Math.random() * max) : 0;
+}
+
+/**
+ * Get evidence directly related to people on the board.
+ * Photos where board people's faces are detected + emails sent to/from them.
+ */
+export async function getDirectEvidence(
+  personIds: string[],
+  excludeIds: string[],
+  limit = 3
+): Promise<SearchResult[]> {
+  if (personIds.length === 0) return [];
+  const results: SearchResult[] = [];
+
+  // Photos featuring board people (via photo_faces) — use OFFSET for randomness
+  const photoLimit = Math.ceil(limit / 2);
+  const countRows = await jmail`
+    SELECT count(DISTINCT pf.photo_id)::int as cnt
+    FROM photo_faces pf
+    WHERE pf.person_id = ANY(${personIds})
+  `;
+  const photoTotal = Math.max(0, Number(countRows[0]?.cnt ?? 0) - photoLimit);
+  const photoOffset = photoTotal > 0 ? Math.floor(Math.random() * photoTotal) : 0;
+
+  const photoRows = await jmail`
+    SELECT p.id, p.raw_json, array_agg(DISTINCT pf.person_id) as face_person_ids
+    FROM photo_faces pf
+    JOIN photos p ON p.id = pf.photo_id
+    WHERE pf.person_id = ANY(${personIds})
+      ${excludeIds.length > 0 ? jmail`AND p.id != ALL(${excludeIds})` : jmail``}
+    GROUP BY p.id, p.raw_json
+    LIMIT ${photoLimit} OFFSET ${photoOffset}
+  `;
+
+  // Get person names for photo titles
+  const facePersonIds = [...new Set(photoRows.flatMap((r: Record<string, unknown>) => parseJsonbArray(r.face_person_ids)))];
+  let personNames: Record<string, string> = {};
+  if (facePersonIds.length > 0) {
+    const nameRows = await jmail`SELECT id, name FROM people WHERE id = ANY(${facePersonIds})`;
+    for (const nr of nameRows) personNames[nr.id as string] = nr.name as string;
+  }
+
+  for (const r of photoRows) {
+    const rj = (r.raw_json as Record<string, unknown>) ?? {};
+    const desc = ((rj.image_description as string) ?? "").slice(0, 150);
+    const faceIds = parseJsonbArray(r.face_person_ids);
+    const faceNames = faceIds.map(id => personNames[id] || id).filter(Boolean);
+    results.push({
+      id: r.id as string,
+      type: "photo",
+      title: faceNames.length > 0 ? `Photo — ${faceNames.join(", ")}` : "Photo",
+      snippet: desc,
+      date: null,
+      sender: faceNames.length > 0 ? faceNames.join(", ") : null,
+      score: 1,
+      starCount: 0,
+    });
+  }
+
+  // Emails involving board people (by email address or name)
+  const emailLimit = limit - results.length;
+  if (emailLimit > 0) {
+    const pRows = await jmail`
+      SELECT id, name, email_addresses FROM people WHERE id = ANY(${personIds})
+    `;
+    const patterns: string[] = [];
+    for (const p of pRows) {
+      patterns.push(`%${(p.name as string)}%`);
+      const addrs = parseJsonbArray(p.email_addresses);
+      for (const addr of addrs) {
+        if (addr && addr.length > 3) patterns.push(`%${addr}%`);
+      }
+    }
+
+    if (patterns.length > 0) {
+      // Match on sender only (fast — sender is a simple text column)
+      const emailRows = await jmail`
+        SELECT id, subject, sender, raw_json->>'sent_at' as sent_at,
+               COALESCE(star_count, 0) as star_count
+        FROM emails
+        WHERE sender ILIKE ANY(${patterns})
+          AND subject IS NOT NULL AND subject != ''
+          ${excludeIds.length > 0 ? jmail`AND id != ALL(${excludeIds})` : jmail``}
+        ORDER BY COALESCE(star_count, 0) DESC
+        LIMIT ${emailLimit}
+      `;
+      for (const r of emailRows) {
+        results.push({
+          id: r.id as string,
+          type: "email",
+          title: (r.subject as string) || "(No subject)",
+          snippet: (r.sender as string) ?? "Unknown sender",
+          date: formatDate(r.sent_at as string),
+          sender: r.sender as string,
+          score: 1,
+          starCount: Number(r.star_count ?? 0),
+        });
+      }
+    }
+  }
+
+  return results.slice(0, limit);
+}
+
+/**
+ * Get interesting but not directly related evidence.
+ * High-star emails not from board people + documents with suggestive keywords.
+ */
+export async function getCrypticEvidence(
+  personIds: string[],
+  excludeIds: string[],
+  limit = 2
+): Promise<SearchResult[]> {
+  const results: SearchResult[] = [];
+
+  // High-star emails — TABLESAMPLE for speed
+  const emailLimit = Math.ceil(limit / 2) + 1;
+  const emailRows = await jmail`
+    SELECT id, subject, sender, raw_json->>'sent_at' as sent_at,
+           COALESCE(star_count, 0) as star_count
+    FROM emails TABLESAMPLE SYSTEM(1)
+    WHERE star_count >= 2
+      AND subject IS NOT NULL AND subject != ''
+      ${excludeIds.length > 0 ? jmail`AND id != ALL(${excludeIds})` : jmail``}
+    LIMIT ${emailLimit}
+  `;
+  for (const r of emailRows) {
+    results.push({
+      id: r.id as string,
+      type: "email",
+      title: (r.subject as string) || "(No subject)",
+      snippet: (r.sender as string) ?? "Unknown sender",
+      date: formatDate(r.sent_at as string),
+      sender: r.sender as string,
+      score: 0.5,
+      starCount: Number(r.star_count ?? 0),
+    });
+  }
+
+  // Random document — lightweight offset-based pick
+  const docLimit = limit - results.length;
+  if (docLimit > 0) {
+    const docRows = await jmail`
+      SELECT d.id, d.raw_json->>'original_filename' as filename,
+             d.volume
+      FROM documents d TABLESAMPLE SYSTEM(5)
+      ${excludeIds.length > 0 ? jmail`WHERE d.id != ALL(${excludeIds})` : jmail``}
+      LIMIT ${docLimit}
+    `;
+    for (const r of docRows) {
+      results.push({
+        id: r.id as string,
+        type: "document",
+        title: (r.filename as string) || (r.id as string),
+        snippet: (r.volume as string) ?? "Document",
+        date: null,
+        sender: (r.volume as string) ?? null,
+        score: 0.5,
+        starCount: 0,
+      });
+    }
+  }
+
+  return results.slice(0, limit);
+}
+
+/**
+ * Get random fodder evidence — noise items to pad the folder.
+ * Uses OFFSET instead of ORDER BY RANDOM() for performance.
+ */
+export async function getFodderEvidence(
+  excludeIds: string[],
+  limit = 2
+): Promise<SearchResult[]> {
+  const results: SearchResult[] = [];
+
+  // Random emails — use TABLESAMPLE for fast random access
+  const emailLimit = Math.ceil(limit / 2);
+  const emailRows = await jmail`
+    SELECT id, subject, sender, raw_json->>'sent_at' as sent_at,
+           COALESCE(star_count, 0) as star_count
+    FROM emails TABLESAMPLE SYSTEM(1)
+    WHERE subject IS NOT NULL AND subject != ''
+    LIMIT ${emailLimit}
+  `;
+  for (const r of emailRows) {
+    results.push({
+      id: r.id as string,
+      type: "email",
+      title: (r.subject as string) || "(No subject)",
+      snippet: (r.sender as string) ?? "Unknown sender",
+      date: formatDate(r.sent_at as string),
+      sender: r.sender as string,
+      score: 0,
+      starCount: Number(r.star_count ?? 0),
+    });
+  }
+
+  // Random photos — use TABLESAMPLE for fast random access
+  const photoLimit = limit - results.length;
+  const photoRows = await jmail`
+    SELECT id, raw_json FROM photos TABLESAMPLE SYSTEM(5)
+    LIMIT ${photoLimit > 0 ? photoLimit : 1}
+  `;
+  for (const r of photoRows) {
+    const rj = (r.raw_json as Record<string, unknown>) ?? {};
+    const desc = ((rj.image_description as string) ?? "").slice(0, 150);
+    results.push({
+      id: r.id as string,
+      type: "photo",
+      title: "Photo",
+      snippet: desc,
+      date: null,
+      sender: null,
+      score: 0,
+      starCount: 0,
+    });
+  }
+
+  return results.slice(0, limit);
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

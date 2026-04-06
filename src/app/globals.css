@@ -130,12 +130,18 @@ body {
 /* ─── Corkboard grid (the investigation board background) ───────────────── */
 
 .dot-grid {
+  background-color: transparent;
+}
+
+/* Parallax depth layer — moves slower than the board for a 3D feel */
+.parallax-bg {
   background-color: #0e0e0e;
   background-image:
-    radial-gradient(circle, rgba(220, 38, 38, 0.08) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    radial-gradient(circle, rgba(220, 38, 38, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
   background-size: 30px 30px, 60px 60px, 60px 60px;
+  z-index: 0;
 }
 
 /* ─── Red string connection (SVG lines styled in canvas) ────────────────── */
@@ -242,10 +248,64 @@ body {
   transition: box-shadow 0.15s ease, opacity 0.3s ease;
 }
 
-.board-node--dragging,
-.board-node--dragging *,
-.board-node--dragging .board-entity-card {
+/* Dragging: allow transform/shadow to animate (scale-up, rotation), instant position */
+.board-node--dragging {
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out !important;
+  z-index: 100 !important;
+}
+.board-node--dragging .board-entity-card,
+.board-node--dragging .board-evidence-card {
   transition: none !important;
+}
+
+/* Bounce on drop (on-board reposition) */
+@keyframes card-bounce-drop {
+  0%   { transform: scale(1.05); }
+  50%  { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+.board-node--dropping {
+  animation: card-bounce-drop 0.25s ease-out forwards;
+}
+
+/* Bounce on land (intake → board) */
+@keyframes card-land-bounce {
+  0%   { transform: scale(1.08); opacity: 0.7; }
+  40%  { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.board-node--just-dropped {
+  animation: card-land-bounce 0.3s ease-out forwards;
+}
+
+/* Drop ripple — red pulse expanding from drop point */
+@keyframes drop-ripple-expand {
+  0%   { transform: scale(0.3); opacity: 0.5; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+.drop-ripple {
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(220, 38, 38, 0.3) 0%, transparent 70%);
+  animation: drop-ripple-expand 0.35s ease-out forwards;
+  pointer-events: none;
+}
+
+/* Glow on valid connection target */
+.board-node--connect-glow {
+  box-shadow: 0 0 25px 6px rgba(220, 38, 38, 0.35), 0 0 50px 12px rgba(220, 38, 38, 0.12) !important;
+  transition: box-shadow 0.15s ease-out !important;
+}
+
+/* Card repelling during drag */
+.board-node--repelling {
+  transition: transform 0.15s ease-out !important;
+}
+
+/* Source card dimming during native drag */
+.dragging-source {
+  opacity: 0.4 !important;
+  transform: scale(0.95) !important;
+  transition: opacity 0.15s ease, transform 0.15s ease !important;
 }
 
 .board-node--arranging {
@@ -569,4 +629,77 @@ svg .board-line--arranging {
 
 .animate-scale-in {
   animation: scale-in 0.5s ease-out forwards;
+}
+
+/* ─── Evidence Folder ────────────────────────────────────────────────────── */
+
+/* ─── Evidence Tray ──────────────────────────────────────────────────────── */
+
+@keyframes folder-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(226, 75, 74, 0.4); }
+  50% { box-shadow: 0 0 16px 3px rgba(226, 75, 74, 0.15); }
+}
+
+.folder-button-pulse {
+  animation: folder-pulse 2.5s ease-in-out infinite;
+}
+
+/* Tray slide-in */
+.evidence-tray {
+  animation: tray-slide-in 0.4s ease-out forwards;
+  overflow: hidden;
+}
+
+@keyframes tray-slide-in {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 40vh; opacity: 1; }
+}
+
+/* Flip card */
+.flip-card {
+  perspective: 800px;
+  cursor: pointer;
+}
+
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-style: preserve-3d;
+}
+
+.flip-card-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.flip-card-front,
+.flip-card-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.flip-card-front {
+  transform: rotateY(180deg);
+}
+
+/* Staggered card entrance */
+.tray-card-enter {
+  opacity: 0;
+  animation: tray-card-deal 0.3s ease-out forwards;
+}
+.tray-card-enter:nth-child(1) { animation-delay: 0.05s; }
+.tray-card-enter:nth-child(2) { animation-delay: 0.10s; }
+.tray-card-enter:nth-child(3) { animation-delay: 0.15s; }
+.tray-card-enter:nth-child(4) { animation-delay: 0.20s; }
+.tray-card-enter:nth-child(5) { animation-delay: 0.25s; }
+.tray-card-enter:nth-child(6) { animation-delay: 0.30s; }
+.tray-card-enter:nth-child(7) { animation-delay: 0.35s; }
+
+@keyframes tray-card-deal {
+  from { opacity: 0; transform: translateY(-20px) rotate(-5deg); }
+  to { opacity: 1; transform: translateY(0) rotate(0); }
 }

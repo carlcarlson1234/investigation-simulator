@@ -10,6 +10,7 @@ interface PersistedBoardState {
   nodes: BoardNode[];
   connections: BoardConnection[];
   mode: InvestigationMode;
+  seenEvidenceIds?: string[];
 }
 
 /** Read saved board state from sessionStorage (call once on mount). */
@@ -31,17 +32,23 @@ export function useBoardPersistence(
   nodes: BoardNode[],
   connections: BoardConnection[],
   mode: InvestigationMode,
+  seenEvidenceIds?: Set<string>,
 ) {
   const hasMounted = useRef(false);
 
   const save = useCallback(() => {
     try {
-      const state: PersistedBoardState = { nodes, connections, mode };
+      const state: PersistedBoardState = {
+        nodes,
+        connections,
+        mode,
+        seenEvidenceIds: seenEvidenceIds ? Array.from(seenEvidenceIds) : undefined,
+      };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
       // sessionStorage full or unavailable — silently ignore
     }
-  }, [nodes, connections, mode]);
+  }, [nodes, connections, mode, seenEvidenceIds]);
 
   // Save whenever nodes/connections/mode change (skip initial mount to avoid overwriting with empty state during hydration)
   useEffect(() => {
