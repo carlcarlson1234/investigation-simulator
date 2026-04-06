@@ -32,6 +32,9 @@ interface ContextPanelProps {
   onSelectNode: (id: string | null) => void;
   suggestedPeople?: Person[];
   investigationStep?: InvestigationStep | null;
+  spotlightPersonIds?: Set<string>;
+  onToggleSpotlight?: (personId: string) => void;
+  onClearSpotlight?: () => void;
 }
 
 const TABS: { key: RightPanelTab; label: string }[] = [
@@ -55,6 +58,9 @@ export function ContextPanel({
   onSelectNode,
   suggestedPeople,
   investigationStep,
+  spotlightPersonIds,
+  onToggleSpotlight,
+  onClearSpotlight,
 }: ContextPanelProps) {
   const [personSearch, setPersonSearch] = useState("");
   const isOnboarding = investigationStep != null;
@@ -119,7 +125,8 @@ export function ContextPanel({
         {activeTab === "persons" && (
           <PersonsTab people={filteredPeople} search={personSearch} onSearchChange={setPersonSearch}
             isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
-            suggestedPeople={suggestedPeople} investigationStep={investigationStep} boardConnections={boardConnections} />
+            suggestedPeople={suggestedPeople} investigationStep={investigationStep} boardConnections={boardConnections}
+            spotlightPersonIds={spotlightPersonIds} onToggleSpotlight={onToggleSpotlight} onClearSpotlight={onClearSpotlight} />
         )}
         {activeTab === "details" && (
           selectedEmailDetail && !selectedNode ? (
@@ -136,13 +143,16 @@ export function ContextPanel({
 
 // ─── Persons Tab ──────────────────────────────────────────────────────────
 
-function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep, boardConnections }: {
+function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, focusedNodeId, onFocusNode, suggestedPeople, investigationStep, boardConnections, spotlightPersonIds, onToggleSpotlight, onClearSpotlight }: {
   people: Person[]; search: string; onSearchChange: (v: string) => void;
   isOnBoard: (id: string) => boolean; onAddPerson: (id: string) => void;
   focusedNodeId: string | null; onFocusNode: (id: string | null) => void;
   suggestedPeople?: Person[];
   investigationStep?: InvestigationStep | null;
   boardConnections: BoardConnection[];
+  spotlightPersonIds?: Set<string>;
+  onToggleSpotlight?: (id: string) => void;
+  onClearSpotlight?: () => void;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const isOnboarding = investigationStep != null;
@@ -205,6 +215,21 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
         )}
       </div>
 
+      {/* Spotlight counter */}
+      {spotlightPersonIds && spotlightPersonIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-600/5 px-2.5 py-1.5 mb-2">
+          <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.1em] text-red-400/80">
+            Filtering {spotlightPersonIds.size} of {people.length}
+          </span>
+          <button
+            onClick={() => onClearSpotlight?.()}
+            className="font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-wider text-[#666] hover:text-red-400 transition"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Suggested People — pinned at top */}
       {!isSearching && suggestedPeople && suggestedPeople.length > 0 && (
           <div className="mb-3">
@@ -224,11 +249,13 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
                 isOnBoard={isOnBoard(person.id)}
                 isFocused={focusedNodeId === person.id}
                 isSuggested
+                isSpotlighted={spotlightPersonIds?.has(person.id)}
                 isActiveTarget={isOnboarding && !isOnBoard(person.id) && (
                   investigationStep === "place-epstein" || investigationStep === "pick-person"
                 )}
                 onAddPerson={onAddPerson}
                 onFocusNode={onFocusNode}
+                onToggleSpotlight={onToggleSpotlight}
                 connectionCount={connectionCounts.get(person.id) || 0}
               />
             ))}
@@ -254,9 +281,11 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
             isOnBoard={isOnBoard(person.id)}
             isFocused={focusedNodeId === person.id}
             isSuggested={false}
+            isSpotlighted={spotlightPersonIds?.has(person.id)}
             isActiveTarget={false}
             onAddPerson={onAddPerson}
             onFocusNode={onFocusNode}
+            onToggleSpotlight={onToggleSpotlight}
             connectionCount={connectionCounts.get(person.id) || 0}
           />
         ))}
@@ -273,14 +302,16 @@ function PersonsTab({ people, search, onSearchChange, isOnBoard, onAddPerson, fo
 
 // ── Person Card (used in both suggested and all-people lists) ────────────────
 
-function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget, onAddPerson, onFocusNode, connectionCount }: {
+function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget, isSpotlighted, onAddPerson, onFocusNode, onToggleSpotlight, connectionCount }: {
   person: Person;
   isOnBoard: boolean;
   isFocused: boolean;
   isSuggested: boolean;
   isActiveTarget: boolean;
+  isSpotlighted?: boolean;
   onAddPerson: (id: string) => void;
   onFocusNode: (id: string | null) => void;
+  onToggleSpotlight?: (id: string) => void;
   connectionCount: number;
 }) {
   const [imgLoaded, setImgLoaded] = useState(true);
@@ -295,13 +326,16 @@ function PersonCard({ person, isOnBoard, isFocused, isSuggested, isActiveTarget,
         e.currentTarget.classList.add("dragging-source");
       }}
       onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
+      onClick={() => isOnBoard && onToggleSpotlight?.(person.id)}
       className={`group rounded-xl border overflow-hidden transition-all ${
-        isActiveTarget
+        isSpotlighted
+          ? "border-l-4 border-l-red-500 border-red-500/30 bg-red-600/10 shadow-lg shadow-red-600/10 cursor-pointer"
+          : isActiveTarget
           ? "border-red-500/50 bg-red-950/20 shadow-lg shadow-red-600/15 ring-1 ring-red-500/30 cursor-grab active:cursor-grabbing"
           : isFocused
           ? "border-red-500/40 bg-red-600/10"
           : isOnBoard
-          ? "border-green-600/15 bg-green-950/5 opacity-50"
+          ? "border-green-600/15 bg-green-950/5 opacity-50 cursor-pointer hover:opacity-70"
           : isSuggested
           ? "border-red-500/25 bg-[#111] hover:border-red-500/40 cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-red-900/10"
           : "border-[#1e1e1e] bg-[#0e0e0e] hover:border-[#333] hover:bg-[#111] cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-black/30"

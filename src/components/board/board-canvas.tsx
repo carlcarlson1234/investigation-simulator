@@ -48,6 +48,8 @@ interface BoardCanvasProps {
   onOpenPhotoView: (photoId: string) => void;
   onUpdateConnection?: (connId: string, updates: Partial<BoardConnection>) => void;
   onDeleteConnection?: (connId: string) => void;
+  spotlightFocusState?: { nodeIds: Set<string>; directIds: Set<string>; edgeIds: Set<string> } | null;
+  spotlightPulseId?: string | null;
   stats: ArchiveStats;
   score: number;
   firstPlacementMode?: boolean;
@@ -77,6 +79,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onOpenPhotoView,
     onUpdateConnection,
     onDeleteConnection,
+    spotlightFocusState,
+    spotlightPulseId,
     stats,
     score,
     firstPlacementMode,
@@ -283,6 +287,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   // ─── Focus visibility ──────────────────────────────────────────────────
 
   function getNodeVis(nodeId: string): "focused" | "direct" | "second" | "dimmed" | "normal" {
+    // Spotlight takes precedence when active
+    if (spotlightFocusState) {
+      if (spotlightFocusState.nodeIds.has(nodeId)) return "focused";
+      if (spotlightFocusState.directIds.has(nodeId)) return "direct";
+      return "dimmed";
+    }
     const fs = (pathFocus && !showAllInCompare) ? pathFocus : (!pathFocus ? focusState : null);
     if (!fs) return "normal";
     // Nodes added after compare started are always visible
@@ -294,6 +304,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   }
 
   function getEdgeVis(connId: string): "highlight" | "faded" | "normal" {
+    // Spotlight takes precedence when active
+    if (spotlightFocusState) {
+      if (spotlightFocusState.edgeIds.has(connId)) return "highlight";
+      return "faded";
+    }
     const fs = (pathFocus && !showAllInCompare) ? pathFocus : (!pathFocus ? focusState : null);
     if (!fs) return "normal";
     if (fs.edgeIds.has(connId)) return "highlight";
@@ -2139,6 +2154,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
                     // Check if any connection in the bundle is new/selected
                     const hasNew = bundleConns.some(c => c.id === newConnectionId);
+                    const hasPulse = spotlightPulseId ? bundleConns.some(c => c.sourceId === spotlightPulseId || c.targetId === spotlightPulseId) : false;
                     const hasSelected = bundleConns.some(c => c.id === selectedConnectionId);
                     const anyVis = bundleConns.map(c => getEdgeVis(c.id));
                     const hasHighlight = anyVis.includes("highlight");
@@ -2217,13 +2233,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                           </g>
                         )}
                         {/* Pulse traveling along new connection */}
-                        {hasNew && (
+                        {(hasNew || hasPulse) && (
                           <>
-                            <path d={curvePath} stroke="#4ade80" strokeWidth={8} fill="none" strokeLinecap="round" className="pointer-events-none">
+                            <path d={curvePath} stroke={hasNew ? "#4ade80" : "#ef4444"} strokeWidth={8} fill="none" strokeLinecap="round" className="pointer-events-none">
                               <animate attributeName="stroke-opacity" values="0.4;0" dur="0.5s" fill="freeze" />
                               <animate attributeName="stroke-width" values="8;2" dur="0.5s" fill="freeze" />
                             </path>
-                            <circle r={5} fill="#4ade80" filter="url(#string-glow-green)" className="pointer-events-none">
+                            <circle r={5} fill={hasNew ? "#4ade80" : "#ef4444"} filter={hasNew ? "url(#string-glow-green)" : "url(#string-glow)"} className="pointer-events-none">
                               <animateMotion dur="0.35s" fill="freeze">
                                 <mpath href={`#conn-path-${primary.id}`} />
                               </animateMotion>

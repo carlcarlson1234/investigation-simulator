@@ -56,6 +56,52 @@ export function BoardWorkspace({
     return saved_seen ? new Set(saved_seen) : new Set();
   });
 
+  // ─── Spotlight (multi-select person filter) ──────────────────────────────
+  const [spotlightPersonIds, setSpotlightPersonIds] = useState<Set<string>>(new Set());
+  const [spotlightPulseId, setSpotlightPulseId] = useState<string | null>(null);
+
+  const toggleSpotlight = useCallback((personId: string) => {
+    setSpotlightPersonIds(prev => {
+      const next = new Set(prev);
+      if (next.has(personId)) {
+        next.delete(personId);
+      } else {
+        next.add(personId);
+        // Pulse animation for newly added person
+        setSpotlightPulseId(personId);
+        setTimeout(() => setSpotlightPulseId(null), 400);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSpotlight = useCallback(() => {
+    setSpotlightPersonIds(new Set());
+  }, []);
+
+  // Compute spotlight focus state from multi-selected people
+  const spotlightFocusState = useMemo(() => {
+    if (spotlightPersonIds.size === 0) return null;
+
+    const directIds = new Set<string>();
+    const edgeIds = new Set<string>();
+
+    for (const conn of boardConnections) {
+      const sourceIn = spotlightPersonIds.has(conn.sourceId);
+      const targetIn = spotlightPersonIds.has(conn.targetId);
+      if (sourceIn || targetIn) {
+        edgeIds.add(conn.id);
+        if (sourceIn) directIds.add(conn.targetId);
+        if (targetIn) directIds.add(conn.sourceId);
+      }
+    }
+
+    // Remove spotlight people from directIds (they're "focused", not "direct")
+    for (const id of spotlightPersonIds) directIds.delete(id);
+
+    return { nodeIds: spotlightPersonIds, directIds, edgeIds };
+  }, [spotlightPersonIds, boardConnections]);
+
   // Reference to the canvas component's imperative handle for centering
   const canvasRef = useRef<BoardCanvasHandle>(null);
 
@@ -488,6 +534,8 @@ export function BoardWorkspace({
             investigationStep={investigation.isStartMode ? investigation.step : null}
             onUpdateConnection={updateConnection}
             onDeleteConnection={deleteConnection}
+            spotlightFocusState={spotlightFocusState}
+            spotlightPulseId={spotlightPulseId}
           />
         )}
       </div>
@@ -523,6 +571,9 @@ export function BoardWorkspace({
             onSelectNode={selectNode}
             suggestedPeople={suggestedPeople}
             investigationStep={investigation.isStartMode ? investigation.step : null}
+            spotlightPersonIds={spotlightPersonIds}
+            onToggleSpotlight={toggleSpotlight}
+            onClearSpotlight={clearSpotlight}
           />
         )}
       </div>
