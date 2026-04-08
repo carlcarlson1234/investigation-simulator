@@ -16,6 +16,8 @@ import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
 import { EvidenceFolderButton, EvidenceTray } from "./evidence-folder";
 import { InvestigationOverlay } from "./investigation-overlay";
+import { FocusInvestigation } from "./focus-investigation";
+import type { InvestigationResult } from "./focus-investigation";
 import { useInvestigation } from "@/hooks/use-investigation";
 import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
 
@@ -264,7 +266,8 @@ export function BoardWorkspace({
   }, [centerOnNode]);
 
   const openSubjectView = useCallback((personId: string) => {
-    setSubjectFocusPersonId(personId);
+    // Double-click on a person now opens focus investigation
+    setFocusInvestigationPersonId(personId);
   }, []);
 
   const closeSubjectView = useCallback(() => {
@@ -278,6 +281,45 @@ export function BoardWorkspace({
   const closePhotoView = useCallback(() => {
     setPhotoFocusId(null);
   }, []);
+
+  // ─── Focus Investigation Mode ─────────────────────────────────────────────
+  const [focusInvestigationPersonId, setFocusInvestigationPersonId] = useState<string | null>(null);
+
+  const openFocusInvestigation = useCallback((personId: string) => {
+    setFocusInvestigationPersonId(personId);
+  }, []);
+
+  const closeFocusInvestigation = useCallback(() => {
+    setFocusInvestigationPersonId(null);
+  }, []);
+
+  const handleFocusInvestigationComplete = useCallback((result: InvestigationResult) => {
+    // Add connected evidence to the board
+    for (const ev of result.connectedEvidence) {
+      if (!boardNodes.some(n => n.id === ev.id)) {
+        const raw = { x: 200 + Math.random() * 400, y: 100 + Math.random() * 300 };
+        const { x, y } = findClearPosition(raw.x, raw.y, 190, 160);
+        setBoardNodes(prev => [...prev, {
+          kind: "evidence" as const,
+          id: ev.id,
+          evidenceType: ev.type,
+          data: ev,
+          position: { x, y },
+        }]);
+      }
+    }
+
+    // Add the new connections
+    setBoardConnections(prev => [...prev, ...result.newConnections]);
+
+    // Close focus mode
+    setFocusInvestigationPersonId(null);
+
+    // Center on the person after a short delay (let state settle)
+    setTimeout(() => {
+      canvasRef.current?.centerOnNode(result.personId);
+    }, 500);
+  }, [boardNodes, findClearPosition]);
 
   const startConnection = useCallback((fromId: string) => {
     setConnectingFrom(fromId);
@@ -837,6 +879,21 @@ export function BoardWorkspace({
           onFocusNode={focusNode}
         />
       )}
+
+      {/* Focus Investigation Mode — full-screen overlay */}
+      {focusInvestigationPersonId && (() => {
+        const personNode = boardNodes.find(n => n.id === focusInvestigationPersonId && n.kind === "person");
+        if (!personNode || personNode.kind !== "person") return null;
+        return (
+          <FocusInvestigation
+            person={personNode.data}
+            existingNodes={boardNodes}
+            existingConnections={boardConnections}
+            onComplete={handleFocusInvestigationComplete}
+            onExit={closeFocusInvestigation}
+          />
+        );
+      })()}
 
     </div>
   );

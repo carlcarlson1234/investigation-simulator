@@ -279,6 +279,58 @@ body {
   background: #E24B4A;
 }
 
+/* ─── Focus Investigation Mode ──────────────────────────────────────────── */
+
+.focus-mode-enter {
+  animation: focus-fade-in 0.6s ease-out forwards;
+}
+@keyframes focus-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.focus-person-enter {
+  animation: focus-person-scale-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes focus-person-scale-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.focus-evidence-enter {
+  animation: focus-evidence-appear 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes focus-evidence-appear {
+  from { opacity: 0; transform: scale(0.7) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.focus-connection-draw {
+  animation: focus-line-draw 0.4s ease-out forwards;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+}
+@keyframes focus-line-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.focus-summary-enter {
+  animation: focus-summary-scale 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes focus-summary-scale {
+  from { opacity: 0; transform: scale(0.85) translateY(30px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Reintegration glow on newly added evidence */
+.focus-reintegrated {
+  animation: focus-reintegrate-glow 3s ease-out forwards;
+}
+@keyframes focus-reintegrate-glow {
+  0% { box-shadow: 0 0 20px 4px rgba(226, 75, 74, 0.6); }
+  100% { box-shadow: 0 0 0 0 rgba(226, 75, 74, 0); }
+}
+
 /* board-canvas styles now handled inline in component */
 
 .board-node {
