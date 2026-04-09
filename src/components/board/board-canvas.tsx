@@ -1445,36 +1445,52 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const orphans: string[] = [];
     for (const n of nodes) { if (!placed.has(n.id)) orphans.push(n.id); }
 
-    const COL_GAP = 320;
-    const ROW_GAP = 20;
-    const START_X = 100;
-    const START_Y = 100;
+    // Tight gaps — as close as possible without overlapping
+    const H_GAP = 30;  // horizontal gap between columns
+    const V_GAP = 12;  // vertical gap between rows
+    const START_X = 80;
+    const START_Y = 80;
 
     const pos: Record<string, { x: number; y: number }> = {};
     const egoSize = getCardSize(ego);
-    // Ego on the left
-    const totalRows = columns.reduce((max, col) => Math.max(max, col.length), 1);
-    const egoY = START_Y + (totalRows * (160 + ROW_GAP)) / 2 - egoSize.h / 2;
-    pos[ego] = { x: START_X, y: Math.max(START_Y, egoY) };
 
-    let colX = START_X + egoSize.w + COL_GAP;
-    for (const col of columns) {
-      let y = START_Y;
+    // Measure each column's max width and total height
+    const colWidths: number[] = columns.map((col) => {
+      let maxW = 0;
+      for (const id of col) { const s = getCardSize(id); if (s.w > maxW) maxW = s.w; }
+      return maxW;
+    });
+    const colHeights: number[] = columns.map((col) => {
+      let h = 0;
+      for (let i = 0; i < col.length; i++) { h += getCardSize(col[i]).h + (i > 0 ? V_GAP : 0); }
+      return h;
+    });
+    const maxColHeight = Math.max(...colHeights, egoSize.h);
+
+    // Center ego vertically relative to the tallest column
+    pos[ego] = { x: START_X, y: START_Y + maxColHeight / 2 - egoSize.h / 2 };
+
+    let colX = START_X + egoSize.w + H_GAP;
+    for (let ci = 0; ci < columns.length; ci++) {
+      const col = columns[ci];
+      // Center this column vertically
+      const colH = colHeights[ci];
+      let y = START_Y + maxColHeight / 2 - colH / 2;
       for (const id of col) {
         const s = getCardSize(id);
         pos[id] = { x: colX, y };
-        y += s.h + ROW_GAP;
+        y += s.h + V_GAP;
       }
-      colX += 280 + COL_GAP / 2;
+      colX += colWidths[ci] + H_GAP;
     }
 
-    // Orphans far right
+    // Orphans stacked after last column
     if (orphans.length > 0) {
       let y = START_Y;
       for (const id of orphans) {
         const s = getCardSize(id);
-        pos[id] = { x: colX + 200, y };
-        y += s.h + ROW_GAP;
+        pos[id] = { x: colX + H_GAP, y };
+        y += s.h + V_GAP;
       }
     }
 
