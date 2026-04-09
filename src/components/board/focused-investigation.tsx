@@ -157,6 +157,8 @@ export function FocusedInvestigation({
         position: { x: PERSON_X + Math.cos(-Math.PI / 2 + (i / items.length) * Math.PI * 2) * OUTER_RADIUS, y: PERSON_Y + Math.sin(-Math.PI / 2 + (i / items.length) * Math.PI * 2) * OUTER_RADIUS },
       }));
       setFocusNodes((prev) => [...prev, ...newNodes]);
+      // Auto-open split-screen on the first new evidence piece
+      if (items.length > 0) setFocusEvidenceId(items[0].id);
       setPhase("investigating");
     } catch { setPhase("investigating"); }
   }, [existingNodes, person.id]);
