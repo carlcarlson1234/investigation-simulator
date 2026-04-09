@@ -425,7 +425,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     });
   }, []);
 
-  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, arrangeEgoWide }), [centerOnNode, zoomFit, arrangeEgoWide]);
+  // (useImperativeHandle is after arrangeEgoWide below)
 
   /* ── Auto-arrange (multiple modes) ───────────────────────────────────── */
   const [isArranging, setIsArranging] = useState(false);
@@ -1482,6 +1482,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onBatchMoveNodes(pos);
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, connections, selectedNodeId, onBatchMoveNodes, getCardSize, zoomFit]);
+
+  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, arrangeEgoWide }), [centerOnNode, zoomFit, arrangeEgoWide]);
 
   const arrangePath = useCallback((nodeAId: string, nodeBId: string) => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
