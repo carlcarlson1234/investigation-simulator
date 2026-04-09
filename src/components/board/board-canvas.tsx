@@ -25,6 +25,7 @@ const BASE_WORLD_H = 3000;
 /* ── Public handle so parent can call centerOnNode ──────────────────────── */
 export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
+  zoomFit: () => void;
 }
 
 interface BoardCanvasProps {
@@ -349,7 +350,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     vp.scrollTo({ left: scrollX, top: scrollY, behavior: "auto" });
   }, [nodes, zoom]);
 
-  useImperativeHandle(ref, () => ({ centerOnNode }), [centerOnNode]);
+  // (useImperativeHandle is after zoomFit below)
 
   /* ── Pre-center viewport on mount ─────────────────────────────────────── */
   useEffect(() => {
@@ -420,6 +421,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       });
     });
   }, []);
+
+  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit }), [centerOnNode, zoomFit]);
 
   /* ── Auto-arrange (multiple modes) ───────────────────────────────────── */
   const [isArranging, setIsArranging] = useState(false);

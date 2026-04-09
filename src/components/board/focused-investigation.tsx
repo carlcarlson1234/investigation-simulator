@@ -164,12 +164,13 @@ export function FocusedInvestigation({
   }, [existingNodes, person.id]);
 
   useEffect(() => { fetchEvidence(); }, [fetchEvidence]);
+  // Zoom-fit when entering board mode (phase change or returning from split)
   useEffect(() => {
-    if (phase === "investigating") {
-      const t = setTimeout(() => canvasRef.current?.centerOnNode(person.id), 800);
+    if (phase === "investigating" && !focusEvidenceId) {
+      const t = setTimeout(() => canvasRef.current?.zoomFit(), 400);
       return () => clearTimeout(t);
     }
-  }, [phase, person.id]);
+  }, [phase, focusEvidenceId]);
 
   // ─── Fetch full evidence for focus view ───────────────────────────────
   useEffect(() => {
@@ -244,9 +245,13 @@ export function FocusedInvestigation({
   const handleSelectNode = useCallback((id: string | null) => setSelectedNodeId(id), []);
   const handleFocusNode = useCallback((id: string | null) => {
     setFocusedNodeId(id);
-    if (id && newEvidenceIds.has(id)) setFocusEvidenceId(id);
-  }, [newEvidenceIds]);
-  const handleOpenPhotoView = useCallback((id: string) => { if (newEvidenceIds.has(id)) setFocusEvidenceId(id); }, [newEvidenceIds]);
+    // Double-click on any evidence or person opens split view
+    if (id) setFocusEvidenceId(newEvidenceNodes.length > 0 ? newEvidenceNodes[0].id : null);
+  }, [newEvidenceNodes]);
+  const handleOpenPhotoView = useCallback((_id: string) => {
+    // Open split view starting at first new evidence
+    if (newEvidenceNodes.length > 0) setFocusEvidenceId(newEvidenceNodes[0].id);
+  }, [newEvidenceNodes]);
   const handleMoveNode = useCallback((id: string, x: number, y: number) => { setFocusNodes((p) => p.map((n) => n.id === id ? { ...n, position: { x, y } } : n)); }, []);
   const handleBatchMoveNodes = useCallback((moves: Record<string, { x: number; y: number }>) => { setFocusNodes((p) => p.map((n) => moves[n.id] ? { ...n, position: moves[n.id] } : n)); }, []);
   const handleStartConnection = useCallback((fromId: string) => setConnectingFrom(fromId), []);
@@ -348,8 +353,25 @@ export function FocusedInvestigation({
       {/* ═══ FOCUS MODE: Split-screen evidence evaluation ═══════════════ */}
       {isFocus && (phase === "investigating" || phase === "summary") && (
         <div className="flex flex-1 min-h-0 relative">
-          {/* SVG drag line */}
+          {/* SVG drag line + persistent connection lines */}
           <svg className="pointer-events-none absolute inset-0 z-40" style={{ width: "100%", height: "100%" }}>
+            {/* Persistent connection lines from current evidence to targets */}
+            {focusEvidenceId && handleRef.current && focusConnections
+              .filter((c) => c.sourceId === focusEvidenceId || c.targetId === focusEvidenceId)
+              .map((c) => {
+                const targetId = c.sourceId === focusEvidenceId ? c.targetId : c.sourceId;
+                const targetEl = document.querySelector(`[data-connect-target="${targetId}"]`) as HTMLElement | null;
+                if (!targetEl || !handleRef.current) return null;
+                const hr = handleRef.current.getBoundingClientRect();
+                const tr = targetEl.getBoundingClientRect();
+                return (
+                  <line key={c.id}
+                    x1={hr.left + hr.width / 2} y1={hr.top + hr.height / 2}
+                    x2={tr.left + tr.width / 2} y2={tr.top + tr.height / 2}
+                    stroke="#4ade80" strokeWidth={2} strokeOpacity={0.6} strokeLinecap="round" />
+                );
+              })}
+            {/* Active drag line */}
             {dragState && handleRef.current && (() => {
               const r = handleRef.current.getBoundingClientRect();
               const hx = r.left + r.width / 2, hy = r.top + r.height / 2;
