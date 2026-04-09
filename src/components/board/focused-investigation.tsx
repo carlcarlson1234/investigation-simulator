@@ -284,13 +284,16 @@ export function FocusedInvestigation({
   const handleSelectNode = useCallback((id: string | null) => setSelectedNodeId(id), []);
   const handleFocusNode = useCallback((id: string | null) => {
     setFocusedNodeId(id);
-    // Double-click on any evidence or person opens split view
-    if (id) setFocusEvidenceId(newEvidenceNodes.length > 0 ? newEvidenceNodes[0].id : null);
-  }, [newEvidenceNodes]);
-  const handleOpenPhotoView = useCallback((_id: string) => {
-    // Open split view starting at first new evidence
+    if (!id) return;
+    // If double-clicked card is new evidence, open split on that card
+    if (newEvidenceIds.has(id)) { setFocusEvidenceId(id); return; }
+    // Otherwise open split on first new evidence
     if (newEvidenceNodes.length > 0) setFocusEvidenceId(newEvidenceNodes[0].id);
-  }, [newEvidenceNodes]);
+  }, [newEvidenceIds, newEvidenceNodes]);
+  const handleOpenPhotoView = useCallback((id: string) => {
+    if (newEvidenceIds.has(id)) { setFocusEvidenceId(id); return; }
+    if (newEvidenceNodes.length > 0) setFocusEvidenceId(newEvidenceNodes[0].id);
+  }, [newEvidenceIds, newEvidenceNodes]);
   const handleMoveNode = useCallback((id: string, x: number, y: number) => { setFocusNodes((p) => p.map((n) => n.id === id ? { ...n, position: { x, y } } : n)); }, []);
   const handleBatchMoveNodes = useCallback((moves: Record<string, { x: number; y: number }>) => { setFocusNodes((p) => p.map((n) => moves[n.id] ? { ...n, position: moves[n.id] } : n)); }, []);
   const handleStartConnection = useCallback((fromId: string) => setConnectingFrom(fromId), []);
