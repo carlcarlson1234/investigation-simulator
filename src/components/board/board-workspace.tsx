@@ -14,10 +14,14 @@ import type { BoardCanvasHandle } from "./board-canvas";
 import { ContextPanel } from "./context-panel";
 import { SubjectFocusView } from "./subject-focus-view";
 import { PhotoFocusView } from "./photo-focus-view";
-import { EvidenceFolderButton, EvidenceTray } from "./evidence-folder";
+import { EvidenceTray } from "./evidence-folder";
 import { InvestigationOverlay } from "./investigation-overlay";
 import { useInvestigation } from "@/hooks/use-investigation";
 import { loadBoardState, useBoardPersistence } from "@/hooks/use-board-persistence";
+import { LEAD_CATALOG } from "@/lib/lead-definitions";
+import { LeadsModal } from "./leads-modal";
+import { FocusedInvestigation } from "./focused-investigation";
+import type { InvestigationResult } from "./focused-investigation";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -55,6 +59,14 @@ export function BoardWorkspace({
     const saved_seen = saved?.seenEvidenceIds;
     return saved_seen ? new Set(saved_seen) : new Set();
   });
+
+  // ─── Leads System ────────────────────────────────────────────────────────
+  const [leadsModalOpen, setLeadsModalOpen] = useState(false);
+  const [focusInvestigationPersonId, setFocusInvestigationPersonId] = useState<string | null>(null);
+  const [completedLeadIds, setCompletedLeadIds] = useState<Set<string>>(new Set());
+  const [reintegratingIds, setReintegratingIds] = useState<Set<string>>(new Set());
+  const [reintegrationNotification, setReintegrationNotification] = useState(false);
+  const [newLeadIndicator, setNewLeadIndicator] = useState(false);
 
   // ─── Spotlight (multi-select person filter) ──────────────────────────────
   const [spotlightPersonIds, setSpotlightPersonIds] = useState<Set<string>>(new Set());
@@ -279,6 +291,83 @@ export function BoardWorkspace({
     setPhotoFocusId(null);
   }, []);
 
+  // ─── Leads helpers ──────────────────────────────────────────────────
+  const boardPeople = useMemo(
+    () => boardNodes.filter((n): n is Extract<typeof n, { kind: "person" }> => n.kind === "person").map((n) => n.data),
+    [boardNodes],
+  );
+
+  const handleFocusedInvestigation = useCallback((personId: string) => {
+    setLeadsModalOpen(false);
+    setFocusInvestigationPersonId(personId);
+  }, []);
+
+  const handleFocusInvestigationComplete = useCallback(
+    (result: InvestigationResult) => {
+      // Close focus mode
+      setFocusInvestigationPersonId(null);
+
+      // Mark lead as completed
+      const leadId = `focus-${result.personId}`;
+      setCompletedLeadIds((prev) => {
+        const next = new Set(prev);
+        next.add(leadId);
+        return next;
+      });
+
+      // Stagger evidence nodes onto board
+      const allNewIds = new Set<string>();
+      result.connectedEvidence.forEach((ev, i) => {
+        allNewIds.add(ev.id);
+        setTimeout(() => {
+          const pos = findClearPosition(
+            Math.random() * 800 + 200,
+            Math.random() * 400 + 200,
+            190,
+            160,
+          );
+          setBoardNodes((prev) => {
+            if (prev.some((n) => n.id === ev.id)) return prev;
+            return [
+              ...prev,
+              { kind: "evidence" as const, id: ev.id, evidenceType: ev.type, data: ev, position: { x: pos.x, y: pos.y } },
+            ];
+          });
+        }, i * 300);
+      });
+
+      // Stagger connections after evidence is placed
+      const connectionDelay = result.connectedEvidence.length * 300 + 200;
+      result.newConnections.forEach((nc, i) => {
+        allNewIds.add(nc.id);
+        setTimeout(() => {
+          setBoardConnections((prev) => {
+            if (prev.some((c) => c.id === nc.id)) return prev;
+            return [...prev, nc];
+          });
+        }, connectionDelay + i * 400);
+      });
+
+      // Track reintegrating IDs for glow animations
+      setReintegratingIds(allNewIds);
+
+      // Show notification after all animations
+      const totalDelay = connectionDelay + result.newConnections.length * 400 + 200;
+      setTimeout(() => {
+        setReintegrationNotification(true);
+        setTimeout(() => setReintegrationNotification(false), 4000);
+      }, totalDelay);
+
+      // Clear evidence green glow after 30s
+      setTimeout(() => setReintegratingIds(new Set()), 30000);
+
+      // Flash "NEW" on leads button
+      setNewLeadIndicator(true);
+      setTimeout(() => setNewLeadIndicator(false), 5000);
+    },
+    [findClearPosition],
+  );
+
   const startConnection = useCallback((fromId: string) => {
     setConnectingFrom(fromId);
   }, []);
@@ -393,6 +482,11 @@ export function BoardWorkspace({
       setFolderLoading(false);
     }
   }, [boardNodes, seenEvidenceIds]);
+
+  const handleEvidencePack = useCallback(() => {
+    setLeadsModalOpen(false);
+    fetchEvidenceFolder();
+  }, [fetchEvidenceFolder]);
 
   const addFolderItemToBoard = useCallback(
     (item: EvidenceFolderItem) => {
@@ -689,14 +783,7 @@ export function BoardWorkspace({
           </div>
         )}
 
-        {/* Evidence Folder button */}
-        {(!investigation.isStartMode || investigation.step === "open-investigation") && !folderOpen && !evidenceFocusMode && (
-          <div className="absolute bottom-4 left-4 z-40">
-            <EvidenceFolderButton onClick={fetchEvidenceFolder} loading={folderLoading} />
-          </div>
-        )}
-
-        {/* Evidence Tray — split-screen above board */}
+        {/* Evidence Tray — split-screen above board (opened via Evidence Pack lead) */}
         {folderOpen && !evidenceFocusMode && (
           <EvidenceTray
             items={folderItems}
@@ -705,6 +792,26 @@ export function BoardWorkspace({
             onClose={() => setFolderOpen(false)}
             isOnBoard={isOnBoard}
           />
+        )}
+
+        {/* LEADS FAB — bottom-right floating action button */}
+        {(!investigation.isStartMode || investigation.step === "open-investigation") && !evidenceFocusMode && (
+          <div className="absolute bottom-6 right-6 z-50">
+            <button
+              onClick={() => setLeadsModalOpen(true)}
+              className="leads-fab group relative flex h-24 w-24 flex-col items-center justify-center rounded-2xl border-2 border-[#E24B4A]/50 bg-[#111]/95 shadow-[0_0_30px_8px_rgba(226,75,74,0.2)] backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:border-[#E24B4A]/80 hover:shadow-[0_0_40px_12px_rgba(226,75,74,0.3)]"
+            >
+              {newLeadIndicator && (
+                <span className="absolute -top-2 -right-2 z-10 animate-pulse rounded-full bg-[#E24B4A] px-2 py-0.5 text-[8px] font-bold text-white shadow-lg">
+                  NEW
+                </span>
+              )}
+              <span className="leads-exclamation text-3xl font-black leading-none text-[#E24B4A]">!</span>
+              <span className="mt-1 font-[family-name:var(--font-mono)] text-[11px] font-black uppercase tracking-[0.08em] text-[#E24B4A]">
+                New Leads
+              </span>
+            </button>
+          </div>
         )}
 
         {showBoard && (
@@ -737,7 +844,19 @@ export function BoardWorkspace({
             onDeleteConnection={deleteConnection}
             spotlightFocusState={spotlightFocusState}
             spotlightPulseId={spotlightPulseId}
+            reintegratingIds={reintegratingIds}
           />
+        )}
+
+        {/* Reintegration notification */}
+        {reintegrationNotification && (
+          <div className="reintegration-notification pointer-events-none absolute bottom-20 left-1/2 z-50 -translate-x-1/2">
+            <div className="rounded-lg border border-[#22c55e]/20 bg-[#111]/95 px-5 py-2.5 backdrop-blur-sm">
+              <span className="font-[family-name:var(--font-mono)] text-[11px] text-[#22c55e]">
+                Investigation integrated into main board
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
@@ -837,6 +956,35 @@ export function BoardWorkspace({
           onFocusNode={focusNode}
         />
       )}
+
+      {/* Leads Modal overlay */}
+      {leadsModalOpen && (
+        <LeadsModal
+          leads={LEAD_CATALOG}
+          boardPeople={boardPeople}
+          onClose={() => setLeadsModalOpen(false)}
+          onEvidencePack={handleEvidencePack}
+          onFocusedInvestigation={handleFocusedInvestigation}
+        />
+      )}
+
+      {/* Focused Investigation overlay */}
+      {focusInvestigationPersonId && (() => {
+        const personNode = boardNodes.find(
+          (n) => n.kind === "person" && n.id === focusInvestigationPersonId,
+        );
+        if (!personNode || personNode.kind !== "person") return null;
+        return (
+          <FocusedInvestigation
+            person={personNode.data}
+            existingNodes={boardNodes}
+            existingConnections={boardConnections}
+            stats={stats}
+            onComplete={handleFocusInvestigationComplete}
+            onExit={() => setFocusInvestigationPersonId(null)}
+          />
+        );
+      })()}
 
     </div>
   );

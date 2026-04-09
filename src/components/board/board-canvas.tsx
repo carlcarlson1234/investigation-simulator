@@ -50,6 +50,7 @@ interface BoardCanvasProps {
   onDeleteConnection?: (connId: string) => void;
   spotlightFocusState?: { nodeIds: Set<string>; directIds: Set<string>; edgeIds: Set<string> } | null;
   spotlightPulseId?: string | null;
+  reintegratingIds?: Set<string>;
   stats: ArchiveStats;
   score: number;
   firstPlacementMode?: boolean;
@@ -81,6 +82,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onDeleteConnection,
     spotlightFocusState,
     spotlightPulseId,
+    reintegratingIds,
     stats,
     score,
     firstPlacementMode,
@@ -425,7 +427,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [pathFocus, setPathFocus] = useState<FocusState | null>(null);
   const [pathDrillNode, setPathDrillNode] = useState<string | null>(null);
   const [showAllInCompare, setShowAllInCompare] = useState(false);
-  const [hideOrphans, setHideOrphans] = useState(true);
+  const [hideOrphans, setHideOrphans] = useState(false);
   const compareNodeIdsRef = useRef<Set<string> | null>(null);
   // Default path focus (5 core columns) and full focus (includes indirect)
   const pathDefaultFocusRef = useRef<FocusState | null>(null);
@@ -2273,27 +2275,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           </button>
         )}
 
-        {/* ── Show Unconnected toggle (top-right of board) ─────────────── */}
-        {orphanNodeIds.size > 0 && (
-          <button
-            onClick={() => { setHideOrphans(h => !h); setTimeout(() => zoomFit(), 350); }}
-            className={`absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition shadow-lg shadow-black/40 ${
-              !hideOrphans
-                ? "border-red-500/40 bg-red-600/15 text-red-400 hover:bg-red-600/25"
-                : "border-[#2a2a2a] bg-[#141414]/90 text-[#666] hover:bg-[#222] hover:text-white"
-            } backdrop-blur-sm`}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              {!hideOrphans
-                ? <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>
-                : <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></>
-              }
-            </svg>
-            {hideOrphans ? "Unconnected" : "Unconnected"}
-            <span className="rounded bg-[#333] px-1 py-0 text-[9px] font-bold text-[#777]">{orphanNodeIds.size}</span>
-          </button>
-        )}
-
         {/* PARALLAX: Slower-moving background layer for depth effect */}
         <div
           ref={parallaxRef}
@@ -2421,6 +2402,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
                     // Check if any connection in the bundle is new/selected
                     const hasNew = bundleConns.some(c => c.id === newConnectionId);
+                    const hasReintegrating = reintegratingIds ? bundleConns.some(c => reintegratingIds.has(c.id)) : false;
                     const hasPulse = spotlightPulseId ? bundleConns.some(c => c.sourceId === spotlightPulseId || c.targetId === spotlightPulseId) : false;
                     const hasSelected = bundleConns.some(c => c.id === selectedConnectionId);
                     const anyVis = bundleConns.map(c => getEdgeVis(c.id));
@@ -2428,9 +2410,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     const allFaded = anyVis.every(v => v === "faded");
                     const maxStrength = Math.max(...bundleConns.map(c => c.strength));
 
-                    const lineColor = hasNew ? "#4ade80" : hasSelected ? "#f87171" : "#ef4444";
-                    const dotColor = hasNew ? "#4ade80" : "#ef4444";
-                    const lineFilter = hasNew ? "url(#string-glow-green)" : hasSelected ? "url(#string-glow-strong)" : hasHighlight ? "url(#string-glow)" : "url(#string-glow)";
+                    const lineColor = hasNew ? "#4ade80" : hasReintegrating ? "#E24B4A" : hasSelected ? "#f87171" : "#ef4444";
+                    const dotColor = hasNew ? "#4ade80" : hasReintegrating ? "#E24B4A" : "#ef4444";
+                    const lineFilter = hasNew ? "url(#string-glow-green)" : hasReintegrating ? "url(#string-glow-strong)" : hasSelected ? "url(#string-glow-strong)" : hasHighlight ? "url(#string-glow)" : "url(#string-glow)";
 
                     // Curve calculation
                     const dx = to.cx - from.cx;
@@ -2612,6 +2594,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       isConnectSource ? "ring-2 ring-red-400 shadow-xl shadow-red-500/30 rounded-xl" : ""
                     } ${isConnectTarget ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-400 hover:shadow-lg hover:shadow-red-500/20 rounded-xl" : ""
                     } ${connectingFrom && connectingFrom !== node.id ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-500/60 rounded-xl" : ""
+                    } ${reintegratingIds?.has(node.id) ? "reintegrated-node rounded-xl" : ""
                     }`}
                     style={{
                       left: node.position.x, top: node.position.y,
@@ -3047,6 +3030,29 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
               Clear
+            </button>
+          )}
+
+          <div className="mx-0.5 h-5 w-px bg-[#333]" />
+
+          {/* Unconnected toggle */}
+          {orphanNodeIds.size > 0 && (
+            <button
+              onClick={() => { setHideOrphans(h => !h); setTimeout(() => zoomFit(), 350); }}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-[9px] font-bold uppercase tracking-wider transition ${
+                !hideOrphans
+                  ? "text-red-400 hover:bg-red-600/15"
+                  : "text-[#555] hover:text-white"
+              }`}
+              title={hideOrphans ? "Show unconnected nodes" : "Hide unconnected nodes"}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {!hideOrphans
+                  ? <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>
+                  : <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></>
+                }
+              </svg>
+              {orphanNodeIds.size}
             </button>
           )}
 
