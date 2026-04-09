@@ -1435,9 +1435,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       ? selectedNodeId
       : people.sort((a, b) => (neighbors[b.id]?.size ?? 0) - (neighbors[a.id]?.size ?? 0))[0].id;
 
-    // BFS rings
+    // BFS levels from ego
     const placed = new Set<string>([ego]);
-    const columns: string[][] = [];
+    const bfsLevels: string[][] = [];
     let frontier = [ego];
     while (frontier.length > 0) {
       const next: string[] = [];
@@ -1446,44 +1446,59 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           if (!placed.has(nId)) { placed.add(nId); next.push(nId); }
         }
       }
-      if (next.length > 0) columns.push(next);
+      if (next.length > 0) bfsLevels.push(next);
       frontier = next;
     }
 
     const orphans: string[] = [];
     for (const n of nodes) { if (!placed.has(n.id)) orphans.push(n.id); }
 
-    // Tight gaps — as close as possible without overlapping
-    const H_GAP = 30;  // horizontal gap between columns
-    const V_GAP = 12;  // vertical gap between rows
+    // Split large BFS levels into visual columns (max 4 items per column)
+    const MAX_PER_COL = 4;
+    const visualColumns: string[][] = [];
+    for (const level of bfsLevels) {
+      // Sort: people first, then evidence
+      const sorted = [...level].sort((a, b) => {
+        const aNode = nodes.find(n => n.id === a);
+        const bNode = nodes.find(n => n.id === b);
+        if (aNode?.kind === "person" && bNode?.kind !== "person") return -1;
+        if (aNode?.kind !== "person" && bNode?.kind === "person") return 1;
+        return 0;
+      });
+      for (let i = 0; i < sorted.length; i += MAX_PER_COL) {
+        visualColumns.push(sorted.slice(i, i + MAX_PER_COL));
+      }
+    }
+
+    const H_GAP = 30;
+    const V_GAP = 12;
     const START_X = 80;
     const START_Y = 80;
 
     const pos: Record<string, { x: number; y: number }> = {};
     const egoSize = getCardSize(ego);
 
-    // Measure each column's max width and total height
-    const colWidths: number[] = columns.map((col) => {
+    // Measure each visual column
+    const colWidths: number[] = visualColumns.map((col) => {
       let maxW = 0;
       for (const id of col) { const s = getCardSize(id); if (s.w > maxW) maxW = s.w; }
       return maxW;
     });
-    const colHeights: number[] = columns.map((col) => {
+    const colHeights: number[] = visualColumns.map((col) => {
       let h = 0;
       for (let i = 0; i < col.length; i++) { h += getCardSize(col[i]).h + (i > 0 ? V_GAP : 0); }
       return h;
     });
     const maxColHeight = Math.max(...colHeights, egoSize.h);
 
-    // Center ego vertically relative to the tallest column
-    pos[ego] = { x: START_X, y: START_Y + maxColHeight / 2 - egoSize.h / 2 };
+    // Center ego vertically
+    pos[ego] = { x: START_X, y: START_Y + Math.max(0, maxColHeight / 2 - egoSize.h / 2) };
 
     let colX = START_X + egoSize.w + H_GAP;
-    for (let ci = 0; ci < columns.length; ci++) {
-      const col = columns[ci];
-      // Center this column vertically
+    for (let ci = 0; ci < visualColumns.length; ci++) {
+      const col = visualColumns[ci];
       const colH = colHeights[ci];
-      let y = START_Y + maxColHeight / 2 - colH / 2;
+      let y = START_Y + Math.max(0, maxColHeight / 2 - colH / 2);
       for (const id of col) {
         const s = getCardSize(id);
         pos[id] = { x: colX, y };
@@ -1492,7 +1507,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       colX += colWidths[ci] + H_GAP;
     }
 
-    // Orphans stacked after last column
+    // Orphans after last column
     if (orphans.length > 0) {
       let y = START_Y;
       for (const id of orphans) {
