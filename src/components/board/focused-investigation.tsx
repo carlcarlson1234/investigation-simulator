@@ -111,8 +111,10 @@ export function FocusedInvestigation({
   const handleRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
 
-  // ─── Evidence fetch ───────────────────────────────────────────────────
+  // ─── Evidence fetch + staggered reveal ─────────────────────────────────
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const pendingEvidenceRef = useRef<FocusEvidenceItem[]>([]);
+  const [revealingId, setRevealingId] = useState<string | null>(null);
 
   // ─── Derived ──────────────────────────────────────────────────────────
   const evidenceNodes = useMemo(() => focusNodes.filter((n): n is BoardEvidenceNode => n.kind === "evidence"), [focusNodes]);
@@ -160,12 +162,8 @@ export function FocusedInvestigation({
       const items = (data.items as FocusEvidenceItem[]).slice(0, NEW_EVIDENCE_COUNT);
       for (const item of items) seenIdsRef.current.add(item.id);
       setNewEvidenceIds(new Set(items.map((i) => i.id)));
-      const newNodes: BoardNode[] = items.map((item, i) => ({
-        kind: "evidence" as const, id: item.id, evidenceType: item.type, data: item as SearchResult,
-        position: { x: PERSON_X + Math.cos(-Math.PI / 2 + (i / items.length) * Math.PI * 2) * OUTER_RADIUS, y: PERSON_Y + Math.sin(-Math.PI / 2 + (i / items.length) * Math.PI * 2) * OUTER_RADIUS },
-      }));
-      setFocusNodes((prev) => [...prev, ...newNodes]);
-      // Start on the board view (user double-clicks to open split)
+      // Store items for staggered reveal
+      pendingEvidenceRef.current = items;
       setPhase("investigating");
     } catch { setPhase("investigating"); }
   }, [existingNodes, person.id]);
@@ -176,12 +174,34 @@ export function FocusedInvestigation({
   useEffect(() => {
     if (phase === "investigating" && !focusEvidenceId) {
       if (!hasArrangedRef.current) {
-        // First time: expand all groups, then arrange ego-wide, then fit
+        // First time: expand groups → arrange → fit → then reveal new evidence one by one
         const t0 = setTimeout(() => canvasRef.current?.expandAllGroups(), 400);
         const t1 = setTimeout(() => canvasRef.current?.arrangeEgoWide(), 800);
         const t2 = setTimeout(() => canvasRef.current?.zoomFit(), 1400);
+        // Stagger new evidence reveal after layout settles
+        const revealTimers: ReturnType<typeof setTimeout>[] = [];
+        const items = pendingEvidenceRef.current;
+        const REVEAL_DELAY = 1800; // start after layout
+        const REVEAL_INTERVAL = 800; // between each item
+        items.forEach((item, i) => {
+          revealTimers.push(setTimeout(() => {
+            const angle = -Math.PI / 2 + (i / items.length) * Math.PI * 2;
+            const node: BoardNode = {
+              kind: "evidence" as const, id: item.id, evidenceType: item.type, data: item as SearchResult,
+              position: { x: PERSON_X + Math.cos(angle) * OUTER_RADIUS, y: PERSON_Y + Math.sin(angle) * OUTER_RADIUS },
+            };
+            setFocusNodes((prev) => [...prev, node]);
+            setRevealingId(item.id);
+            // Re-arrange and fit after each reveal
+            setTimeout(() => {
+              canvasRef.current?.arrangeEgoWide();
+            }, 100);
+          }, REVEAL_DELAY + i * REVEAL_INTERVAL));
+        });
+        // Clear arrow after last reveal
+        revealTimers.push(setTimeout(() => setRevealingId(null), REVEAL_DELAY + items.length * REVEAL_INTERVAL + 1500));
         hasArrangedRef.current = true;
-        return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); };
+        return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); revealTimers.forEach(clearTimeout); };
       } else {
         // Subsequent returns from split: just zoom-fit
         const t = setTimeout(() => canvasRef.current?.zoomFit(), 300);
@@ -573,6 +593,30 @@ export function FocusedInvestigation({
               onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} onDirectConnection={handleDirectConnection}
               onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} initialHideOrphans={true} stats={stats} score={score} />
           )}
+          {/* Arrow pointing at newly revealed evidence */}
+          {revealingId && (() => {
+            const el = document.querySelector(`[data-node-id="${revealingId}"]`) as HTMLElement | null;
+            if (!el) return null;
+            const rect = el.getBoundingClientRect();
+            const containerEl = el.closest('.flex.flex-col.flex-1') as HTMLElement | null;
+            if (!containerEl) return null;
+            const cRect = containerEl.getBoundingClientRect();
+            const x = rect.left - cRect.left + rect.width / 2;
+            const y = rect.top - cRect.top - 10;
+            return (
+              <div className="pointer-events-none absolute z-50 animate-bounce" style={{ left: x - 100, top: Math.max(60, y - 50) }}>
+                <div className="flex flex-col items-center">
+                  <span className="rounded-lg bg-[#E24B4A] px-3 py-1.5 font-[family-name:var(--font-mono)] text-[11px] font-bold uppercase tracking-wider text-white shadow-lg shadow-[#E24B4A]/30">
+                    Check New Evidence
+                  </span>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mt-1">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <polyline points="19 12 12 19 5 12" />
+                  </svg>
+                </div>
+              </div>
+            );
+          })()}
           {phase === "summary" && completedResult && (
             <div className="focus-summary-enter absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
               <div className="w-full max-w-md rounded-2xl border border-[#2a2a2a] bg-[#111] p-8 shadow-2xl">
