@@ -591,7 +591,7 @@ export function FocusedInvestigation({
               onSelectNode={handleSelectNode} onFocusNode={handleFocusNode} onMoveNode={handleMoveNode} onBatchMoveNodes={handleBatchMoveNodes}
               onAddEvidence={noopResult} onAddPerson={noopStr}
               onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} onDirectConnection={handleDirectConnection}
-              onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} initialHideOrphans={true} stats={stats} score={score} />
+              onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} initialHideOrphans={false} stats={stats} score={score} />
           )}
           {/* Arrow pointing at newly revealed evidence */}
           {revealingId && (() => {
