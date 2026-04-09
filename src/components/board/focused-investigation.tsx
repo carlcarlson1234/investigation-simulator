@@ -98,6 +98,13 @@ export function FocusedInvestigation({
   const [comparisonEvidence, setComparisonEvidence] = useState<Evidence | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
 
+  // Force SVG line re-render after accordion opens (DOM needs a frame to mount)
+  const [lineRefresh, setLineRefresh] = useState(0);
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setLineRefresh((n) => n + 1));
+    return () => cancelAnimationFrame(t);
+  }, [openSection]);
+
   // Drag-to-connect
   const [dragState, setDragState] = useState<{ sourceId: string; mouseX: number; mouseY: number } | null>(null);
   const [nearTarget, setNearTarget] = useState<string | null>(null);
@@ -355,7 +362,7 @@ export function FocusedInvestigation({
       {isFocus && (phase === "investigating" || phase === "summary") && (
         <div ref={splitContainerRef} className="flex flex-1 min-h-0 relative">
           {/* SVG drag line + persistent connection lines */}
-          <svg className="pointer-events-none absolute inset-0 z-40" style={{ width: "100%", height: "100%" }}>
+          <svg className="pointer-events-none absolute inset-0 z-40" data-refresh={lineRefresh} style={{ width: "100%", height: "100%" }}>
             {/* Persistent connection lines from current evidence to targets */}
             {focusEvidenceId && handleRef.current && splitContainerRef.current && focusConnections
               .filter((c) => c.sourceId === focusEvidenceId || c.targetId === focusEvidenceId)
