@@ -114,22 +114,40 @@ export function FocusedInvestigation({
 
   // ─── Evidence fetch state ─────────────────────────────────────────────
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const [newEvidenceIds, setNewEvidenceIds] = useState<Set<string>>(new Set());
 
   // ─── Derived ──────────────────────────────────────────────────────────
   const evidenceNodes = useMemo(
     () => focusNodes.filter((n): n is BoardEvidenceNode => n.kind === "evidence"),
     [focusNodes],
   );
+  const newEvidenceNodes = useMemo(
+    () => evidenceNodes.filter((n) => newEvidenceIds.has(n.id)),
+    [evidenceNodes, newEvidenceIds],
+  );
+  const existingEvidenceNodes = useMemo(
+    () => evidenceNodes.filter((n) => !newEvidenceIds.has(n.id)),
+    [evidenceNodes, newEvidenceIds],
+  );
+  const existingPeopleNodes = useMemo(
+    () => focusNodes.filter((n) => n.kind === "person" && n.id !== person.id),
+    [focusNodes, person.id],
+  );
   const connectedEvidenceIds = useMemo(
     () => new Set(focusConnections.map((c) => c.targetId)),
     [focusConnections],
   );
-  const unconnectedCount = evidenceNodes.filter((n) => !connectedEvidenceIds.has(n.id)).length;
-  const score = focusConnections.length * 100;
+  // Score only from new evidence connections
+  const newEvidenceConnections = focusConnections.filter(
+    (c) => newEvidenceIds.has(c.sourceId) || newEvidenceIds.has(c.targetId),
+  );
+  const score = newEvidenceConnections.length * 100;
 
-  // Current split index for prev/next
-  const splitIndex = splitEvidenceId ? evidenceNodes.findIndex((n) => n.id === splitEvidenceId) : -1;
-  const splitNode = splitIndex >= 0 ? evidenceNodes[splitIndex] : null;
+  // Split nav cycles through new evidence only
+  const splitIndex = splitEvidenceId ? newEvidenceNodes.findIndex((n) => n.id === splitEvidenceId) : -1;
+  const splitNode = splitIndex >= 0 ? newEvidenceNodes[splitIndex] : (
+    splitEvidenceId ? evidenceNodes.find((n) => n.id === splitEvidenceId) ?? null : null
+  );
 
   // ─── Focus state for BoardCanvas ──────────────────────────────────────
   const focusState = useMemo<FocusState | null>(() => {
@@ -177,6 +195,7 @@ export function FocusedInvestigation({
         };
       });
 
+      setNewEvidenceIds(new Set(items.map((item) => item.id)));
       setFocusNodes((prev) => [...prev, ...newNodes]);
       setPhase("investigating");
     } catch (err) {
@@ -330,21 +349,21 @@ export function FocusedInvestigation({
   const noopStr = useCallback((_s: string) => {}, []);
   const noopResult = useCallback((_r: SearchResult, _x?: number, _y?: number) => {}, []);
 
-  // ─── Split-screen navigation ──────────────────────────────────────────
+  // ─── Split-screen navigation (new evidence only) ──────────────────────
   const goToEvidence = useCallback(
     (direction: "prev" | "next") => {
-      if (evidenceNodes.length === 0) return;
+      if (newEvidenceNodes.length === 0) return;
       let newIdx: number;
       if (splitIndex < 0) {
         newIdx = 0;
       } else if (direction === "prev") {
-        newIdx = (splitIndex - 1 + evidenceNodes.length) % evidenceNodes.length;
+        newIdx = (splitIndex - 1 + newEvidenceNodes.length) % newEvidenceNodes.length;
       } else {
-        newIdx = (splitIndex + 1) % evidenceNodes.length;
+        newIdx = (splitIndex + 1) % newEvidenceNodes.length;
       }
-      setSplitEvidenceId(evidenceNodes[newIdx].id);
+      setSplitEvidenceId(newEvidenceNodes[newIdx].id);
     },
-    [evidenceNodes, splitIndex],
+    [newEvidenceNodes, splitIndex],
   );
 
   // Connect current split evidence to person
@@ -371,9 +390,13 @@ export function FocusedInvestigation({
 
   // ─── Complete investigation ─────────────────────────────────────────
   const handleComplete = useCallback(() => {
-    const connectedEvIds = new Set(focusConnections.map((c) => c.targetId));
+    // Only include new evidence connections in the result (not existing ones from main board)
+    const newConnections = focusConnections.filter(
+      (c) => newEvidenceIds.has(c.sourceId) || newEvidenceIds.has(c.targetId),
+    );
+    const connectedNewIds = new Set(newConnections.map((c) => c.targetId));
     const connected = focusNodes
-      .filter((n) => n.kind === "evidence" && connectedEvIds.has(n.id))
+      .filter((n) => n.kind === "evidence" && connectedNewIds.has(n.id) && newEvidenceIds.has(n.id))
       .map((n) => n.data as SearchResult);
 
     const result: InvestigationResult = {
@@ -381,9 +404,9 @@ export function FocusedInvestigation({
       connectedEvidence: connected,
       dismissedEvidence: [],
       uncertainEvidence: [],
-      newConnections: focusConnections,
+      newConnections,
       stats: {
-        connectionsCreated: focusConnections.length,
+        connectionsCreated: newConnections.length,
         evidenceDismissed: 0,
         markedUncertain: 0,
         pointsEarned: score,
@@ -453,7 +476,7 @@ export function FocusedInvestigation({
                   </svg>
                 </button>
                 <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#555]">
-                  {splitIndex + 1} / {evidenceNodes.length}
+                  {splitIndex >= 0 ? splitIndex + 1 : "—"} / {newEvidenceNodes.length}
                 </span>
                 <button
                   onClick={() => goToEvidence("next")}
@@ -597,7 +620,7 @@ export function FocusedInvestigation({
           </div>
         )}
 
-        {/* Board Canvas (right in split, full-width otherwise) */}
+        {/* Right side: Structured grid (split mode) or BoardCanvas (normal mode) */}
         <div className="relative flex flex-col flex-1 min-h-0">
           {phase === "loading" && (
             <div className="flex h-full items-center justify-center">
@@ -607,7 +630,114 @@ export function FocusedInvestigation({
             </div>
           )}
 
-          {(phase === "investigating" || phase === "summary") && (
+          {/* Structured grid when split-screen is open */}
+          {isSplit && (phase === "investigating" || phase === "summary") && (
+            <div className="flex flex-1 min-h-0 overflow-y-auto bg-[#080808] p-5">
+              <div className="mx-auto w-full max-w-[500px]">
+                {/* Person being investigated */}
+                <div className="mb-5 flex items-center gap-4 rounded-xl border border-[#E24B4A]/20 bg-[#111] p-4">
+                  {person.imageUrl ? (
+                    <img src={person.imageUrl} alt={person.name} className="h-14 w-14 rounded-full border border-[#E24B4A]/30 object-cover" />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full border border-[#E24B4A]/30 bg-[#1a1a1a] text-xl">👤</div>
+                  )}
+                  <div>
+                    <h3 className="font-[family-name:var(--font-display)] text-[16px] tracking-wide text-white">{person.name}</h3>
+                    <p className="text-[10px] text-[#555]">{focusConnections.length} connections</p>
+                  </div>
+                </div>
+
+                {/* Connected people */}
+                {existingPeopleNodes.length > 0 && (
+                  <div className="mb-5">
+                    <h4 className="mb-2 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.12em] text-[#555]">
+                      Connected People
+                    </h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      {existingPeopleNodes.map((n) => (
+                        <div key={n.id} className="flex flex-col items-center gap-1.5 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] p-2">
+                          {n.kind === "person" && n.data.imageUrl ? (
+                            <img src={n.data.imageUrl} alt={n.data.name} className="h-10 w-10 rounded-full border border-[#333] object-cover" />
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#333] bg-[#1a1a1a] text-sm">👤</div>
+                          )}
+                          <span className="text-center font-[family-name:var(--font-display)] text-[9px] leading-tight text-white/70">
+                            {n.kind === "person" ? n.data.name : n.id}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Existing evidence */}
+                {existingEvidenceNodes.length > 0 && (
+                  <div className="mb-5">
+                    <h4 className="mb-2 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.12em] text-[#555]">
+                      Existing Evidence
+                    </h4>
+                    <div className="space-y-1.5">
+                      {existingEvidenceNodes.map((n) => (
+                        <button
+                          key={n.id}
+                          onClick={() => setSplitEvidenceId(n.id)}
+                          className={`flex w-full items-center gap-2 rounded-lg border p-2 text-left transition ${
+                            splitEvidenceId === n.id
+                              ? "border-[#E24B4A]/40 bg-[#E24B4A]/5"
+                              : "border-[#1a1a1a] bg-[#0e0e0e] hover:border-[#333]"
+                          }`}
+                        >
+                          <span className="text-xs">
+                            {n.evidenceType === "photo" ? "📸" : n.evidenceType === "email" ? "✉️" : n.evidenceType === "document" ? "📄" : "💬"}
+                          </span>
+                          <span className="truncate text-[10px] text-white/70">{n.data.title}</span>
+                          {connectedEvidenceIds.has(n.id) && (
+                            <span className="ml-auto shrink-0 text-[7px] font-bold text-[#E24B4A]">LINKED</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* New evidence (the 6 investigation items) */}
+                <div>
+                  <h4 className="mb-2 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.12em] text-[#E24B4A]/60">
+                    New Evidence
+                  </h4>
+                  <div className="space-y-1.5">
+                    {newEvidenceNodes.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => setSplitEvidenceId(n.id)}
+                        className={`flex w-full items-center gap-2 rounded-lg border p-2.5 text-left transition ${
+                          splitEvidenceId === n.id
+                            ? "border-[#E24B4A]/40 bg-[#E24B4A]/5"
+                            : "border-[#2a2a2a] bg-[#111] hover:border-[#E24B4A]/20"
+                        }`}
+                      >
+                        <span className="text-xs">
+                          {n.evidenceType === "photo" ? "📸" : n.evidenceType === "email" ? "✉️" : n.evidenceType === "document" ? "📄" : "💬"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] text-white/80">{n.data.title}</span>
+                          {n.data.snippet && (
+                            <span className="block truncate text-[9px] text-[#555]">{n.data.snippet}</span>
+                          )}
+                        </div>
+                        {connectedEvidenceIds.has(n.id) && (
+                          <span className="shrink-0 text-[7px] font-bold text-[#E24B4A]">LINKED</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* BoardCanvas when NOT in split mode */}
+          {!isSplit && (phase === "investigating" || phase === "summary") && (
             <BoardCanvas
               ref={canvasRef}
               archiveTitle={`Investigating ${person.name}`}
