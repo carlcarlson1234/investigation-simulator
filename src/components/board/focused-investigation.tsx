@@ -102,6 +102,7 @@ export function FocusedInvestigation({
   const [dragState, setDragState] = useState<{ sourceId: string; mouseX: number; mouseY: number } | null>(null);
   const [nearTarget, setNearTarget] = useState<string | null>(null);
   const handleRef = useRef<HTMLDivElement>(null);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── Evidence fetch ───────────────────────────────────────────────────
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -352,30 +353,33 @@ export function FocusedInvestigation({
 
       {/* ═══ FOCUS MODE: Split-screen evidence evaluation ═══════════════ */}
       {isFocus && (phase === "investigating" || phase === "summary") && (
-        <div className="flex flex-1 min-h-0 relative">
+        <div ref={splitContainerRef} className="flex flex-1 min-h-0 relative">
           {/* SVG drag line + persistent connection lines */}
           <svg className="pointer-events-none absolute inset-0 z-40" style={{ width: "100%", height: "100%" }}>
             {/* Persistent connection lines from current evidence to targets */}
-            {focusEvidenceId && handleRef.current && focusConnections
+            {focusEvidenceId && handleRef.current && splitContainerRef.current && focusConnections
               .filter((c) => c.sourceId === focusEvidenceId || c.targetId === focusEvidenceId)
               .map((c) => {
                 const targetId = c.sourceId === focusEvidenceId ? c.targetId : c.sourceId;
                 const targetEl = document.querySelector(`[data-connect-target="${targetId}"]`) as HTMLElement | null;
-                if (!targetEl || !handleRef.current) return null;
+                if (!targetEl || !handleRef.current || !splitContainerRef.current) return null;
+                const box = splitContainerRef.current.getBoundingClientRect();
                 const hr = handleRef.current.getBoundingClientRect();
                 const tr = targetEl.getBoundingClientRect();
                 return (
                   <line key={c.id}
-                    x1={hr.left + hr.width / 2} y1={hr.top + hr.height / 2}
-                    x2={tr.left + tr.width / 2} y2={tr.top + tr.height / 2}
+                    x1={hr.left - box.left + hr.width / 2} y1={hr.top - box.top + hr.height / 2}
+                    x2={tr.left - box.left + tr.width / 2} y2={tr.top - box.top + tr.height / 2}
                     stroke="#4ade80" strokeWidth={2} strokeOpacity={0.6} strokeLinecap="round" />
                 );
               })}
             {/* Active drag line */}
-            {dragState && handleRef.current && (() => {
-              const r = handleRef.current.getBoundingClientRect();
-              const hx = r.left + r.width / 2, hy = r.top + r.height / 2;
-              return <line x1={hx} y1={hy} x2={dragState.mouseX} y2={dragState.mouseY}
+            {dragState && handleRef.current && splitContainerRef.current && (() => {
+              const box = splitContainerRef.current!.getBoundingClientRect();
+              const r = handleRef.current!.getBoundingClientRect();
+              const hx = r.left - box.left + r.width / 2;
+              const hy = r.top - box.top + r.height / 2;
+              return <line x1={hx} y1={hy} x2={dragState.mouseX - box.left} y2={dragState.mouseY - box.top}
                 stroke={nearTarget ? "#4ade80" : "#f87171"} strokeWidth={nearTarget ? 4 : 3}
                 strokeOpacity={nearTarget ? 1 : 0.8} strokeDasharray={nearTarget ? "0" : "8 4"} strokeLinecap="round" />;
             })()}
@@ -449,7 +453,7 @@ export function FocusedInvestigation({
                   <span className="text-[#444]">{openSection === "people" ? "▾" : "▸"}</span>
                 </button>
                 {openSection === "people" && (
-                  <div className="border-b border-[#1a1a1a] p-3 space-y-2">
+                  <div className="border-b border-[#1a1a1a] p-3 space-y-2 max-h-[50vh] overflow-y-auto">
                     {existingPeopleNodes.length === 0 && <p className="text-[10px] text-[#444] px-2">No connected people yet</p>}
                     {existingPeopleNodes.map((n) => (
                       <div key={n.id} data-connect-target={n.id}
@@ -477,7 +481,7 @@ export function FocusedInvestigation({
                   <span className="text-[#444]">{openSection === "evidence" ? "▾" : "▸"}</span>
                 </button>
                 {openSection === "evidence" && (
-                  <div className="border-b border-[#1a1a1a] p-3 space-y-1.5">
+                  <div className="border-b border-[#1a1a1a] p-3 space-y-1.5 max-h-[50vh] overflow-y-auto">
                     {existingEvidenceNodes.length === 0 && <p className="text-[10px] text-[#444] px-2">No evidence on file yet</p>}
                     {existingEvidenceNodes.map((n) => (
                       <div key={n.id} data-connect-target={n.id}
