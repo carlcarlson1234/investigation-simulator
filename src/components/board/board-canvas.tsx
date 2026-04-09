@@ -27,6 +27,7 @@ export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
   zoomFit: () => void;
   arrangeEgoWide: () => void;
+  expandAllGroups: () => void;
 }
 
 interface BoardCanvasProps {
@@ -185,6 +186,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   }, []);
 
   const hasCollapsed = Object.values(collapsedGroups).some(Boolean);
+  const expandAllGroups = useCallback(() => {
+    setCollapsedGroups((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const key of Object.keys(prev)) next[key] = false;
+      return next;
+    });
+  }, []);
 
   /* ── Compute evidence grouping per person ───────────────────────────────── */
   type EvidenceGroup = { type: EvidenceType; nodes: BoardEvidenceNode[] };
@@ -1499,7 +1507,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, connections, selectedNodeId, onBatchMoveNodes, getCardSize, zoomFit]);
 
-  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, arrangeEgoWide }), [centerOnNode, zoomFit, arrangeEgoWide]);
+  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, arrangeEgoWide, expandAllGroups }), [centerOnNode, zoomFit, arrangeEgoWide, expandAllGroups]);
 
   const arrangePath = useCallback((nodeAId: string, nodeBId: string) => {
     if (!onBatchMoveNodes || nodes.length < 2) return;

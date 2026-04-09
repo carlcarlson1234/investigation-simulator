@@ -176,12 +176,12 @@ export function FocusedInvestigation({
   useEffect(() => {
     if (phase === "investigating" && !focusEvidenceId) {
       if (!hasArrangedRef.current) {
-        // First time: wait for canvas to mount, then arrange + fit
-        const t1 = setTimeout(() => canvasRef.current?.arrangeEgoWide(), 600);
-        // Safety: re-fit after arrange completes (arrange internally fits after 350ms)
-        const t2 = setTimeout(() => canvasRef.current?.zoomFit(), 1200);
+        // First time: expand all groups, then arrange ego-wide, then fit
+        const t0 = setTimeout(() => canvasRef.current?.expandAllGroups(), 400);
+        const t1 = setTimeout(() => canvasRef.current?.arrangeEgoWide(), 800);
+        const t2 = setTimeout(() => canvasRef.current?.zoomFit(), 1400);
         hasArrangedRef.current = true;
-        return () => { clearTimeout(t1); clearTimeout(t2); };
+        return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); };
       } else {
         // Subsequent returns from split: just zoom-fit
         const t = setTimeout(() => canvasRef.current?.zoomFit(), 300);
