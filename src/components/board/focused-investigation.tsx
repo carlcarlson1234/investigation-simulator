@@ -192,9 +192,10 @@ export function FocusedInvestigation({
             };
             setFocusNodes((prev) => [...prev, node]);
             setRevealingId(item.id);
-            // Re-arrange and fit after each reveal
+            // Re-arrange, then center camera on the new card
             setTimeout(() => {
               canvasRef.current?.arrangeEgoWide();
+              setTimeout(() => canvasRef.current?.centerOnNode(item.id), 400);
             }, 100);
           }, REVEAL_DELAY + i * REVEAL_INTERVAL));
         });
@@ -593,30 +594,20 @@ export function FocusedInvestigation({
               onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} onDirectConnection={handleDirectConnection}
               onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} initialHideOrphans={false} stats={stats} score={score} />
           )}
-          {/* Arrow pointing at newly revealed evidence */}
-          {revealingId && (() => {
-            const el = document.querySelector(`[data-node-id="${revealingId}"]`) as HTMLElement | null;
-            if (!el) return null;
-            const rect = el.getBoundingClientRect();
-            const containerEl = el.closest('.flex.flex-col.flex-1') as HTMLElement | null;
-            if (!containerEl) return null;
-            const cRect = containerEl.getBoundingClientRect();
-            const x = rect.left - cRect.left + rect.width / 2;
-            const y = rect.top - cRect.top - 10;
-            return (
-              <div className="pointer-events-none absolute z-50 animate-bounce" style={{ left: x - 100, top: Math.max(60, y - 50) }}>
-                <div className="flex flex-col items-center">
-                  <span className="rounded-lg bg-[#E24B4A] px-3 py-1.5 font-[family-name:var(--font-mono)] text-[11px] font-bold uppercase tracking-wider text-white shadow-lg shadow-[#E24B4A]/30">
-                    Check New Evidence
-                  </span>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mt-1">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <polyline points="19 12 12 19 5 12" />
-                  </svg>
-                </div>
+          {/* New evidence indicator — centered banner + camera centers on card */}
+          {revealingId && (
+            <div className="pointer-events-none absolute inset-x-0 top-16 z-50 flex justify-center">
+              <div className="animate-bounce flex items-center gap-2 rounded-xl bg-[#E24B4A] px-5 py-2.5 shadow-lg shadow-[#E24B4A]/30">
+                <span className="font-[family-name:var(--font-mono)] text-[13px] font-bold uppercase tracking-wider text-white">
+                  New Evidence Found
+                </span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <polyline points="19 12 12 19 5 12" />
+                </svg>
               </div>
-            );
-          })()}
+            </div>
+          )}
           {phase === "summary" && completedResult && (
             <div className="focus-summary-enter absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
               <div className="w-full max-w-md rounded-2xl border border-[#2a2a2a] bg-[#111] p-8 shadow-2xl">
