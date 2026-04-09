@@ -171,21 +171,22 @@ export function FocusedInvestigation({
   }, [existingNodes, person.id]);
 
   useEffect(() => { fetchEvidence(); }, [fetchEvidence]);
-  // Auto-arrange ego-wide when entering board mode (returning from split)
+  // Auto-arrange ego-wide when entering board mode
   const hasArrangedRef = useRef(false);
   useEffect(() => {
     if (phase === "investigating" && !focusEvidenceId) {
-      const t = setTimeout(() => {
-        if (!hasArrangedRef.current) {
-          // First time: apply ego-wide layout
-          canvasRef.current?.arrangeEgoWide();
-          hasArrangedRef.current = true;
-        } else {
-          // Subsequent returns: just zoom-fit
-          canvasRef.current?.zoomFit();
-        }
-      }, 400);
-      return () => clearTimeout(t);
+      if (!hasArrangedRef.current) {
+        // First time: wait for canvas to mount, then arrange + fit
+        const t1 = setTimeout(() => canvasRef.current?.arrangeEgoWide(), 600);
+        // Safety: re-fit after arrange completes (arrange internally fits after 350ms)
+        const t2 = setTimeout(() => canvasRef.current?.zoomFit(), 1200);
+        hasArrangedRef.current = true;
+        return () => { clearTimeout(t1); clearTimeout(t2); };
+      } else {
+        // Subsequent returns from split: just zoom-fit
+        const t = setTimeout(() => canvasRef.current?.zoomFit(), 300);
+        return () => clearTimeout(t);
+      }
     }
   }, [phase, focusEvidenceId]);
 
