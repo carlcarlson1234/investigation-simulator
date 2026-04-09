@@ -361,11 +361,20 @@ export function FocusedInvestigation({
               .filter((c) => c.sourceId === focusEvidenceId || c.targetId === focusEvidenceId)
               .map((c) => {
                 const targetId = c.sourceId === focusEvidenceId ? c.targetId : c.sourceId;
+                // Only show line if target is visible (Clinton is always visible,
+                // others only when their accordion section is open)
+                const isSubject = targetId === person.id;
+                const isPerson = existingPeopleNodes.some((n) => n.id === targetId);
+                const isEvidence = existingEvidenceNodes.some((n) => n.id === targetId);
+                if (!isSubject && isPerson && openSection !== "people") return null;
+                if (!isSubject && isEvidence && openSection !== "evidence") return null;
                 const targetEl = document.querySelector(`[data-connect-target="${targetId}"]`) as HTMLElement | null;
                 if (!targetEl || !handleRef.current || !splitContainerRef.current) return null;
+                // Check element is actually rendered (has size)
+                const tr = targetEl.getBoundingClientRect();
+                if (tr.width === 0 || tr.height === 0) return null;
                 const box = splitContainerRef.current.getBoundingClientRect();
                 const hr = handleRef.current.getBoundingClientRect();
-                const tr = targetEl.getBoundingClientRect();
                 return (
                   <line key={c.id}
                     x1={hr.left - box.left + hr.width / 2} y1={hr.top - box.top + hr.height / 2}
