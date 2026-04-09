@@ -26,6 +26,7 @@ const BASE_WORLD_H = 3000;
 export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
   zoomFit: () => void;
+  arrangeEgoWide: () => void;
 }
 
 interface BoardCanvasProps {
@@ -52,6 +53,7 @@ interface BoardCanvasProps {
   spotlightFocusState?: { nodeIds: Set<string>; directIds: Set<string>; edgeIds: Set<string> } | null;
   spotlightPulseId?: string | null;
   reintegratingIds?: Set<string>;
+  initialHideOrphans?: boolean;
   stats: ArchiveStats;
   score: number;
   firstPlacementMode?: boolean;
@@ -84,6 +86,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     spotlightFocusState,
     spotlightPulseId,
     reintegratingIds,
+    initialHideOrphans,
     stats,
     score,
     firstPlacementMode,
@@ -422,7 +425,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     });
   }, []);
 
-  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit }), [centerOnNode, zoomFit]);
+  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, arrangeEgoWide }), [centerOnNode, zoomFit, arrangeEgoWide]);
 
   /* ── Auto-arrange (multiple modes) ───────────────────────────────────── */
   const [isArranging, setIsArranging] = useState(false);
@@ -430,7 +433,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [pathFocus, setPathFocus] = useState<FocusState | null>(null);
   const [pathDrillNode, setPathDrillNode] = useState<string | null>(null);
   const [showAllInCompare, setShowAllInCompare] = useState(false);
-  const [hideOrphans, setHideOrphans] = useState(false);
+  const [hideOrphans, setHideOrphans] = useState(initialHideOrphans ?? false);
   const compareNodeIdsRef = useRef<Set<string> | null>(null);
   // Default path focus (5 core columns) and full focus (includes indirect)
   const pathDefaultFocusRef = useRef<FocusState | null>(null);
@@ -1399,6 +1402,81 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
     // Stack orphans to the right
     stackSidebar(orphans, pos);
+
+    setIsArranging(true);
+    onBatchMoveNodes(pos);
+    setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
+  }, [nodes, connections, selectedNodeId, onBatchMoveNodes, getCardSize, zoomFit]);
+
+  // Ego layout optimized for wide — ego on left, columns spreading right
+  const arrangeEgoWide = useCallback(() => {
+    if (!onBatchMoveNodes || nodes.length < 2) return;
+    setPathFocus(null); setPathDrillNode(null); setShowAllInCompare(false); compareNodeIdsRef.current = null;
+
+    const people = nodes.filter(n => n.kind === "person");
+    if (people.length === 0) return;
+
+    const neighbors: Record<string, Set<string>> = {};
+    for (const n of nodes) neighbors[n.id] = new Set();
+    for (const c of connections) {
+      if (neighbors[c.sourceId]) neighbors[c.sourceId].add(c.targetId);
+      if (neighbors[c.targetId]) neighbors[c.targetId].add(c.sourceId);
+    }
+
+    const ego = (selectedNodeId && people.find(p => p.id === selectedNodeId))
+      ? selectedNodeId
+      : people.sort((a, b) => (neighbors[b.id]?.size ?? 0) - (neighbors[a.id]?.size ?? 0))[0].id;
+
+    // BFS rings
+    const placed = new Set<string>([ego]);
+    const columns: string[][] = [];
+    let frontier = [ego];
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const nId of (neighbors[id] || [])) {
+          if (!placed.has(nId)) { placed.add(nId); next.push(nId); }
+        }
+      }
+      if (next.length > 0) columns.push(next);
+      frontier = next;
+    }
+
+    const orphans: string[] = [];
+    for (const n of nodes) { if (!placed.has(n.id)) orphans.push(n.id); }
+
+    const COL_GAP = 320;
+    const ROW_GAP = 20;
+    const START_X = 100;
+    const START_Y = 100;
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    const egoSize = getCardSize(ego);
+    // Ego on the left
+    const totalRows = columns.reduce((max, col) => Math.max(max, col.length), 1);
+    const egoY = START_Y + (totalRows * (160 + ROW_GAP)) / 2 - egoSize.h / 2;
+    pos[ego] = { x: START_X, y: Math.max(START_Y, egoY) };
+
+    let colX = START_X + egoSize.w + COL_GAP;
+    for (const col of columns) {
+      let y = START_Y;
+      for (const id of col) {
+        const s = getCardSize(id);
+        pos[id] = { x: colX, y };
+        y += s.h + ROW_GAP;
+      }
+      colX += 280 + COL_GAP / 2;
+    }
+
+    // Orphans far right
+    if (orphans.length > 0) {
+      let y = START_Y;
+      for (const id of orphans) {
+        const s = getCardSize(id);
+        pos[id] = { x: colX + 200, y };
+        y += s.h + ROW_GAP;
+      }
+    }
 
     setIsArranging(true);
     onBatchMoveNodes(pos);

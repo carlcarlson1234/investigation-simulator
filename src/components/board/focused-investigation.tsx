@@ -172,10 +172,20 @@ export function FocusedInvestigation({
   }, [existingNodes, person.id]);
 
   useEffect(() => { fetchEvidence(); }, [fetchEvidence]);
-  // Zoom-fit when entering board mode (phase change or returning from split)
+  // Auto-arrange ego-wide when entering board mode (returning from split)
+  const hasArrangedRef = useRef(false);
   useEffect(() => {
     if (phase === "investigating" && !focusEvidenceId) {
-      const t = setTimeout(() => canvasRef.current?.zoomFit(), 400);
+      const t = setTimeout(() => {
+        if (!hasArrangedRef.current) {
+          // First time: apply ego-wide layout
+          canvasRef.current?.arrangeEgoWide();
+          hasArrangedRef.current = true;
+        } else {
+          // Subsequent returns: just zoom-fit
+          canvasRef.current?.zoomFit();
+        }
+      }, 400);
       return () => clearTimeout(t);
     }
   }, [phase, focusEvidenceId]);
@@ -561,7 +571,7 @@ export function FocusedInvestigation({
               onSelectNode={handleSelectNode} onFocusNode={handleFocusNode} onMoveNode={handleMoveNode} onBatchMoveNodes={handleBatchMoveNodes}
               onAddEvidence={noopResult} onAddPerson={noopStr}
               onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} onDirectConnection={handleDirectConnection}
-              onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} stats={stats} score={score} />
+              onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} initialHideOrphans={true} stats={stats} score={score} />
           )}
           {phase === "summary" && completedResult && (
             <div className="focus-summary-enter absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
