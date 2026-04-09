@@ -43,8 +43,8 @@ interface FocusedInvestigationProps {
 const NEW_EVIDENCE_COUNT = 6;
 const PERSON_X = 1800;
 const PERSON_Y = 1200;
-const INNER_RADIUS = 280;  // existing connections
-const OUTER_RADIUS = 500;  // new evidence
+const INNER_RADIUS = 280;
+const OUTER_RADIUS = 500;
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -63,75 +63,68 @@ export function FocusedInvestigation({
   const [phase, setPhase] = useState<"loading" | "investigating" | "summary">("loading");
   const [completedResult, setCompletedResult] = useState<InvestigationResult | null>(null);
 
-  // ─── Local board state (initialized with person + existing connections) ──
+  // ─── Local board state ────────────────────────────────────────────────
   const [focusNodes, setFocusNodes] = useState<BoardNode[]>(() => {
     const nodes: BoardNode[] = [
       { kind: "person" as const, id: person.id, data: person, position: { x: PERSON_X, y: PERSON_Y } },
     ];
-
-    // Pull in existing direct connections from the main board
-    const directConns = existingConnections.filter(
-      (c) => c.sourceId === person.id || c.targetId === person.id,
-    );
+    const directConns = existingConnections.filter((c) => c.sourceId === person.id || c.targetId === person.id);
     const connectedIds = new Set<string>();
-    for (const c of directConns) {
-      const otherId = c.sourceId === person.id ? c.targetId : c.sourceId;
-      connectedIds.add(otherId);
-    }
-    const connectedNodes = existingNodes.filter((n) => connectedIds.has(n.id));
-
-    // Position existing connections in inner ring
-    connectedNodes.forEach((n, i) => {
-      const angle = -Math.PI / 2 + (i / Math.max(connectedNodes.length, 1)) * Math.PI * 2;
-      nodes.push({
-        ...n,
-        position: {
-          x: PERSON_X + Math.cos(angle) * INNER_RADIUS,
-          y: PERSON_Y + Math.sin(angle) * INNER_RADIUS,
-        },
-      });
+    for (const c of directConns) connectedIds.add(c.sourceId === person.id ? c.targetId : c.sourceId);
+    existingNodes.filter((n) => connectedIds.has(n.id)).forEach((n, i, arr) => {
+      const angle = -Math.PI / 2 + (i / Math.max(arr.length, 1)) * Math.PI * 2;
+      nodes.push({ ...n, position: { x: PERSON_X + Math.cos(angle) * INNER_RADIUS, y: PERSON_Y + Math.sin(angle) * INNER_RADIUS } });
     });
-
     return nodes;
   });
-
-  const [focusConnections, setFocusConnections] = useState<BoardConnection[]>(() => {
-    // Include existing connections to this person
-    return existingConnections.filter(
-      (c) => c.sourceId === person.id || c.targetId === person.id,
-    );
-  });
+  const [focusConnections, setFocusConnections] = useState<BoardConnection[]>(() =>
+    existingConnections.filter((c) => c.sourceId === person.id || c.targetId === person.id),
+  );
 
   // ─── Canvas interaction state ─────────────────────────────────────────
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
 
-  // ─── Split-screen evidence viewer ─────────────────────────────────────
-  const [splitEvidenceId, setSplitEvidenceId] = useState<string | null>(null);
+  // ─── Focus mode state ─────────────────────────────────────────────────
+  const [focusEvidenceId, setFocusEvidenceId] = useState<string | null>(null);
   const [fullEvidence, setFullEvidence] = useState<Evidence | null>(null);
   const [loadingEvidence, setLoadingEvidence] = useState(false);
+  const [newEvidenceIds, setNewEvidenceIds] = useState<Set<string>>(new Set());
 
-  // ─── Evidence fetch state ─────────────────────────────────────────────
+  // Right panel state
+  const [openSection, setOpenSection] = useState<"people" | "evidence" | null>(null);
+  const [comparisonId, setComparisonId] = useState<string | null>(null);
+  const [comparisonEvidence, setComparisonEvidence] = useState<Evidence | null>(null);
+  const [loadingComparison, setLoadingComparison] = useState(false);
+
+  // Drag-to-connect
+  const [dragState, setDragState] = useState<{ sourceId: string; mouseX: number; mouseY: number } | null>(null);
+  const [nearTarget, setNearTarget] = useState<string | null>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
+
+  // ─── Evidence fetch ───────────────────────────────────────────────────
   const seenIdsRef = useRef<Set<string>>(new Set());
 
   // ─── Derived ──────────────────────────────────────────────────────────
-  const evidenceNodes = useMemo(
-    () => focusNodes.filter((n): n is BoardEvidenceNode => n.kind === "evidence"),
-    [focusNodes],
-  );
-  const connectedEvidenceIds = useMemo(
-    () => new Set(focusConnections.map((c) => c.targetId)),
-    [focusConnections],
-  );
-  const unconnectedCount = evidenceNodes.filter((n) => !connectedEvidenceIds.has(n.id)).length;
-  const score = focusConnections.length * 100;
+  const evidenceNodes = useMemo(() => focusNodes.filter((n): n is BoardEvidenceNode => n.kind === "evidence"), [focusNodes]);
+  const newEvidenceNodes = useMemo(() => evidenceNodes.filter((n) => newEvidenceIds.has(n.id)), [evidenceNodes, newEvidenceIds]);
+  const existingEvidenceNodes = useMemo(() => evidenceNodes.filter((n) => !newEvidenceIds.has(n.id)), [evidenceNodes, newEvidenceIds]);
+  const existingPeopleNodes = useMemo(() => focusNodes.filter((n) => n.kind === "person" && n.id !== person.id), [focusNodes, person.id]);
+  const newEvidenceConns = focusConnections.filter((c) => newEvidenceIds.has(c.sourceId) || newEvidenceIds.has(c.targetId));
+  const score = newEvidenceConns.length * 100;
 
-  // Current split index for prev/next
-  const splitIndex = splitEvidenceId ? evidenceNodes.findIndex((n) => n.id === splitEvidenceId) : -1;
-  const splitNode = splitIndex >= 0 ? evidenceNodes[splitIndex] : null;
+  const focusIndex = focusEvidenceId ? newEvidenceNodes.findIndex((n) => n.id === focusEvidenceId) : -1;
+  const focusNode = focusIndex >= 0 ? newEvidenceNodes[focusIndex] : null;
 
-  // ─── Focus state for BoardCanvas ──────────────────────────────────────
+  const isLinked = (targetId: string) => {
+    if (!focusEvidenceId) return false;
+    return focusConnections.some((c) =>
+      (c.sourceId === focusEvidenceId && c.targetId === targetId) ||
+      (c.targetId === focusEvidenceId && c.sourceId === targetId),
+    );
+  };
+
   const focusState = useMemo<FocusState | null>(() => {
     if (!focusedNodeId) return null;
     const directIds = new Set<string>();
@@ -145,51 +138,30 @@ export function FocusedInvestigation({
     return { nodeId: focusedNodeId, directIds, secondIds: new Set(), edgeIds };
   }, [focusedNodeId, focusConnections]);
 
-  // ─── Fetch 6 new evidence items (one-time) ─────────────────────────────
+  // ─── Fetch new evidence ───────────────────────────────────────────────
   const fetchEvidence = useCallback(async () => {
     try {
-      const existingIds = [...existingNodes.map((n) => n.id), ...seenIdsRef.current];
-
+      const excludeIds = [...existingNodes.map((n) => n.id), ...seenIdsRef.current];
       const res = await fetch("/api/focus-evidence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personId: person.id, excludeIds: existingIds, wave: 1 }),
+        body: JSON.stringify({ personId: person.id, excludeIds, wave: 1 }),
       });
-
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       const items = (data.items as FocusEvidenceItem[]).slice(0, NEW_EVIDENCE_COUNT);
-
       for (const item of items) seenIdsRef.current.add(item.id);
-
-      // Position in a clean circle (outer ring, starting from 12 o'clock)
-      const newNodes: BoardNode[] = items.map((item, i) => {
-        const angle = -Math.PI / 2 + (i / items.length) * Math.PI * 2;
-        return {
-          kind: "evidence" as const,
-          id: item.id,
-          evidenceType: item.type,
-          data: item as SearchResult,
-          position: {
-            x: PERSON_X + Math.cos(angle) * OUTER_RADIUS,
-            y: PERSON_Y + Math.sin(angle) * OUTER_RADIUS,
-          },
-        };
-      });
-
+      setNewEvidenceIds(new Set(items.map((i) => i.id)));
+      const newNodes: BoardNode[] = items.map((item, i) => ({
+        kind: "evidence" as const, id: item.id, evidenceType: item.type, data: item as SearchResult,
+        position: { x: PERSON_X + Math.cos(-Math.PI / 2 + (i / items.length) * Math.PI * 2) * OUTER_RADIUS, y: PERSON_Y + Math.sin(-Math.PI / 2 + (i / items.length) * Math.PI * 2) * OUTER_RADIUS },
+      }));
       setFocusNodes((prev) => [...prev, ...newNodes]);
       setPhase("investigating");
-    } catch (err) {
-      console.error("Focus evidence fetch error:", err);
-      setPhase("investigating");
-    }
+    } catch { setPhase("investigating"); }
   }, [existingNodes, person.id]);
 
-  useEffect(() => {
-    fetchEvidence();
-  }, [fetchEvidence]);
-
-  // Center on person after evidence loads
+  useEffect(() => { fetchEvidence(); }, [fetchEvidence]);
   useEffect(() => {
     if (phase === "investigating") {
       const t = setTimeout(() => canvasRef.current?.centerOnNode(person.id), 800);
@@ -197,515 +169,382 @@ export function FocusedInvestigation({
     }
   }, [phase, person.id]);
 
-  // ─── Fetch full evidence detail for split viewer ──────────────────────
+  // ─── Fetch full evidence for focus view ───────────────────────────────
   useEffect(() => {
-    if (!splitEvidenceId || !splitNode) {
-      setFullEvidence(null);
-      return;
-    }
-    setLoadingEvidence(true);
-    setFullEvidence(null);
-    fetch(`/api/evidence/${encodeURIComponent(splitEvidenceId)}?type=${splitNode.evidenceType}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        setFullEvidence(data);
-        setLoadingEvidence(false);
-      })
+    if (!focusEvidenceId || !focusNode) { setFullEvidence(null); return; }
+    setLoadingEvidence(true); setFullEvidence(null);
+    fetch(`/api/evidence/${encodeURIComponent(focusEvidenceId)}?type=${focusNode.evidenceType}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { setFullEvidence(d); setLoadingEvidence(false); })
       .catch(() => setLoadingEvidence(false));
-  }, [splitEvidenceId, splitNode]);
+  }, [focusEvidenceId, focusNode]);
 
-  // Center camera on split evidence
+  // ─── Fetch comparison evidence ────────────────────────────────────────
   useEffect(() => {
-    if (splitEvidenceId) {
-      setTimeout(() => canvasRef.current?.centerOnNode(splitEvidenceId), 100);
-    }
-  }, [splitEvidenceId]);
+    if (!comparisonId) { setComparisonEvidence(null); return; }
+    const node = existingEvidenceNodes.find((n) => n.id === comparisonId);
+    if (!node) return;
+    setLoadingComparison(true); setComparisonEvidence(null);
+    fetch(`/api/evidence/${encodeURIComponent(comparisonId)}?type=${node.evidenceType}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { setComparisonEvidence(d); setLoadingComparison(false); })
+      .catch(() => setLoadingComparison(false));
+  }, [comparisonId, existingEvidenceNodes]);
+
+  // ─── Drag-to-connect ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!dragState) return;
+    const onMove = (e: MouseEvent) => {
+      setDragState((p) => p ? { ...p, mouseX: e.clientX, mouseY: e.clientY } : null);
+      const targets = document.querySelectorAll("[data-connect-target]");
+      let closest: string | null = null;
+      let closestDist = 60;
+      targets.forEach((el) => {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        const dist = Math.sqrt((e.clientX - (r.left + r.width / 2)) ** 2 + (e.clientY - (r.top + r.height / 2)) ** 2);
+        if (dist < closestDist) { closestDist = dist; closest = (el as HTMLElement).getAttribute("data-connect-target"); }
+      });
+      setNearTarget(closest);
+    };
+    const onUp = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      let targetId: string | null = null;
+      if (el) { const t = el.closest("[data-connect-target]"); if (t) targetId = t.getAttribute("data-connect-target"); }
+      if (targetId && targetId !== dragState.sourceId) {
+        const connId = `focus-${dragState.sourceId}-${targetId}`;
+        setFocusConnections((prev) => {
+          if (prev.some((c) => c.id === connId)) return prev;
+          return [...prev, { id: connId, sourceId: dragState.sourceId, targetId, type: "manual" as const, label: "Linked in investigation", strength: 3, verified: true }];
+        });
+        play("connection");
+      }
+      setDragState(null); setNearTarget(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [dragState, play]);
 
   // ─── ESC handler ──────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (splitEvidenceId) {
-          setSplitEvidenceId(null);
-        } else {
-          onExit();
-        }
+        if (comparisonId) setComparisonId(null);
+        else if (focusEvidenceId) setFocusEvidenceId(null);
+        else onExit();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [splitEvidenceId, onExit]);
+  }, [comparisonId, focusEvidenceId, onExit]);
 
   // ─── Board callbacks ─────────────────────────────────────────────────
-  const handleSelectNode = useCallback((id: string | null) => {
-    setSelectedNodeId(id);
-  }, []);
-
-  const handleFocusNode = useCallback(
-    (id: string | null) => {
-      setFocusedNodeId(id);
-      // Double-click on evidence (non-photo) triggers focus → open split viewer
-      if (id) {
-        const node = focusNodes.find((n) => n.id === id);
-        if (node && node.kind === "evidence") {
-          setSplitEvidenceId(id);
-        }
-      }
-    },
-    [focusNodes],
-  );
-
-  const handleOpenPhotoView = useCallback((id: string) => {
-    // Double-click on photo evidence → open split viewer
-    setSplitEvidenceId(id);
-  }, []);
-
-  const handleMoveNode = useCallback((id: string, x: number, y: number) => {
-    setFocusNodes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, position: { x, y } } : n)),
-    );
-  }, []);
-
-  const handleBatchMoveNodes = useCallback((moves: Record<string, { x: number; y: number }>) => {
-    setFocusNodes((prev) =>
-      prev.map((n) => (moves[n.id] ? { ...n, position: moves[n.id] } : n)),
-    );
-  }, []);
-
-  const handleStartConnection = useCallback((fromId: string) => {
-    setConnectingFrom(fromId);
-  }, []);
-
-  const handleCompleteConnection = useCallback(
-    (toId: string) => {
-      if (!connectingFrom || connectingFrom === toId) {
-        setConnectingFrom(null);
-        return;
-      }
-      const connId = `focus-${connectingFrom}-${toId}`;
-      setFocusConnections((prev) => {
-        if (prev.some((c) => c.id === connId)) return prev;
-        return [
-          ...prev,
-          {
-            id: connId,
-            sourceId: connectingFrom,
-            targetId: toId,
-            type: "manual" as const,
-            label: "Linked in investigation",
-            strength: 3,
-            verified: true,
-          },
-        ];
-      });
-      setConnectingFrom(null);
-      play("connection");
-    },
-    [connectingFrom, play],
-  );
-
-  const handleDirectConnection = useCallback(
-    (fromId: string, toId: string) => {
-      const connId = `focus-${fromId}-${toId}`;
-      setFocusConnections((prev) => {
-        if (prev.some((c) => c.id === connId)) return prev;
-        return [
-          ...prev,
-          {
-            id: connId,
-            sourceId: fromId,
-            targetId: toId,
-            type: "manual" as const,
-            label: "Linked in investigation",
-            strength: 3,
-            verified: true,
-          },
-        ];
-      });
-      play("connection");
-    },
-    [play],
-  );
-
+  const handleSelectNode = useCallback((id: string | null) => setSelectedNodeId(id), []);
+  const handleFocusNode = useCallback((id: string | null) => {
+    setFocusedNodeId(id);
+    if (id && newEvidenceIds.has(id)) setFocusEvidenceId(id);
+  }, [newEvidenceIds]);
+  const handleOpenPhotoView = useCallback((id: string) => { if (newEvidenceIds.has(id)) setFocusEvidenceId(id); }, [newEvidenceIds]);
+  const handleMoveNode = useCallback((id: string, x: number, y: number) => { setFocusNodes((p) => p.map((n) => n.id === id ? { ...n, position: { x, y } } : n)); }, []);
+  const handleBatchMoveNodes = useCallback((moves: Record<string, { x: number; y: number }>) => { setFocusNodes((p) => p.map((n) => moves[n.id] ? { ...n, position: moves[n.id] } : n)); }, []);
+  const handleStartConnection = useCallback((fromId: string) => setConnectingFrom(fromId), []);
+  const handleCompleteConnection = useCallback((toId: string) => {
+    if (!connectingFrom || connectingFrom === toId) { setConnectingFrom(null); return; }
+    const connId = `focus-${connectingFrom}-${toId}`;
+    setFocusConnections((p) => { if (p.some((c) => c.id === connId)) return p; return [...p, { id: connId, sourceId: connectingFrom, targetId: toId, type: "manual" as const, label: "Linked in investigation", strength: 3, verified: true }]; });
+    setConnectingFrom(null); play("connection");
+  }, [connectingFrom, play]);
+  const handleDirectConnection = useCallback((fromId: string, toId: string) => {
+    const connId = `focus-${fromId}-${toId}`;
+    setFocusConnections((p) => { if (p.some((c) => c.id === connId)) return p; return [...p, { id: connId, sourceId: fromId, targetId: toId, type: "manual" as const, label: "Linked in investigation", strength: 3, verified: true }]; });
+    play("connection");
+  }, [play]);
   const noopStr = useCallback((_s: string) => {}, []);
   const noopResult = useCallback((_r: SearchResult, _x?: number, _y?: number) => {}, []);
 
-  // ─── Split-screen navigation ──────────────────────────────────────────
-  const goToEvidence = useCallback(
-    (direction: "prev" | "next") => {
-      if (evidenceNodes.length === 0) return;
-      let newIdx: number;
-      if (splitIndex < 0) {
-        newIdx = 0;
-      } else if (direction === "prev") {
-        newIdx = (splitIndex - 1 + evidenceNodes.length) % evidenceNodes.length;
-      } else {
-        newIdx = (splitIndex + 1) % evidenceNodes.length;
-      }
-      setSplitEvidenceId(evidenceNodes[newIdx].id);
-    },
-    [evidenceNodes, splitIndex],
-  );
+  // ─── Navigation ───────────────────────────────────────────────────────
+  const goToEvidence = useCallback((dir: "prev" | "next") => {
+    if (newEvidenceNodes.length === 0) return;
+    let idx = focusIndex < 0 ? 0 : dir === "prev" ? Math.max(0, focusIndex - 1) : Math.min(newEvidenceNodes.length - 1, focusIndex + 1);
+    setFocusEvidenceId(newEvidenceNodes[idx].id);
+    setComparisonId(null);
+  }, [newEvidenceNodes, focusIndex]);
 
-  // Connect current split evidence to person
-  const connectSplitEvidence = useCallback(() => {
-    if (!splitEvidenceId) return;
-    const connId = `focus-${person.id}-${splitEvidenceId}`;
-    setFocusConnections((prev) => {
-      if (prev.some((c) => c.id === connId)) return prev;
-      return [
-        ...prev,
-        {
-          id: connId,
-          sourceId: person.id,
-          targetId: splitEvidenceId,
-          type: "manual" as const,
-          label: "Linked in investigation",
-          strength: 3,
-          verified: true,
-        },
-      ];
-    });
-    play("connection");
-  }, [splitEvidenceId, person.id, play]);
-
-  // ─── Complete investigation ─────────────────────────────────────────
+  // ─── Complete ─────────────────────────────────────────────────────────
   const handleComplete = useCallback(() => {
-    const connectedEvIds = new Set(focusConnections.map((c) => c.targetId));
-    const connected = focusNodes
-      .filter((n) => n.kind === "evidence" && connectedEvIds.has(n.id))
-      .map((n) => n.data as SearchResult);
-
+    const newConns = focusConnections.filter((c) => newEvidenceIds.has(c.sourceId) || newEvidenceIds.has(c.targetId));
+    const connected = focusNodes.filter((n) => n.kind === "evidence" && newEvidenceIds.has(n.id) && newConns.some((c) => c.targetId === n.id)).map((n) => n.data as SearchResult);
+    setPhase("summary"); setFocusEvidenceId(null); setComparisonId(null);
     const result: InvestigationResult = {
-      personId: person.id,
-      connectedEvidence: connected,
-      dismissedEvidence: [],
-      uncertainEvidence: [],
-      newConnections: focusConnections,
-      stats: {
-        connectionsCreated: focusConnections.length,
-        evidenceDismissed: 0,
-        markedUncertain: 0,
-        pointsEarned: score,
-      },
+      personId: person.id, connectedEvidence: connected, dismissedEvidence: [], uncertainEvidence: [],
+      newConnections: newConns, stats: { connectionsCreated: newConns.length, evidenceDismissed: 0, markedUncertain: 0, pointsEarned: score },
     };
+    setCompletedResult(result); play("discovery");
+  }, [focusNodes, focusConnections, newEvidenceIds, person.id, score, play]);
 
-    setPhase("summary");
-    setSplitEvidenceId(null);
-    setCompletedResult(result);
-    play("discovery");
-  }, [focusNodes, focusConnections, person.id, score, play]);
+  // ─── Evidence content renderer ────────────────────────────────────────
+  const renderEvidenceContent = (ev: Record<string, unknown> | null, loading: boolean, fallbackTitle?: string) => {
+    if (loading) return <div className="flex h-full items-center justify-center"><span className="font-[family-name:var(--font-mono)] text-[11px] text-[#555]">Loading...</span></div>;
+    if (!ev) return <div className="flex h-full items-center justify-center"><span className="text-[11px] text-[#444]">No detail available</span></div>;
+    const title = String(ev.title ?? fallbackTitle ?? "");
+    const type = String(ev.type ?? "");
+    const date = ev.date ? String(ev.date) : null;
+    const imageUrl = ev.imageUrl ? String(ev.imageUrl) : null;
+    const imageDesc = ev.imageDescription ? String(ev.imageDescription) : null;
+    const sender = ev.sender ? String(ev.senderName ?? ev.sender) : null;
+    const recipients = Array.isArray(ev.recipients) ? (ev.recipients as string[]) : null;
+    const body = ev.body ? String(ev.body) : null;
+    const fulltext = ev.fulltext ? String(ev.fulltext) : null;
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 border-b border-[#1a1a1a] px-5 py-3 shrink-0">
+          <span className="rounded bg-[#E24B4A]/10 px-2 py-0.5 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase text-[#E24B4A]/70">{type}</span>
+          <h3 className="flex-1 truncate font-[family-name:var(--font-display)] text-[16px] tracking-wide text-white">{title}</h3>
+          {date && <span className="font-[family-name:var(--font-mono)] text-[9px] text-[#555]">{date}</span>}
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {imageUrl && <img src={imageUrl} alt={title} className="w-full object-contain" />}
+          {imageDesc && <p className="px-5 py-3 text-[12px] leading-relaxed text-[#888]">{imageDesc}</p>}
+          {sender && (
+            <div className="border-b border-[#1a1a1a] px-5 py-2 text-[10px] text-[#777]">
+              <span className="text-[#555]">From:</span> {sender}
+              {recipients && <> · <span className="text-[#555]">To:</span> {recipients.join(", ")}</>}
+            </div>
+          )}
+          {body && <pre className="whitespace-pre-wrap px-5 py-4 font-[family-name:var(--font-mono)] text-[11px] leading-relaxed text-[#bbb]">{body}</pre>}
+          {fulltext && <pre className="whitespace-pre-wrap px-5 py-4 font-[family-name:var(--font-mono)] text-[11px] leading-relaxed text-[#bbb]">{fulltext}</pre>}
+        </div>
+      </div>
+    );
+  };
+
+  const isFocus = !!focusEvidenceId;
+  const isComparison = !!comparisonId;
 
   // ─── Render ─────────────────────────────────────────────────────────
-  const isSplit = !!splitEvidenceId;
-  const isConnected = splitEvidenceId ? connectedEvidenceIds.has(splitEvidenceId) : false;
-  // Safe accessor for the Evidence union type
-  const ev = fullEvidence as unknown as Record<string, unknown> | null;
-
   return (
     <div className="focus-mode-enter fixed inset-0 z-[100] flex flex-col bg-[#050505]">
-      {/* Top bar */}
-      <div className="relative z-50 flex shrink-0 items-center justify-between border-b border-[#1a1a1a] px-5 py-3">
-        <button
-          onClick={onExit}
-          className="flex items-center gap-2 text-[11px] text-[#555] transition hover:text-white"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
+      {/* Top chrome */}
+      <div className="relative z-50 flex shrink-0 items-center justify-between border-b border-[#1a1a1a] bg-[#060606] px-5 py-3">
+        <button onClick={isFocus ? () => { setFocusEvidenceId(null); setComparisonId(null); } : onExit} className="flex items-center gap-2 text-[11px] text-[#555] transition hover:text-white">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           <span className="text-[#444]">Main Board</span>
           <span className="text-[#333]">/</span>
-          <span className="text-[#888]">Investigating <strong className="font-semibold text-white">{person.name}</strong></span>
+          <span className="text-[#444]">Investigating {person.name}</span>
+          {isFocus && <><span className="text-[#333]">/</span><span className="text-white font-semibold">Evidence {focusIndex + 1} of {newEvidenceNodes.length}</span></>}
         </button>
-
         <div className="flex items-center gap-4">
-          <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#555]">
-            {focusConnections.length} connection{focusConnections.length !== 1 ? "s" : ""} · {evidenceNodes.length} evidence
-          </span>
-          <span className="font-[family-name:var(--font-mono)] text-[11px] font-bold text-[#4ade80]">
-            {score} pts
-          </span>
-          {focusConnections.length > 0 && phase === "investigating" && (
-            <button
-              onClick={handleComplete}
-              className="rounded-lg border border-[#E24B4A]/30 bg-[#E24B4A]/10 px-4 py-1.5 font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider text-[#E24B4A] transition hover:bg-[#E24B4A]/20"
-            >
-              Complete Investigation
+          <span className="font-[family-name:var(--font-mono)] text-[11px] font-bold text-[#4ade80]">{score} pts</span>
+          {phase === "investigating" && (
+            <button onClick={handleComplete} className="rounded-lg border border-[#E24B4A]/30 bg-[#E24B4A]/10 px-4 py-1.5 font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider text-[#E24B4A] transition hover:bg-[#E24B4A]/20">
+              Finish Investigation
             </button>
           )}
         </div>
       </div>
 
-      {/* Main content area */}
-      <div className="flex flex-1 min-h-0">
-        {/* Split-screen evidence panel (left) */}
-        {isSplit && (
-          <div className="flex w-1/2 shrink-0 flex-col border-r border-[#1a1a1a] bg-[#080808]">
-            {/* Split header */}
-            <div className="flex shrink-0 items-center justify-between border-b border-[#1a1a1a] px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => goToEvidence("prev")}
-                  className="rounded p-1 text-[#555] transition hover:bg-[#1a1a1a] hover:text-white"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                </button>
-                <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#555]">
-                  {splitIndex + 1} / {evidenceNodes.length}
-                </span>
-                <button
-                  onClick={() => goToEvidence("next")}
-                  className="rounded p-1 text-[#555] transition hover:bg-[#1a1a1a] hover:text-white"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-              </div>
+      {/* ═══ FOCUS MODE: Split-screen evidence evaluation ═══════════════ */}
+      {isFocus && (phase === "investigating" || phase === "summary") && (
+        <div className="flex flex-1 min-h-0 relative">
+          {/* SVG drag line */}
+          <svg className="pointer-events-none absolute inset-0 z-40" style={{ width: "100%", height: "100%" }}>
+            {dragState && handleRef.current && (() => {
+              const r = handleRef.current.getBoundingClientRect();
+              const hx = r.left + r.width / 2, hy = r.top + r.height / 2;
+              return <line x1={hx} y1={hy} x2={dragState.mouseX} y2={dragState.mouseY}
+                stroke={nearTarget ? "#4ade80" : "#f87171"} strokeWidth={nearTarget ? 4 : 3}
+                strokeOpacity={nearTarget ? 1 : 0.8} strokeDasharray={nearTarget ? "0" : "8 4"} strokeLinecap="round" />;
+            })()}
+          </svg>
 
-              <div className="flex items-center gap-2">
-                {!isConnected && (
-                  <button
-                    onClick={connectSplitEvidence}
-                    className="rounded-lg border border-[#E24B4A]/30 bg-[#E24B4A]/10 px-3 py-1 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-wider text-[#E24B4A] transition hover:bg-[#E24B4A]/20"
-                  >
-                    Connect
-                  </button>
-                )}
-                {isConnected && (
-                  <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-[#E24B4A]">
-                    LINKED
-                  </span>
-                )}
-                <button
-                  onClick={() => setSplitEvidenceId(null)}
-                  className="rounded p-1 text-[#555] transition hover:bg-[#1a1a1a] hover:text-white"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
+          {/* ── LEFT PANEL: New evidence ───────────────────────────────── */}
+          <div className="flex w-1/2 shrink-0 flex-col border-r border-[#1a1a1a] bg-[#080808] relative">
+            <div className="flex-1 min-h-0 flex flex-col p-5">
+              <div className="flex-1 min-h-0 rounded-xl border border-[#E24B4A]/15 bg-[#0a0a0a] shadow-[0_0_40px_rgba(226,75,74,0.04)] overflow-hidden">
+                {renderEvidenceContent(fullEvidence as unknown as Record<string, unknown> | null, loadingEvidence, focusNode?.data.title)}
               </div>
             </div>
-
-            {/* Evidence content */}
-            <div className="flex-1 overflow-y-auto p-5">
-              {loadingEvidence && (
-                <div className="flex h-32 items-center justify-center">
-                  <span className="font-[family-name:var(--font-mono)] text-[11px] text-[#555]">Loading...</span>
-                </div>
-              )}
-
-              {!loadingEvidence && ev && (() => {
-                const title = String(ev.title ?? splitNode?.data.title ?? "");
-                const type = String(ev.type ?? splitNode?.evidenceType ?? "");
-                const date = ev.date ? String(ev.date) : null;
-                const imageUrl = ev.imageUrl ? String(ev.imageUrl) : null;
-                const imageDesc = ev.imageDescription ? String(ev.imageDescription) : null;
-                const sender = ev.sender ? String(ev.senderName ?? ev.sender) : null;
-                const recipients = Array.isArray(ev.recipients) ? (ev.recipients as string[]) : null;
-                const body = ev.body ? String(ev.body) : null;
-                const fulltext = ev.fulltext ? String(ev.fulltext) : null;
-                const faces = Array.isArray(ev.facesDetected) ? (ev.facesDetected as Array<{personId: string; name: string}>) : [];
-                const filename = ev.filename ? String(ev.filename) : null;
-                const volume = ev.volume ? String(ev.volume) : null;
-                const pageCount = ev.pageCount ? Number(ev.pageCount) : null;
-
-                return (
-                <div>
-                  <h3 className="font-[family-name:var(--font-display)] text-xl tracking-wide text-white">
-                    {title}
-                  </h3>
-
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="rounded bg-[#E24B4A]/10 px-2 py-0.5 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase text-[#E24B4A]/70">
-                      {type}
-                    </span>
-                    {date && (
-                      <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#555]">{date}</span>
-                    )}
-                  </div>
-
-                  {imageUrl && (
-                    <img src={imageUrl} alt={title} className="mt-4 w-full rounded-lg border border-[#2a2a2a] object-contain" />
-                  )}
-
-                  {imageDesc && (
-                    <p className="mt-3 text-[12px] leading-relaxed text-[#888]">{imageDesc}</p>
-                  )}
-
-                  {sender && (
-                    <div className="mt-4 space-y-1 rounded-lg border border-[#1a1a1a] bg-[#0a0a0a] p-3">
-                      <p className="text-[10px] text-[#777]">
-                        <span className="text-[#555]">From:</span> {sender}
-                      </p>
-                      {recipients && (
-                        <p className="text-[10px] text-[#777]">
-                          <span className="text-[#555]">To:</span> {recipients.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {body && (
-                    <div className="mt-4 rounded-lg border border-[#1a1a1a] bg-[#060606] p-4">
-                      <pre className="whitespace-pre-wrap font-[family-name:var(--font-mono)] text-[11px] leading-relaxed text-[#bbb]">{body}</pre>
-                    </div>
-                  )}
-
-                  {fulltext && (
-                    <div className="mt-4 rounded-lg border border-[#1a1a1a] bg-[#060606] p-4">
-                      <pre className="whitespace-pre-wrap font-[family-name:var(--font-mono)] text-[11px] leading-relaxed text-[#bbb]">{fulltext}</pre>
-                    </div>
-                  )}
-
-                  {faces.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="mb-2 font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-wider text-[#555]">
-                        Detected Persons
-                      </h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {faces.map((f) => (
-                          <span key={f.personId} className="rounded-full bg-[#E24B4A]/10 px-2 py-0.5 text-[9px] text-[#E24B4A]/80">
-                            {f.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {filename && (
-                    <div className="mt-4 space-y-1 text-[10px] text-[#555]">
-                      <p>File: {filename}</p>
-                      {volume && <p>Volume: {volume}</p>}
-                      {pageCount && <p>Pages: {pageCount}</p>}
-                    </div>
-                  )}
-                </div>
-                );
-              })()}
-
-              {!loadingEvidence && !ev && splitEvidenceId && (
-                <div className="flex h-32 items-center justify-center">
-                  <span className="text-[11px] text-[#444]">No detail available</span>
-                </div>
-              )}
+            {/* Prev / Next */}
+            {!isComparison && (
+              <div className="flex items-center justify-center gap-4 border-t border-[#1a1a1a] py-3 shrink-0">
+                <button onClick={() => goToEvidence("prev")} disabled={focusIndex <= 0}
+                  className="rounded-lg border border-[#2a2a2a] px-4 py-1.5 text-[10px] font-bold text-[#666] transition hover:bg-[#1a1a1a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed">← Prev</button>
+                <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#555]">{focusIndex + 1} / {newEvidenceNodes.length}</span>
+                {focusIndex < newEvidenceNodes.length - 1 ? (
+                  <button onClick={() => goToEvidence("next")} className="rounded-lg border border-[#2a2a2a] px-4 py-1.5 text-[10px] font-bold text-[#666] transition hover:bg-[#1a1a1a] hover:text-white">Next →</button>
+                ) : (
+                  <button onClick={handleComplete} className="rounded-lg border border-[#E24B4A]/30 bg-[#E24B4A]/10 px-4 py-1.5 font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider text-[#E24B4A] transition hover:bg-[#E24B4A]/20">Finish</button>
+                )}
+              </div>
+            )}
+            {/* Connection node — right edge, vertically centered */}
+            <div
+              ref={handleRef}
+              onMouseDown={(e) => { if (!focusEvidenceId) return; e.preventDefault(); setDragState({ sourceId: focusEvidenceId, mouseX: e.clientX, mouseY: e.clientY }); }}
+              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-50 flex h-8 w-8 cursor-crosshair items-center justify-center rounded-full border-2 border-red-500/50 bg-red-600/40 shadow-[0_0_10px_3px_rgba(239,68,68,0.3)] transition hover:bg-red-500/70 hover:shadow-[0_0_16px_5px_rgba(239,68,68,0.5)] hover:scale-110"
+            >
+              <div className="h-2.5 w-2.5 rounded-full bg-red-400 animate-ping" style={{ animationDuration: "2s" }} />
             </div>
           </div>
-        )}
 
-        {/* Board Canvas (right in split, full-width otherwise) */}
-        <div className="relative flex flex-col flex-1 min-h-0">
-          {phase === "loading" && (
-            <div className="flex h-full items-center justify-center">
-              <p className="font-[family-name:var(--font-mono)] text-[11px] text-[#555]">
-                Gathering evidence for {person.name}...
-              </p>
+          {/* ── RIGHT PANEL ────────────────────────────────────────────── */}
+          {!isComparison ? (
+            /* Default: Clinton + collapsible sections */
+            <div className="flex w-1/2 flex-col min-h-0 bg-[#070707]">
+              {/* Clinton — pinned, sticky */}
+              <div className="shrink-0 border-b border-[#1a1a1a] p-5">
+                <div
+                  data-connect-target={person.id}
+                  className={`flex items-center gap-4 rounded-xl border-2 p-4 transition ${
+                    nearTarget === person.id ? "border-[#4ade80]/60 bg-[#4ade80]/5 shadow-[0_0_20px_rgba(74,222,128,0.2)]"
+                    : isLinked(person.id) ? "border-[#4ade80]/30 bg-[#4ade80]/5"
+                    : "border-[#E24B4A]/25 bg-[#111]"
+                  }`}
+                >
+                  {person.imageUrl ? (
+                    <img src={person.imageUrl} alt={person.name} className="h-16 w-16 rounded-full border-2 border-[#E24B4A]/30 object-cover" />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#E24B4A]/30 bg-[#1a1a1a] text-2xl">👤</div>
+                  )}
+                  <div>
+                    <h3 className="font-[family-name:var(--font-display)] text-[18px] tracking-wide text-white">{person.name}</h3>
+                    <p className="text-[10px] text-[#555]">{focusConnections.length} connections · Subject</p>
+                  </div>
+                  {isLinked(person.id) && <span className="ml-auto text-[8px] font-bold text-[#4ade80]">LINKED</span>}
+                </div>
+              </div>
+
+              {/* Collapsible sections */}
+              <div className="flex-1 overflow-y-auto">
+                {/* People section */}
+                <button onClick={() => setOpenSection(openSection === "people" ? null : "people")}
+                  className="flex w-full items-center justify-between border-b border-[#1a1a1a] px-5 py-3 text-left transition hover:bg-[#0e0e0e]">
+                  <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.1em] text-[#666]">
+                    Connect to people in {person.name.split(" ")[0]}&apos;s network
+                  </span>
+                  <span className="text-[#444]">{openSection === "people" ? "▾" : "▸"}</span>
+                </button>
+                {openSection === "people" && (
+                  <div className="border-b border-[#1a1a1a] p-3 space-y-2">
+                    {existingPeopleNodes.length === 0 && <p className="text-[10px] text-[#444] px-2">No connected people yet</p>}
+                    {existingPeopleNodes.map((n) => (
+                      <div key={n.id} data-connect-target={n.id}
+                        className={`flex items-center gap-3 rounded-lg border p-3 transition ${
+                          nearTarget === n.id ? "border-[#4ade80]/60 bg-[#4ade80]/5" : isLinked(n.id) ? "border-[#4ade80]/30 bg-[#4ade80]/5" : "border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#333]"
+                        }`}>
+                        {n.kind === "person" && n.data.imageUrl ? (
+                          <img src={n.data.imageUrl} alt={n.data.name} className="h-10 w-10 rounded-full border border-[#333] object-cover" />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#333] bg-[#1a1a1a] text-sm">👤</div>
+                        )}
+                        <span className="font-[family-name:var(--font-display)] text-[12px] tracking-wide text-white/80">{n.kind === "person" ? n.data.name : n.id}</span>
+                        {isLinked(n.id) && <span className="ml-auto text-[7px] font-bold text-[#4ade80]">LINKED</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Evidence section */}
+                <button onClick={() => setOpenSection(openSection === "evidence" ? null : "evidence")}
+                  className="flex w-full items-center justify-between border-b border-[#1a1a1a] px-5 py-3 text-left transition hover:bg-[#0e0e0e]">
+                  <span className="font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.1em] text-[#666]">
+                    Connect to evidence in {person.name.split(" ")[0]}&apos;s file
+                  </span>
+                  <span className="text-[#444]">{openSection === "evidence" ? "▾" : "▸"}</span>
+                </button>
+                {openSection === "evidence" && (
+                  <div className="border-b border-[#1a1a1a] p-3 space-y-1.5">
+                    {existingEvidenceNodes.length === 0 && <p className="text-[10px] text-[#444] px-2">No evidence on file yet</p>}
+                    {existingEvidenceNodes.map((n) => (
+                      <div key={n.id} data-connect-target={n.id}
+                        className={`flex items-center gap-2 rounded-lg border p-2.5 transition ${
+                          nearTarget === n.id ? "border-[#4ade80]/60 bg-[#4ade80]/5" : isLinked(n.id) ? "border-[#4ade80]/30 bg-[#4ade80]/5" : "border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#333]"
+                        }`}>
+                        <span className="text-xs shrink-0">
+                          {n.evidenceType === "photo" ? "📸" : n.evidenceType === "email" ? "✉️" : n.evidenceType === "document" ? "📄" : "💬"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate text-[10px] text-white/70">{n.data.title}</span>
+                          {n.data.snippet && <span className="block truncate text-[8px] text-[#555]">{n.data.snippet}</span>}
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setComparisonId(n.id); }}
+                          className="shrink-0 rounded border border-[#333] px-2 py-0.5 text-[8px] font-bold text-[#666] transition hover:bg-[#1a1a1a] hover:text-white">
+                          View
+                        </button>
+                        {isLinked(n.id) && <span className="shrink-0 text-[7px] font-bold text-[#4ade80]">LINKED</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Comparison mode: existing document fills right panel */
+            <div className="flex w-1/2 flex-col min-h-0 bg-[#080808]" data-connect-target={comparisonId ?? undefined}>
+              <div className="flex items-center justify-between border-b border-[#1a1a1a] px-4 py-2.5 shrink-0">
+                <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold uppercase tracking-[0.1em] text-[#555]">Comparing with existing evidence</span>
+                <button onClick={() => setComparisonId(null)} className="rounded p-1 text-[#555] transition hover:bg-[#1a1a1a] hover:text-white">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 p-5">
+                <div className={`h-full rounded-xl border bg-[#0a0a0a] overflow-hidden transition ${
+                  nearTarget === comparisonId ? "border-[#4ade80]/60 shadow-[0_0_20px_rgba(74,222,128,0.15)]" : isLinked(comparisonId!) ? "border-[#4ade80]/30" : "border-[#2a2a2a]"
+                }`}>
+                  {renderEvidenceContent(comparisonEvidence as unknown as Record<string, unknown> | null, loadingComparison)}
+                </div>
+              </div>
+              {isLinked(comparisonId!) && (
+                <div className="flex justify-center pb-3">
+                  <span className="rounded-full bg-[#4ade80]/10 px-3 py-1 text-[9px] font-bold text-[#4ade80]">LINKED to current evidence</span>
+                </div>
+              )}
             </div>
           )}
+        </div>
+      )}
 
-          {(phase === "investigating" || phase === "summary") && (
-            <BoardCanvas
-              ref={canvasRef}
-              archiveTitle={`Investigating ${person.name}`}
-              nodes={focusNodes}
-              connections={focusConnections}
-              selectedNodeId={selectedNodeId}
-              focusedNodeId={focusedNodeId}
-              focusState={focusState}
-              connectingFrom={connectingFrom}
-              onSelectNode={handleSelectNode}
-              onFocusNode={handleFocusNode}
-              onMoveNode={handleMoveNode}
-              onBatchMoveNodes={handleBatchMoveNodes}
-              onAddEvidence={noopResult}
-              onAddPerson={noopStr}
-              onStartConnection={handleStartConnection}
-              onCompleteConnection={handleCompleteConnection}
-              onDirectConnection={handleDirectConnection}
-              onOpenSubjectView={noopStr}
-              onOpenPhotoView={handleOpenPhotoView}
-              stats={stats}
-              score={score}
-            />
+      {/* ═══ BOARD CANVAS (non-focus mode) ══════════════════════════════ */}
+      {!isFocus && (
+        <div className="relative flex flex-col flex-1 min-h-0">
+          {phase === "loading" && (
+            <div className="flex h-full items-center justify-center"><p className="font-[family-name:var(--font-mono)] text-[11px] text-[#555]">Gathering evidence for {person.name}...</p></div>
           )}
-
-          {/* Summary overlay */}
+          {(phase === "investigating" || phase === "summary") && (
+            <BoardCanvas ref={canvasRef} archiveTitle={`Investigating ${person.name}`}
+              nodes={focusNodes} connections={focusConnections}
+              selectedNodeId={selectedNodeId} focusedNodeId={focusedNodeId} focusState={focusState} connectingFrom={connectingFrom}
+              onSelectNode={handleSelectNode} onFocusNode={handleFocusNode} onMoveNode={handleMoveNode} onBatchMoveNodes={handleBatchMoveNodes}
+              onAddEvidence={noopResult} onAddPerson={noopStr}
+              onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} onDirectConnection={handleDirectConnection}
+              onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} stats={stats} score={score} />
+          )}
           {phase === "summary" && completedResult && (
             <div className="focus-summary-enter absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
               <div className="w-full max-w-md rounded-2xl border border-[#2a2a2a] bg-[#111] p-8 shadow-2xl">
-                <h2 className="text-center font-[family-name:var(--font-display)] text-2xl tracking-wide text-white">
-                  Investigation Complete
-                </h2>
-                <p className="mt-1 text-center text-[11px] text-[#555]">
-                  {person.name}
-                </p>
-
+                <h2 className="text-center font-[family-name:var(--font-display)] text-2xl tracking-wide text-white">Investigation Complete</h2>
+                <p className="mt-1 text-center text-[11px] text-[#555]">{person.name}</p>
                 <div className="mt-6 grid grid-cols-2 gap-4">
-                  <div className="rounded-lg bg-[#E24B4A]/5 p-3 text-center">
-                    <div className="font-[family-name:var(--font-display)] text-2xl text-[#E24B4A]">
-                      {completedResult.stats.connectionsCreated}
-                    </div>
-                    <div className="mt-0.5 text-[9px] text-[#666]">Connections</div>
-                  </div>
-                  <div className="rounded-lg bg-[#1a1a1a] p-3 text-center">
-                    <div className="font-[family-name:var(--font-display)] text-2xl text-[#888]">
-                      {evidenceNodes.length}
-                    </div>
-                    <div className="mt-0.5 text-[9px] text-[#666]">Evidence Reviewed</div>
-                  </div>
+                  <div className="rounded-lg bg-[#E24B4A]/5 p-3 text-center"><div className="font-[family-name:var(--font-display)] text-2xl text-[#E24B4A]">{completedResult.stats.connectionsCreated}</div><div className="mt-0.5 text-[9px] text-[#666]">Connections</div></div>
+                  <div className="rounded-lg bg-[#1a1a1a] p-3 text-center"><div className="font-[family-name:var(--font-display)] text-2xl text-[#888]">{newEvidenceNodes.length}</div><div className="mt-0.5 text-[9px] text-[#666]">Evidence Reviewed</div></div>
                 </div>
-
-                <div className="mt-5 text-center">
-                  <span className="font-[family-name:var(--font-mono)] text-lg font-bold text-[#4ade80]">
-                    +{completedResult.stats.pointsEarned} pts
-                  </span>
-                </div>
-
+                <div className="mt-5 text-center"><span className="font-[family-name:var(--font-mono)] text-lg font-bold text-[#4ade80]">+{completedResult.stats.pointsEarned} pts</span></div>
                 {completedResult.connectedEvidence.length > 0 && (
-                  <div className="mt-5">
-                    <h4 className="mb-2 text-[9px] font-bold uppercase tracking-wider text-[#555]">
-                      New Connections
-                    </h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {completedResult.connectedEvidence.map((e) => (
-                        <span
-                          key={e.id}
-                          className="rounded-full bg-[#E24B4A]/10 px-2 py-0.5 text-[9px] text-[#E24B4A]/80"
-                        >
-                          {e.title}
-                        </span>
-                      ))}
-                    </div>
+                  <div className="mt-5"><h4 className="mb-2 text-[9px] font-bold uppercase tracking-wider text-[#555]">New Connections</h4>
+                    <div className="flex flex-wrap gap-1.5">{completedResult.connectedEvidence.map((e) => <span key={e.id} className="rounded-full bg-[#E24B4A]/10 px-2 py-0.5 text-[9px] text-[#E24B4A]/80">{e.title}</span>)}</div>
                   </div>
                 )}
-
                 <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(
-                        `OpenCase Investigation: ${person.name}\n${completedResult.stats.connectionsCreated} connections found\n${completedResult.stats.pointsEarned} points earned`,
-                      );
-                    }}
-                    className="flex-1 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] py-2.5 text-[10px] font-bold text-[#888] transition hover:bg-[#222] hover:text-white"
-                  >
-                    Share Results
-                  </button>
-                  <button
-                    onClick={() => onComplete(completedResult)}
-                    className="flex-1 rounded-lg border border-[#E24B4A]/30 bg-[#E24B4A]/10 py-2.5 font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider text-[#E24B4A] transition hover:bg-[#E24B4A]/20"
-                  >
-                    Return to Board
-                  </button>
+                  <button onClick={() => { navigator.clipboard.writeText(`OpenCase: ${person.name}\n${completedResult.stats.connectionsCreated} connections\n${completedResult.stats.pointsEarned} pts`); }}
+                    className="flex-1 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] py-2.5 text-[10px] font-bold text-[#888] transition hover:bg-[#222] hover:text-white">Share Results</button>
+                  <button onClick={() => onComplete(completedResult)}
+                    className="flex-1 rounded-lg border border-[#E24B4A]/30 bg-[#E24B4A]/10 py-2.5 font-[family-name:var(--font-mono)] text-[10px] font-bold uppercase tracking-wider text-[#E24B4A] transition hover:bg-[#E24B4A]/20">Return to Board</button>
                 </div>
               </div>
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
