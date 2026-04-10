@@ -2989,7 +2989,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (node.kind === "person") onOpenSubjectView(node.id);
-                      else onFocusNode(node.id);
+                      // entity double-click: no-op (was opening the focus view)
                     }}
                   >
                     {node.kind === "person" ? (
