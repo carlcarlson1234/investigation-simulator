@@ -24,6 +24,46 @@ const DEFAULT_ZOOM = 1;
 const BASE_WORLD_W = 4000;
 const BASE_WORLD_H = 3000;
 
+/* ── Node pinned-evidence layout constants ─────────────────────────────── */
+// Photos orbit the card perimeter at ~80px per chip, max 2 per side (8 total).
+// Overflow photos and all non-photo evidence fall into category badges below the card.
+const ORBITAL_CHIP = 80;
+const ORBITAL_SPACING = 12;
+const ORBITAL_PER_SIDE = 2;
+const ORBITAL_MAX = ORBITAL_PER_SIDE * 4; // 8
+const STACK_BADGE_H = 36;
+const STACK_BADGE_W = 68;
+const STACK_BADGE_GAP = 6;
+const DETAIL_CARD_MAX_W = 600;
+
+type NodePinPartition = {
+  orbitalPhotos: PinnedEvidence[];
+  overflowPhotos: PinnedEvidence[];
+  emails: PinnedEvidence[];
+  documents: PinnedEvidence[];
+  imessages: PinnedEvidence[];
+};
+
+function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPartition {
+  const out: NodePinPartition = {
+    orbitalPhotos: [],
+    overflowPhotos: [],
+    emails: [],
+    documents: [],
+    imessages: [],
+  };
+  if (!pinned) return out;
+  for (const ev of pinned) {
+    if (ev.type === "photo") {
+      if (out.orbitalPhotos.length < ORBITAL_MAX) out.orbitalPhotos.push(ev);
+      else out.overflowPhotos.push(ev);
+    } else if (ev.type === "email") out.emails.push(ev);
+    else if (ev.type === "document") out.documents.push(ev);
+    else if (ev.type === "imessage") out.imessages.push(ev);
+  }
+  return out;
+}
+
 /* ── Public handle so parent can call centerOnNode ──────────────────────── */
 export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
@@ -2942,72 +2982,89 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     ) : (
                       <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
-                    {/* Pinned evidence chips flush against the card edges.
-                        Fill order: right → bottom → left → top, max 4 per side.
-                        Overflow beyond 16 stacks as a second layer peeking out
-                        half-width from behind the first layer (offset outward). */}
+                    {/* Pinned evidence: photos orbit the card perimeter at 80px, 2 per side (8 max).
+                        All non-photo evidence + overflow photos live in category badges below the card. */}
                     {node.pinnedEvidence && node.pinnedEvidence.length > 0 && zoom >= 0.5 && (() => {
                       const cardEl = viewportRef.current?.querySelector(`[data-node-id="${node.id}"] > div`) as HTMLElement | null;
                       const w = cardEl?.offsetWidth ?? getScaledCardSize(node).w;
                       const h = cardEl?.offsetHeight ?? getScaledCardSize(node).h;
-                      const pins = node.pinnedEvidence;
-                      const CHIP = 44;
-                      const SPACING = 4;
-                      const PER_SIDE = 4;
-                      const SIDES_CAP = PER_SIDE * 4; // 16 chips per layer
-                      // Second-layer offset: half chip width peeking out
-                      const OFFSET_2 = CHIP / 2;
+                      const part = partitionNodeEvidence(node.pinnedEvidence);
+                      const orbital = part.orbitalPhotos;
 
-                      // Compute (x, y, zIndex) for chip at position i
-                      const posFor = (i: number) => {
-                        const layer = Math.floor(i / SIDES_CAP);
-                        const localIdx = i % SIDES_CAP;
-                        // Determine which side of the perimeter this chip lands on
-                        const side = Math.floor(localIdx / PER_SIDE); // 0=right, 1=bottom, 2=left, 3=top
-                        const idxInSide = localIdx % PER_SIDE;
-                        // Number of chips actually on this side for this layer
-                        const remainingThisLayer = Math.min(SIDES_CAP, pins.length - layer * SIDES_CAP);
-                        const chipsOnSide = Math.min(PER_SIDE, Math.max(0, remainingThisLayer - side * PER_SIDE));
-
-                        const extraOut = layer * OFFSET_2;
-                        // Lower z for later layers so they peek from behind
-                        const z = 30 - layer;
-
+                      // Compute (x, y) for orbital photo at index i (0..7).
+                      // Fill order: right → bottom → left → top, 2 per side, centered on each side.
+                      const orbitalPos = (i: number) => {
+                        const side = Math.floor(i / ORBITAL_PER_SIDE); // 0=right, 1=bottom, 2=left, 3=top
+                        const idxInSide = i % ORBITAL_PER_SIDE;
+                        // How many chips actually on this side (for centering when side underfilled)
+                        const remaining = Math.max(0, orbital.length - side * ORBITAL_PER_SIDE);
+                        const chipsOnSide = Math.min(ORBITAL_PER_SIDE, remaining);
+                        const runLen = chipsOnSide * ORBITAL_CHIP + (chipsOnSide - 1) * ORBITAL_SPACING;
                         let x = 0, y = 0;
                         if (side === 0) {
-                          // Right edge
-                          x = w + extraOut;
-                          y = (h - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
+                          x = w + 2;
+                          y = (h - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                         } else if (side === 1) {
-                          // Bottom edge
-                          x = (w - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
-                          y = h + extraOut;
+                          x = (w - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
+                          y = h + 2;
                         } else if (side === 2) {
-                          // Left edge
-                          x = -CHIP - extraOut;
-                          y = (h - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
+                          x = -ORBITAL_CHIP - 2;
+                          y = (h - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                         } else {
-                          // Top edge
-                          x = (w - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
-                          y = -CHIP - extraOut;
+                          x = (w - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
+                          y = -ORBITAL_CHIP - 2;
                         }
-                        return { x, y, z };
+                        return { x, y };
                       };
+
+                      // Category stack badges shown below the card. Photo overflow gets a badge too.
+                      const badges: { key: string; icon: string; count: number; border: string; bg: string }[] = [];
+                      if (part.overflowPhotos.length > 0) badges.push({ key: "photos", icon: "📸", count: part.overflowPhotos.length, border: "border-[#c86464]", bg: "bg-[#1f1512]" });
+                      if (part.emails.length > 0) badges.push({ key: "emails", icon: "✉️", count: part.emails.length, border: "border-[#4A6D8C]", bg: "bg-[#1a2530]" });
+                      if (part.documents.length > 0) badges.push({ key: "documents", icon: "📄", count: part.documents.length, border: "border-[#888]", bg: "bg-[#1a1a1a]" });
+                      if (part.imessages.length > 0) badges.push({ key: "imessages", icon: "💬", count: part.imessages.length, border: "border-[#6B5B95]", bg: "bg-[#1f1b30]" });
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
-                          {pins.map((ev, i) => {
-                            const { x, y, z } = posFor(i);
+                          {/* Orbital photo chips */}
+                          {orbital.map((ev, i) => {
+                            const { x, y } = orbitalPos(i);
                             return (
                               <div
-                                key={ev.id}
+                                key={`orb-${ev.id}`}
                                 className="absolute pointer-events-auto"
-                                style={{ left: x, top: y, width: CHIP, height: CHIP, zIndex: z }}
+                                style={{ left: x, top: y, width: ORBITAL_CHIP, height: ORBITAL_CHIP, zIndex: 30 }}
                               >
                                 <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
                               </div>
                             );
                           })}
+
+                          {/* Category stack badges attached below the card */}
+                          {badges.length > 0 && (
+                            <div
+                              className="absolute flex pointer-events-none"
+                              style={{ left: 0, top: h + 8, width: w, gap: STACK_BADGE_GAP, zIndex: 28 }}
+                            >
+                              {badges.map((b) => (
+                                <button
+                                  type="button"
+                                  key={b.key}
+                                  className={`pointer-events-auto flex items-center justify-center gap-1 rounded-md border-2 ${b.border} ${b.bg} shadow-lg shadow-black/70 backdrop-blur-sm hover:scale-105 hover:brightness-125 transition-all`}
+                                  style={{ width: STACK_BADGE_W, height: STACK_BADGE_H }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectNode(node.id);
+                                  }}
+                                  title={`${b.count} ${b.key}`}
+                                >
+                                  <span className="text-[16px] leading-none">{b.icon}</span>
+                                  <span className="text-[12px] font-black text-white/90 tabular-nums">{b.count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -3055,6 +3112,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     onFocusNode={onFocusNode}
                     onSelectNode={onSelectNode}
                     focusedNodeId={focusedNodeId}
+                    onOpenEvidence={setFocusedPinnedEvidence}
                   />
                 );
               })()}
@@ -3745,7 +3803,7 @@ function EntityBoardCard({ data, isSelected, pinnedEvidence, onPinnedEvidenceDou
 
 /* ─── Node Detail Card (floating popup near selected node) ────────────────── */
 
-function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, onSelectNode, focusedNodeId }: {
+function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, onSelectNode, focusedNodeId, onOpenEvidence }: {
   node: BoardNode;
   connections: BoardConnection[];
   nodes: BoardNode[];
@@ -3755,6 +3813,7 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
   onFocusNode: (id: string | null) => void;
   onSelectNode: (id: string | null) => void;
   focusedNodeId: string | null;
+  onOpenEvidence: (ev: PinnedEvidence) => void;
 }) {
   // Escape key closes
   useEffect(() => {
@@ -3768,6 +3827,18 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
   );
   const isFocused = focusedNodeId === node.id;
 
+  // Partition pinned evidence for the detail-view sections
+  const part = partitionNodeEvidence(node.pinnedEvidence);
+  const allPhotos = [...part.orbitalPhotos, ...part.overflowPhotos];
+  const hasPhotos = allPhotos.length > 0;
+  const otherCount = part.emails.length + part.documents.length + part.imessages.length;
+  const hasOther = otherCount > 0;
+  const hasAnyPinned = hasPhotos || hasOther;
+  // Dynamic width: grow when there's pinned evidence to display
+  const cardW = hasPhotos
+    ? Math.min(DETAIL_CARD_MAX_W, 280 + Math.min(3, Math.ceil(allPhotos.length / 2)) * 60)
+    : hasOther ? 340 : 280;
+
   return (
     <div
       className="absolute z-[35]"
@@ -3775,7 +3846,10 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="w-[280px] max-h-[400px] overflow-y-auto rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/60">
+      <div
+        className="max-h-[80vh] overflow-y-auto rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/60"
+        style={{ width: cardW }}
+      >
         {/* Close button */}
         <button
           onClick={onClose}
@@ -3868,6 +3942,97 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
           );
         })()}
 
+        {/* Pinned Photos — every photo pinned to this node, larger than on the orbit */}
+        {hasPhotos && (
+          <div className="px-4 pb-3">
+            <div className="border-t border-[#222] pt-3">
+              <h4 className="mb-2 text-[8px] font-bold uppercase tracking-widest text-[#555]">
+                Pinned Photos ({allPhotos.length})
+              </h4>
+              <div className="grid grid-cols-4 gap-1.5">
+                {allPhotos.map((ev) => (
+                  <DetailPhotoThumb key={ev.id} evidence={ev} onOpen={onOpenEvidence} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Other Evidence — grouped per category, each row opens FullScreenEvidenceViewer on click */}
+        {hasOther && (
+          <div className="px-4 pb-4">
+            <div className={`border-t border-[#222] pt-3 space-y-3 ${hasPhotos ? "mt-0" : ""}`}>
+              <h4 className="text-[8px] font-bold uppercase tracking-widest text-[#555]">
+                Other Evidence ({otherCount})
+              </h4>
+              {part.emails.length > 0 && (
+                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={part.emails} onOpen={onOpenEvidence} />
+              )}
+              {part.documents.length > 0 && (
+                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={part.documents} onOpen={onOpenEvidence} />
+              )}
+              {part.imessages.length > 0 && (
+                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={part.imessages} onOpen={onOpenEvidence} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {!hasAnyPinned && (
+          <div className="px-4 pb-4 text-[9px] text-[#555] italic">No evidence pinned yet.</div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+function DetailPhotoThumb({ evidence, onOpen }: { evidence: PinnedEvidence; onOpen: (ev: PinnedEvidence) => void }) {
+  const thumbUrl = `https://assets.getkino.com/cdn-cgi/image/width=240,quality=80,format=auto/photos-deboned/${evidence.id}`;
+  return (
+    <button
+      type="button"
+      className="group relative aspect-square rounded-md overflow-hidden border border-[#333] bg-[#0a0a0a] hover:border-red-500/60 hover:scale-105 transition"
+      onClick={(e) => { e.stopPropagation(); onOpen(evidence); }}
+      title={evidence.title}
+    >
+      <img src={thumbUrl} alt={evidence.title} className="h-full w-full object-cover" />
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-1 py-0.5 opacity-0 group-hover:opacity-100 transition">
+        <p className="text-[8px] font-bold text-white/90 truncate">{evidence.title}</p>
+      </div>
+    </button>
+  );
+}
+
+function DetailEvidenceBucket({ label, icon, accent, items, onOpen }: {
+  label: string;
+  icon: string;
+  accent: string;
+  items: PinnedEvidence[];
+  onOpen: (ev: PinnedEvidence) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-1.5">
+        <span className="text-[11px]">{icon}</span>
+        <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#666]">{label}</span>
+        <span className="text-[8px] text-[#444] tabular-nums">{items.length}</span>
+      </div>
+      <div className="space-y-1">
+        {items.map((ev) => (
+          <button
+            key={ev.id}
+            type="button"
+            className={`w-full text-left rounded border border-[#222] border-l-4 ${accent} bg-[#0a0a0a] hover:bg-[#151515] hover:border-red-500/40 transition px-2 py-1.5`}
+            onClick={(e) => { e.stopPropagation(); onOpen(ev); }}
+          >
+            <p className="text-[10px] font-bold text-white/90 truncate">{ev.title}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              {ev.date && <span className="text-[8px] text-[#666] tabular-nums">{ev.date}</span>}
+              {ev.sender && <span className="text-[8px] text-[#777] truncate flex-1">{ev.sender}</span>}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
