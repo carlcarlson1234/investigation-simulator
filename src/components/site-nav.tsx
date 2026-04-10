@@ -66,13 +66,16 @@ export function SiteNav() {
           {/* Vertical divider */}
           <span className="hidden sm:inline-block w-px h-5 bg-[#333] mx-3" />
 
-          {/* Investigate Epstein */}
+          {/* The Epstein List */}
           <span className="hidden sm:flex items-center gap-1.5">
             <span className="font-[family-name:var(--font-brand)] text-[11px] font-normal tracking-[0.15em] text-white uppercase">
-              Investigate
+              The
             </span>
             <span className="font-[family-name:var(--font-brand)] text-[11px] font-semibold tracking-[0.15em] text-[#E24B4A] uppercase">
               Epstein
+            </span>
+            <span className="font-[family-name:var(--font-brand)] text-[11px] font-normal tracking-[0.15em] text-white uppercase">
+              List
             </span>
           </span>
 

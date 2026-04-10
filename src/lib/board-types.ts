@@ -70,7 +70,7 @@ export interface BoardConnection {
 
 // ─── Right Panel ────────────────────────────────────────────────────────────
 
-export type RightPanelTab = "persons" | "places" | "orgs" | "events" | "details";
+export type RightPanelTab = "persons" | "places" | "orgs" | "events";
 
 // ─── Timeline ───────────────────────────────────────────────────────────────
 

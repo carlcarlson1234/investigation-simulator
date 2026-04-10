@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { SearchResult, EvidenceType, EmailListItem, PhotoListItem } from "@/lib/types";
+import type { SearchResult, EvidenceType, EmailListItem, PhotoListItem, EmailEvidence, DocumentEvidence } from "@/lib/types";
 import type { InvestigationStep } from "@/lib/investigation-types";
 import {
   EVIDENCE_TYPE_ICON,
@@ -239,6 +239,22 @@ function EmailInbox({
   const [hasMore, setHasMore] = useState(false);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [search, setSearch] = useState("");
+
+  // Full-screen email viewer
+  const [focusedEmail, setFocusedEmail] = useState<EmailEvidence | null>(null);
+  const [loadingFocusedEmail, setLoadingFocusedEmail] = useState(false);
+
+  const openEmailFullscreen = useCallback(async (emailId: string) => {
+    setLoadingFocusedEmail(true);
+    try {
+      const res = await fetch(`/api/evidence/${emailId}?type=email`);
+      if (res.ok) {
+        const data = await res.json();
+        setFocusedEmail(data);
+      }
+    } catch { /* ignore */ }
+    setLoadingFocusedEmail(false);
+  }, []);
   const [epsteinOnly, setEpsteinOnly] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoad = useRef(false);
@@ -372,7 +388,7 @@ function EmailInbox({
           return (
             <div
               key={email.id}
-              onClick={() => onSelectEmail(email.id)}
+              onClick={() => openEmailFullscreen(email.id)}
               draggable={!onBoard}
               onDragStart={(e) => {
                 e.dataTransfer.setData(
@@ -475,6 +491,95 @@ function EmailInbox({
           </div>
         )}
       </div>
+
+      {/* Full-screen email viewer */}
+      {focusedEmail && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setFocusedEmail(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[85vh] mx-4 rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex-shrink-0 border-b border-[#1a1a1a] p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-lg font-black text-white leading-tight flex-1">{focusedEmail.subject}</h2>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  {!isOnBoard(focusedEmail.id) && (
+                    <button
+                      onClick={() => {
+                        onAddEvidence({ id: focusedEmail.id, type: "email", title: focusedEmail.subject, snippet: focusedEmail.snippet, date: focusedEmail.date, sender: focusedEmail.sender, score: 0, starCount: focusedEmail.starCount });
+                        setFocusedEmail(null);
+                      }}
+                      className="rounded bg-red-600 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-red-500 transition shadow-lg"
+                    >
+                      + Board
+                    </button>
+                  )}
+                  <button onClick={() => setFocusedEmail(null)} className="rounded bg-[#222] px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition">
+                    ESC
+                  </button>
+                </div>
+              </div>
+
+              {focusedEmail.epsteinIsSender && (
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Sent by Epstein</span>
+                </div>
+              )}
+
+              <div className="space-y-1.5 text-[12px]">
+                <div className="flex gap-3">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">From</span>
+                  <span className={`font-bold ${focusedEmail.epsteinIsSender ? "text-red-400" : "text-white"}`}>
+                    {focusedEmail.sender}
+                    {focusedEmail.senderName && focusedEmail.senderName !== focusedEmail.sender && (
+                      <span className="text-[#555] font-normal ml-1">({focusedEmail.senderName})</span>
+                    )}
+                  </span>
+                </div>
+                {focusedEmail.recipients.length > 0 && (
+                  <div className="flex gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">To</span>
+                    <span className="text-[#aaa] break-all">{focusedEmail.recipients.join(", ")}</span>
+                  </div>
+                )}
+                {focusedEmail.cc.length > 0 && (
+                  <div className="flex gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">CC</span>
+                    <span className="text-[#888] break-all">{focusedEmail.cc.join(", ")}</span>
+                  </div>
+                )}
+                {focusedEmail.date && (
+                  <div className="flex gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-10 flex-shrink-0 pt-0.5">Date</span>
+                    <span className="text-[#aaa] tabular-nums">{new Date(focusedEmail.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                {focusedEmail.body || "No content available"}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex-shrink-0 border-t border-[#1a1a1a] px-5 py-2.5 flex items-center gap-3 text-[9px] text-[#444]">
+              {focusedEmail.docId && <span>Doc: {focusedEmail.docId}</span>}
+              {focusedEmail.releaseBatch && <span>Batch: {focusedEmail.releaseBatch}</span>}
+              {focusedEmail.isPromotional && <span className="text-yellow-600">Promotional</span>}
+              {focusedEmail.starCount > 0 && <span className="text-amber-400/60">★ {focusedEmail.starCount}</span>}
+              <span className="ml-auto text-[#333]">{focusedEmail.id}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -815,6 +920,23 @@ function FilesTab({
   const [hasMore, setHasMore] = useState(false);
   const initialLoad = useRef(false);
 
+  // Full-screen file viewer
+  const [focusedFile, setFocusedFile] = useState<(DocumentEvidence & { type: "document" }) | null>(null);
+  const [loadingFocusedFile, setLoadingFocusedFile] = useState(false);
+
+  const openFileFullscreen = useCallback(async (fileId: string, fileKind: "document" | "imessage") => {
+    if (fileKind !== "document") return; // only documents have full-screen view for now
+    setLoadingFocusedFile(true);
+    try {
+      const res = await fetch(`/api/evidence/${fileId}?type=${fileKind}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFocusedFile(data);
+      }
+    } catch { /* ignore */ }
+    setLoadingFocusedFile(false);
+  }, []);
+
   const fetchFiles = useCallback(async (p: number, append: boolean) => {
     setLoading(true);
     try {
@@ -883,6 +1005,7 @@ function FilesTab({
           return (
             <div
               key={`${file.kind}-${file.id}`}
+              onClick={() => openFileFullscreen(file.id, file.kind)}
               draggable={!onBoard}
               onDragStart={(e) => {
                 e.dataTransfer.setData(
@@ -956,6 +1079,88 @@ function FilesTab({
           </button>
         )}
       </div>
+
+      {/* Full-screen document viewer */}
+      {focusedFile && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setFocusedFile(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[85vh] mx-4 rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex-shrink-0 border-b border-[#1a1a1a] p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">📄</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Document</span>
+                  </div>
+                  <h2 className="text-lg font-black text-white leading-tight">{focusedFile.filename}</h2>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  {!isOnBoard(focusedFile.id) && (
+                    <button
+                      onClick={() => {
+                        onAddEvidence({ id: focusedFile.id, type: "document", title: focusedFile.filename, snippet: focusedFile.snippet, date: focusedFile.date, sender: null, score: 0, starCount: focusedFile.starCount });
+                        setFocusedFile(null);
+                      }}
+                      className="rounded bg-red-600 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-red-500 transition shadow-lg"
+                    >
+                      + Board
+                    </button>
+                  )}
+                  <button onClick={() => setFocusedFile(null)} className="rounded bg-[#222] px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition">
+                    ESC
+                  </button>
+                </div>
+              </div>
+
+              {/* Metadata */}
+              <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
+                {focusedFile.volume && (
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Volume:</span> <span className="text-white font-bold">{focusedFile.volume}</span>
+                  </div>
+                )}
+                <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                  <span className="text-[#555]">Pages:</span> <span className="text-white font-bold">{focusedFile.pageCount}</span>
+                </div>
+                {focusedFile.date && (
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Date:</span> <span className="text-[#aaa] tabular-nums">{focusedFile.date}</span>
+                  </div>
+                )}
+                {focusedFile.releaseBatch && (
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Batch:</span> <span className="text-[#aaa]">{focusedFile.releaseBatch}</span>
+                  </div>
+                )}
+                {focusedFile.starCount > 0 && (
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-amber-400/60">★ {focusedFile.starCount}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Full text content */}
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                {focusedFile.fulltext || focusedFile.snippet || "No content available"}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex-shrink-0 border-t border-[#1a1a1a] px-5 py-2.5 flex items-center gap-3 text-[9px] text-[#444]">
+              {focusedFile.path && <span className="truncate">{focusedFile.path}</span>}
+              <span className="ml-auto text-[#333]">{focusedFile.id}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
 import type { BoardNode, BoardEvidenceNode, BoardConnection, FocusState } from "@/lib/board-types";
-import type { Person, SearchResult, ArchiveStats, EvidenceType } from "@/lib/types";
+import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
 import type { SeedEntity } from "@/lib/entity-seed-data";
 import type { InvestigationStep } from "@/lib/investigation-types";
@@ -2862,6 +2862,30 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               })}
 
 
+              {/* Floating detail card for selected node */}
+              {selectedNodeId && (() => {
+                const selectedNode = nodes.find(n => n.id === selectedNodeId);
+                if (!selectedNode) return null;
+                // Use actual DOM element size for precise positioning
+                const el = viewportRef.current?.querySelector(`[data-node-id="${selectedNodeId}"]`) as HTMLElement | null;
+                const actualW = el ? el.offsetWidth : getScaledCardSize(selectedNode).w;
+                const cardX = selectedNode.position.x + actualW + 4;
+                const cardY = selectedNode.position.y;
+                return (
+                  <NodeDetailCard
+                    node={selectedNode}
+                    connections={connections}
+                    nodes={nodes}
+                    x={cardX}
+                    y={cardY}
+                    onClose={() => onSelectNode(null)}
+                    onFocusNode={onFocusNode}
+                    onSelectNode={onSelectNode}
+                    focusedNodeId={focusedNodeId}
+                  />
+                );
+              })()}
+
               {/* Drop ripple effect */}
               {dropRipple && (
                 <div className="drop-ripple" style={{
@@ -3584,6 +3608,237 @@ function EntityBoardCard({ data, isSelected, zoom = 1 }: {
 
       {/* Pin at top center */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-red-500 bg-[#141414] z-10" />
+    </div>
+  );
+}
+
+/* ─── Node Detail Card (floating popup near selected node) ────────────────── */
+
+function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, onSelectNode, focusedNodeId }: {
+  node: BoardNode;
+  connections: BoardConnection[];
+  nodes: BoardNode[];
+  x: number;
+  y: number;
+  onClose: () => void;
+  onFocusNode: (id: string | null) => void;
+  onSelectNode: (id: string | null) => void;
+  focusedNodeId: string | null;
+}) {
+  const [fullEvidence, setFullEvidence] = useState<Evidence | null>(null);
+  const [loadingFull, setLoadingFull] = useState(false);
+
+  // Load full evidence data when an evidence node is selected
+  useEffect(() => {
+    if (node.kind !== "evidence") {
+      setFullEvidence(null);
+      return;
+    }
+    setLoadingFull(true);
+    fetch(`/api/evidence/${encodeURIComponent(node.id)}?type=${node.evidenceType}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { setFullEvidence(data); setLoadingFull(false); })
+      .catch(() => { setFullEvidence(null); setLoadingFull(false); });
+  }, [node.id, node.kind]);
+
+  // Escape key closes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const relatedConns = connections.filter(
+    (c) => c.sourceId === node.id || c.targetId === node.id
+  );
+  const isFocused = focusedNodeId === node.id;
+
+  function getFullContent(ev: Evidence): string {
+    switch (ev.type) {
+      case "email": return ev.body || ev.snippet;
+      case "document": return ev.fulltext || ev.snippet;
+      case "photo": return ev.imageDescription || ev.snippet;
+      case "imessage": return ev.body || ev.snippet;
+    }
+  }
+
+  return (
+    <div
+      className="absolute z-[35]"
+      style={{ left: x, top: y }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="w-[280px] max-h-[400px] overflow-y-auto rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/60">
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 z-10 rounded-full bg-[#1a1a1a] border border-[#333] w-6 h-6 flex items-center justify-center text-[#666] hover:text-white hover:border-red-500/50 transition"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+
+        {node.kind === "person" && (() => {
+          const d = node.data;
+          return (
+            <div className="p-4 space-y-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#666]">Person</span>
+                  <button onClick={() => onFocusNode(isFocused ? null : node.id)}
+                    className={`ml-auto text-[8px] rounded px-1.5 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#666] hover:text-white"}`}>
+                    {isFocused ? "Unfocus" : "Focus"}
+                  </button>
+                </div>
+                <h3 className="text-sm font-bold text-white">{d.name}</h3>
+                {d.source && <p className="mt-0.5 text-[10px] text-[#777]">{d.source}</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 text-[9px]">
+                {d.photoCount > 0 && (
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Photos</span>
+                    <div className="font-semibold text-white">{d.photoCount}</div>
+                  </div>
+                )}
+                {d.aliases.length > 0 && (
+                  <div className="col-span-2 rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Aliases</span>
+                    <div className="font-semibold text-[#ccc]">{d.aliases.join(", ")}</div>
+                  </div>
+                )}
+              </div>
+
+              {relatedConns.length > 0 && (
+                <DetailConnections connections={relatedConns} currentNodeId={node.id} nodes={nodes} onSelectNode={onSelectNode} />
+              )}
+            </div>
+          );
+        })()}
+
+        {node.kind === "entity" && (() => {
+          const d = node.data;
+          const typeIcon = d.type === "place" ? "📍" : d.type === "organization" ? "🏢" : "📅";
+          const typeLabel = d.type === "place" ? "Place" : d.type === "organization" ? "Organization" : "Event";
+          const accentColor = d.type === "place" ? "teal" : d.type === "organization" ? "amber" : "purple";
+          return (
+            <div className="p-4 space-y-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px]">{typeIcon}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#666]">{typeLabel}</span>
+                  <button onClick={() => onFocusNode(isFocused ? null : node.id)}
+                    className={`ml-auto text-[8px] rounded px-1.5 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#666] hover:text-white"}`}>
+                    {isFocused ? "Unfocus" : "Focus"}
+                  </button>
+                </div>
+                <h3 className="text-sm font-bold text-white">{d.shortName || d.name}</h3>
+                {d.location && <p className="mt-0.5 text-[10px] text-[#777]">{d.location}</p>}
+                {d.dateRange && <p className="text-[10px] text-[#555] tabular-nums">{d.dateRange}</p>}
+              </div>
+
+              <div className="rounded border border-[#222] bg-[#111] p-2.5">
+                <p className="text-[10px] leading-relaxed text-[#999]">{d.description}</p>
+              </div>
+
+              {d.keyPeople.length > 0 && (
+                <div>
+                  <span className="text-[8px] font-bold uppercase tracking-widest text-[#555]">Key People</span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {d.keyPeople.map(name => (
+                      <span key={name} className="rounded bg-[#1a1a1a] border border-[#222] px-1.5 py-0.5 text-[8px] text-[#aaa]">{name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {relatedConns.length > 0 && (
+                <DetailConnections connections={relatedConns} currentNodeId={node.id} nodes={nodes} onSelectNode={onSelectNode} />
+              )}
+            </div>
+          );
+        })()}
+
+        {node.kind === "evidence" && (() => {
+          const d = node.data;
+          return (
+            <div className="p-4 space-y-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px]">{EVIDENCE_TYPE_ICON[node.evidenceType]}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#666]">
+                    {EVIDENCE_TYPE_LABEL[node.evidenceType]}
+                  </span>
+                  <button onClick={() => onFocusNode(isFocused ? null : node.id)}
+                    className={`ml-auto text-[8px] rounded px-1.5 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#666] hover:text-white"}`}>
+                    {isFocused ? "Unfocus" : "Focus"}
+                  </button>
+                </div>
+                <h3 className="text-xs font-bold text-white">{d.title}</h3>
+                {d.date && <p className="mt-0.5 text-[10px] text-[#555] tabular-nums">{d.date}</p>}
+                {d.sender && <p className="text-[10px] text-[#555]">{d.sender}</p>}
+              </div>
+
+              {d.starCount > 0 && (
+                <div className="text-[9px] text-amber-400/60">★ {d.starCount.toLocaleString()} stars</div>
+              )}
+
+              {loadingFull ? (
+                <div className="rounded border border-[#222] bg-[#111] p-2.5 text-[10px] text-[#555] flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                  Loading…
+                </div>
+              ) : fullEvidence ? (
+                <div className="rounded border border-[#222] bg-[#111] p-2.5 max-h-40 overflow-y-auto">
+                  <p className="text-[10px] leading-relaxed text-[#999] whitespace-pre-wrap">
+                    {getFullContent(fullEvidence)}
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded border border-[#222] bg-[#111] p-2.5">
+                  <p className="text-[10px] leading-relaxed text-[#777]">{d.snippet}</p>
+                </div>
+              )}
+
+              {relatedConns.length > 0 && (
+                <DetailConnections connections={relatedConns} currentNodeId={node.id} nodes={nodes} onSelectNode={onSelectNode} />
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
+function DetailConnections({ connections, currentNodeId, nodes, onSelectNode }: {
+  connections: BoardConnection[]; currentNodeId: string; nodes: BoardNode[];
+  onSelectNode: (id: string | null) => void;
+}) {
+  return (
+    <div>
+      <h4 className="mb-1 text-[8px] font-bold uppercase tracking-widest text-[#555]">
+        Connections ({connections.length})
+      </h4>
+      <div className="space-y-1">
+        {connections.map((conn) => {
+          const otherId = conn.sourceId === currentNodeId ? conn.targetId : conn.sourceId;
+          const otherNode = nodes.find((n) => n.id === otherId);
+          const otherName = otherNode
+            ? otherNode.kind === "person" ? otherNode.data.name : otherNode.kind === "entity" ? otherNode.data.name : otherNode.data.title
+            : "Unknown";
+          return (
+            <button key={conn.id} onClick={(e) => { e.stopPropagation(); onSelectNode(otherId); }}
+              className="w-full text-left rounded border border-[#222] bg-[#111] p-1.5 text-[9px] hover:border-red-500/30 transition">
+              <span className="font-bold uppercase text-red-400/70">{conn.type}</span>
+              <span className="text-[#777]"> → {otherName}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

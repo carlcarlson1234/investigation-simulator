@@ -550,23 +550,12 @@ export function BoardWorkspace({
 
   const selectedNode = boardNodes.find((n) => n.id === selectedNodeId) ?? null;
 
-  // Auto-switch to details only when selection changes (not continuously)
-  const prevSelectedId = useRef<string | null>(null);
-  useEffect(() => {
-    if (selectedNode && selectedNode.id !== prevSelectedId.current) {
-      setRightTab("details");
-    } else if (!selectedNode && !selectedEmailId && prevSelectedId.current) {
-      // Only auto-switch back to persons if we were on the details tab
-      setRightTab(prev => prev === "details" ? "persons" : prev);
-    }
-    prevSelectedId.current = selectedNode?.id ?? null;
-  }, [selectedNode, selectedEmailId]);
+  // Node selection no longer switches tabs — details show as floating card on the canvas
 
   // ─── Email selection from inbox ───────────────────────────────────────────
 
   const handleSelectEmail = useCallback(async (emailId: string) => {
     setSelectedEmailId(emailId);
-    setRightTab("details");
     // Fetch full email detail
     try {
       const res = await fetch(`/api/evidence/${emailId}?type=email`);
@@ -656,6 +645,44 @@ export function BoardWorkspace({
     resizeStartW.current = leftPanelWidth;
     setIsResizingLeft(true);
   }, [leftPanelWidth]);
+
+  // ─── Resizable Entities Panel (right) ───────────────────────────────────
+  const [rightPanelWidth, setRightPanelWidth] = useState(230);
+  // Wide mode: entities panel scales up cards when wider than 350px
+  const entitiesWideMode = !rightCollapsed && rightPanelWidth >= 350;
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const rightResizeStartX = useRef(0);
+  const rightResizeStartW = useRef(230);
+
+  useEffect(() => {
+    if (!isResizingRight) return;
+    const onMove = (e: MouseEvent) => {
+      // Dragging left = wider (inverted from left panel)
+      const delta = rightResizeStartX.current - e.clientX;
+      const newW = Math.max(230, Math.min(rightResizeStartW.current + delta, window.innerWidth * 0.65));
+      setRightPanelWidth(newW);
+    };
+    const onUp = () => {
+      setIsResizingRight(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizingRight]);
+
+  const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    rightResizeStartX.current = e.clientX;
+    rightResizeStartW.current = rightPanelWidth;
+    setIsResizingRight(true);
+  }, [rightPanelWidth]);
 
   // Mini-board: filtered nodes/connections for evidence-focus mode
   const miniBoardNodes = useMemo(() => {
@@ -760,7 +787,13 @@ export function BoardWorkspace({
           </button>
           {!evidenceFocusMode && (
             <button
-              onClick={() => setRightCollapsed(prev => !prev)}
+              onClick={() => {
+                setRightCollapsed(prev => {
+                  if (prev) return false;
+                  setRightPanelWidth(230);
+                  return true;
+                });
+              }}
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-[family-name:var(--font-mono)] font-bold uppercase tracking-[0.08em] transition backdrop-blur-sm ${
                 !rightCollapsed
                   ? "border-[#E24B4A]/30 bg-[#E24B4A]/10 text-[#E24B4A] hover:bg-[#E24B4A]/20"
@@ -770,37 +803,10 @@ export function BoardWorkspace({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
               </svg>
-              People
+              Entities
             </button>
           )}
         </div>
-
-        {/* Evidence-focus mode: quick-select prompt when no people selected */}
-        {evidenceFocusMode && spotlightPersonIds.size === 0 && topConnectedPeople.length > 0 && (
-          <div className="absolute inset-x-0 top-12 z-30 flex justify-center pointer-events-none">
-            <div className="pointer-events-auto rounded-xl border border-[#2a2a2a] bg-[#111]/95 backdrop-blur-sm px-5 py-4 shadow-xl shadow-black/50 max-w-md">
-              <p className="text-center text-[11px] font-[family-name:var(--font-mono)] uppercase tracking-[0.12em] text-[#888] mb-3">
-                Select people to focus on
-              </p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {topConnectedPeople.map(node => {
-                  if (node.kind !== "person") return null;
-                  const name = node.data.name;
-                  return (
-                    <button
-                      key={node.id}
-                      onClick={() => toggleSpotlight(node.id)}
-                      className="flex items-center gap-1.5 rounded-full border border-[#333] bg-[#1a1a1a] px-3 py-1.5 text-[11px] text-white/80 hover:border-[#E24B4A]/40 hover:bg-[#E24B4A]/10 hover:text-white transition"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-[#E24B4A]/60" />
-                      {name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Evidence-focus mode: spotlight chip bar */}
         {evidenceFocusMode && spotlightPersonIds.size > 0 && (
@@ -912,23 +918,34 @@ export function BoardWorkspace({
         />
       )}
 
-      {/* RIGHT: Persons + Email Detail + Context — hidden in evidence-focus mode */}
-      <div className={`transition-all duration-300 ease-out h-full shrink-0 overflow-hidden ${evidenceFocusMode ? "w-0" : showRightPanel ? (rightCollapsed ? "w-0" : "w-[230px]") : "w-0"}`}>
+      {/* RIGHT RESIZE HANDLE */}
+      {showRightPanel && !rightCollapsed && !evidenceFocusMode && (
+        <div
+          className={`panel-resize-handle shrink-0 ${isResizingRight ? "active" : ""}`}
+          onMouseDown={handleRightResizeStart}
+        >
+          <div className="panel-resize-handle-dots">
+            <span /><span /><span />
+          </div>
+        </div>
+      )}
+
+      {/* RIGHT: Entities panel — hidden in evidence-focus mode */}
+      <div
+        className={`${isResizingRight ? "" : "transition-all duration-300 ease-out"} h-full shrink-0 overflow-hidden ${evidenceFocusMode ? "w-0" : showRightPanel ? (rightCollapsed ? "w-0" : "") : "w-0"}`}
+        style={evidenceFocusMode || !showRightPanel || rightCollapsed ? undefined : { width: rightPanelWidth }}
+      >
         {showRightPanel && !rightCollapsed && !evidenceFocusMode && (
           <ContextPanel
             activeTab={rightTab}
             onTabChange={setRightTab}
             people={people}
-            selectedNode={selectedNode}
-            selectedEmailDetail={selectedEmailDetail}
             focusedNodeId={focusedNodeId}
-            focusState={focusState}
             boardConnections={boardConnections}
             boardNodes={boardNodes}
             isOnBoard={isOnBoard}
             onAddPerson={addPersonToBoard}
             onFocusNode={focusNode}
-            onSelectNode={selectNode}
             suggestedPeople={suggestedPeople}
             investigationStep={investigation.isStartMode ? investigation.step : null}
             spotlightPersonIds={spotlightPersonIds}
@@ -936,6 +953,7 @@ export function BoardWorkspace({
             onClearSpotlight={clearSpotlight}
             onAddEntity={addEntityToBoard}
             onSpotlightEntity={spotlightEntity}
+            isWideMode={entitiesWideMode}
           />
         )}
       </div>
