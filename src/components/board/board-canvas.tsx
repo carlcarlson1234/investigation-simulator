@@ -2983,6 +2983,75 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     ) : (
                       <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
+                    {/* Pinned evidence chips flush against the card edges.
+                        Fill order: right → bottom → left → top, max 4 per side.
+                        Overflow beyond 16 stacks as a second layer peeking out
+                        half-width from behind the first layer (offset outward). */}
+                    {node.pinnedEvidence && node.pinnedEvidence.length > 0 && zoom >= 0.5 && (() => {
+                      const cardEl = viewportRef.current?.querySelector(`[data-node-id="${node.id}"] > div`) as HTMLElement | null;
+                      const w = cardEl?.offsetWidth ?? getScaledCardSize(node).w;
+                      const h = cardEl?.offsetHeight ?? getScaledCardSize(node).h;
+                      const pins = node.pinnedEvidence;
+                      const CHIP = 44;
+                      const SPACING = 4;
+                      const PER_SIDE = 4;
+                      const SIDES_CAP = PER_SIDE * 4; // 16 chips per layer
+                      // Second-layer offset: half chip width peeking out
+                      const OFFSET_2 = CHIP / 2;
+
+                      // Compute (x, y, zIndex) for chip at position i
+                      const posFor = (i: number) => {
+                        const layer = Math.floor(i / SIDES_CAP);
+                        const localIdx = i % SIDES_CAP;
+                        // Determine which side of the perimeter this chip lands on
+                        const side = Math.floor(localIdx / PER_SIDE); // 0=right, 1=bottom, 2=left, 3=top
+                        const idxInSide = localIdx % PER_SIDE;
+                        // Number of chips actually on this side for this layer
+                        const remainingThisLayer = Math.min(SIDES_CAP, pins.length - layer * SIDES_CAP);
+                        const chipsOnSide = Math.min(PER_SIDE, Math.max(0, remainingThisLayer - side * PER_SIDE));
+
+                        const extraOut = layer * OFFSET_2;
+                        // Lower z for later layers so they peek from behind
+                        const z = 30 - layer;
+
+                        let x = 0, y = 0;
+                        if (side === 0) {
+                          // Right edge
+                          x = w + extraOut;
+                          y = (h - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
+                        } else if (side === 1) {
+                          // Bottom edge
+                          x = (w - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
+                          y = h + extraOut;
+                        } else if (side === 2) {
+                          // Left edge
+                          x = -CHIP - extraOut;
+                          y = (h - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
+                        } else {
+                          // Top edge
+                          x = (w - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
+                          y = -CHIP - extraOut;
+                        }
+                        return { x, y, z };
+                      };
+
+                      return (
+                        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
+                          {pins.map((ev, i) => {
+                            const { x, y, z } = posFor(i);
+                            return (
+                              <div
+                                key={ev.id}
+                                className="absolute pointer-events-auto"
+                                style={{ left: x, top: y, width: CHIP, height: CHIP, zIndex: z }}
+                              >
+                                <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                     {/* Glowing connection handle at bottom center — hidden at low zoom */}
                     <div
                       className={`absolute left-1/2 -translate-x-1/2 -bottom-3 z-20 flex flex-col items-center ${zoom < 0.6 ? "hidden" : ""}`}
@@ -3506,11 +3575,6 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
       {/* Info area */}
       <div className="px-2.5 py-1.5">
         <h4 className="font-[family-name:var(--font-display)] text-xl leading-none text-white tracking-wide">{data.name}</h4>
-        {pinnedEvidence && pinnedEvidence.length > 0 && (
-          <div className="mt-1.5">
-            <PinnedEvidenceStack pinned={pinnedEvidence} onDoubleClick={onPinnedEvidenceDoubleClick} />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -3710,11 +3774,6 @@ function EntityBoardCard({ data, isSelected, pinnedEvidence, onPinnedEvidenceDou
             {data.keyPeople.length > 3 && (
               <span className="text-[7px] text-[#444]">+{data.keyPeople.length - 3}</span>
             )}
-          </div>
-        )}
-        {pinnedEvidence && pinnedEvidence.length > 0 && (
-          <div className="mt-1.5">
-            <PinnedEvidenceStack pinned={pinnedEvidence} onDoubleClick={onPinnedEvidenceDoubleClick} />
           </div>
         )}
       </div>
