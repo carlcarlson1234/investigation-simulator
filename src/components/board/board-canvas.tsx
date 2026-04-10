@@ -161,37 +161,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
   const [focusedPinnedEvidence, setFocusedPinnedEvidence] = useState<PinnedEvidence | null>(null);
   const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
-  // Track connections that just gained evidence (power-up animation)
-  const [poweredUpConnectionIds, setPoweredUpConnectionIds] = useState<Set<string>>(new Set());
-  const prevPinnedCountsRef = useRef<Map<string, number>>(new Map());
-
-  // Detect when a connection gains pinned evidence → trigger power-up animation
-  useEffect(() => {
-    const next = new Set<string>();
-    for (const c of connections) {
-      const count = c.pinnedEvidence?.length ?? 0;
-      const prev = prevPinnedCountsRef.current.get(c.id) ?? 0;
-      if (count > prev) next.add(c.id);
-      prevPinnedCountsRef.current.set(c.id, count);
-    }
-    // Drop entries for deleted connections
-    for (const id of Array.from(prevPinnedCountsRef.current.keys())) {
-      if (!connections.find((c) => c.id === id)) {
-        prevPinnedCountsRef.current.delete(id);
-      }
-    }
-    if (next.size > 0) {
-      setPoweredUpConnectionIds((curr) => new Set([...curr, ...next]));
-      const t = setTimeout(() => {
-        setPoweredUpConnectionIds((curr) => {
-          const updated = new Set(curr);
-          for (const id of next) updated.delete(id);
-          return updated;
-        });
-      }, 900);
-      return () => clearTimeout(t);
-    }
-  }, [connections]);
   const selectedConnection = connections.find(c => c.id === selectedConnectionId) || null;
 
   /* ── Connect-drag state (handle-based) ──────────────────────────────────── */
@@ -2673,29 +2642,19 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                             className="pointer-events-none"
                           />
                         )}
-                        {/* Power-up halo — plays briefly when new evidence is pinned */}
-                        {bundleConns.some(c => poweredUpConnectionIds.has(c.id)) && (
-                          <path
-                            d={curvePath}
-                            stroke="#fbbf24"
-                            strokeWidth={Math.max(bundledWidth + 20, 24)}
-                            strokeOpacity={0.85}
-                            fill="none"
-                            strokeLinecap="round"
-                            className="board-connection--powered-up pointer-events-none"
-                          />
-                        )}
-                        {/* Evidence-drop halo — glows cyan while dragging evidence over connections */}
+                        {/* Evidence-drop halo — red glow on every connection while dragging evidence,
+                            brighter on the line currently under the cursor. */}
                         {dragKind === "evidence" && (() => {
                           const isActive = bundleConns.some(c => activeDropTarget?.kind === "connection" && activeDropTarget.id === c.id);
                           return (
                             <path
                               d={curvePath}
-                              stroke="#22d3ee"
+                              stroke="#ef4444"
                               strokeWidth={isActive ? Math.max(bundledWidth + 18, 24) : Math.max(bundledWidth + 8, 14)}
-                              strokeOpacity={isActive ? 0.8 : 0.4}
+                              strokeOpacity={isActive ? 0.9 : 0.45}
                               fill="none"
                               strokeLinecap="round"
+                              filter="url(#string-glow-strong)"
                               className="board-connection--evidence-drop-target pointer-events-none"
                             />
                           );
