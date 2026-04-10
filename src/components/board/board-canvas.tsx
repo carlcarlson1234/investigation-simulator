@@ -25,14 +25,16 @@ const BASE_WORLD_W = 4000;
 const BASE_WORLD_H = 3000;
 
 /* ── Node pinned-evidence layout constants ─────────────────────────────── */
-// Photos orbit the card perimeter at ~80px per chip, max 2 per side (8 total).
-// Overflow photos and all non-photo evidence fall into category badges below the card.
+// Photos orbit the card perimeter at ~80px per chip, max 2 per side.
+// The bottom side is reserved for the category stack row so it has room
+// to wrap as more categories are added in the future.
 const ORBITAL_CHIP = 80;
 const ORBITAL_SPACING = 12;
 const ORBITAL_PER_SIDE = 2;
-const ORBITAL_MAX = ORBITAL_PER_SIDE * 4; // 8
-const STACK_BADGE_H = 36;
-const STACK_BADGE_W = 68;
+const ORBITAL_SIDES = 3; // right, left, top only (bottom reserved for stack row)
+const ORBITAL_MAX = ORBITAL_PER_SIDE * ORBITAL_SIDES; // 6
+const STACK_BADGE_H = 32;
+const STACK_BADGE_W = 60;
 const STACK_BADGE_GAP = 6;
 const DETAIL_CARD_MAX_W = 600;
 
@@ -2991,10 +2993,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       const part = partitionNodeEvidence(node.pinnedEvidence);
                       const orbital = part.orbitalPhotos;
 
-                      // Compute (x, y) for orbital photo at index i (0..7).
-                      // Fill order: right → bottom → left → top, 2 per side, centered on each side.
+                      // Compute (x, y) for orbital photo at index i (0..5).
+                      // Fill order: right → left → top, 2 per side. Bottom is reserved for the stack row.
                       const orbitalPos = (i: number) => {
-                        const side = Math.floor(i / ORBITAL_PER_SIDE); // 0=right, 1=bottom, 2=left, 3=top
+                        const side = Math.floor(i / ORBITAL_PER_SIDE); // 0=right, 1=left, 2=top
                         const idxInSide = i % ORBITAL_PER_SIDE;
                         // How many chips actually on this side (for centering when side underfilled)
                         const remaining = Math.max(0, orbital.length - side * ORBITAL_PER_SIDE);
@@ -3002,15 +3004,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         const runLen = chipsOnSide * ORBITAL_CHIP + (chipsOnSide - 1) * ORBITAL_SPACING;
                         let x = 0, y = 0;
                         if (side === 0) {
+                          // Right
                           x = w + 2;
                           y = (h - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                         } else if (side === 1) {
-                          x = (w - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
-                          y = h + 2;
-                        } else if (side === 2) {
+                          // Left
                           x = -ORBITAL_CHIP - 2;
                           y = (h - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                         } else {
+                          // Top
                           x = (w - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                           y = -ORBITAL_CHIP - 2;
                         }
@@ -3040,10 +3042,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                             );
                           })}
 
-                          {/* Category stack badges attached below the card */}
+                          {/* Category stack badges attached below the card — wraps to multiple rows if needed */}
                           {badges.length > 0 && (
                             <div
-                              className="absolute flex pointer-events-none"
+                              className="absolute flex flex-wrap pointer-events-none"
                               style={{ left: 0, top: h + 8, width: w, gap: STACK_BADGE_GAP, zIndex: 28 }}
                             >
                               {badges.map((b) => (
@@ -3059,7 +3061,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                                   }}
                                   title={`${b.count} ${b.key}`}
                                 >
-                                  <span className="text-[16px] leading-none">{b.icon}</span>
+                                  <span className="text-[14px] leading-none">{b.icon}</span>
                                   <span className="text-[12px] font-black text-white/90 tabular-nums">{b.count}</span>
                                 </button>
                               ))}
