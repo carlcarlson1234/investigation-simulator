@@ -67,6 +67,43 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
   return out;
 }
 
+// Effective on-board footprint of a node, accounting for orbital photo chips
+// (right/left/top sides) and the category stack-row below the card. Used by
+// the drag-repulsion and drop-nudge physics so cards don't visually overlap
+// each other's pinned evidence.
+function getEffectiveCardFootprint(
+  baseW: number,
+  baseH: number,
+  pinned: PinnedEvidence[] | undefined,
+): { w: number; h: number; offsetX: number; offsetY: number } {
+  const part = partitionNodeEvidence(pinned);
+  const orb = part.orbitalPhotos.length;
+  // Orbital chips extend ORBITAL_CHIP + ~2px breathing room outward per side.
+  const EXT = ORBITAL_CHIP + 4;
+  const extRight = orb >= 1 ? EXT : 0;               // side 0: right
+  const extLeft = orb >= ORBITAL_PER_SIDE + 1 ? EXT : 0; // side 1: left
+  const extTop = orb >= ORBITAL_PER_SIDE * 2 + 1 ? EXT : 0; // side 2: top
+
+  // Category stack row below the card. Wraps when there are more badges
+  // than fit in one row.
+  const badgeCount =
+    (part.overflowPhotos.length > 0 ? 1 : 0) +
+    (part.emails.length > 0 ? 1 : 0) +
+    (part.documents.length > 0 ? 1 : 0) +
+    (part.imessages.length > 0 ? 1 : 0);
+  const badgesPerRow = Math.max(1, Math.floor((baseW + STACK_BADGE_GAP) / (STACK_BADGE_W + STACK_BADGE_GAP)));
+  const stackRows = badgeCount > 0 ? Math.ceil(badgeCount / badgesPerRow) : 0;
+  const stackExt = stackRows > 0 ? stackRows * STACK_BADGE_H + (stackRows - 1) * STACK_BADGE_GAP + 10 : 0;
+
+  return {
+    w: baseW + extLeft + extRight,
+    h: baseH + extTop + stackExt,
+    // offset from base (x, y) to the top-left of the effective footprint
+    offsetX: -extLeft,
+    offsetY: -extTop,
+  };
+}
+
 /* ── Public handle so parent can call centerOnNode ──────────────────────── */
 export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
@@ -2037,7 +2074,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   useEffect(() => {
     if (!dragState) return;
-    const REPEL_RADIUS = 80;
+    // Post-orbit / stack-row layout: effective footprints already include
+    // pinned-evidence extents, so we only need a modest breathing room here.
+    const REPEL_RADIUS = 24;
     const REPEL_STRENGTH = 8;
     const onMove = (e: MouseEvent) => {
       const vp = viewportRef.current;
@@ -2064,23 +2103,34 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       dragVelocityRef.current = { ...dragVelocityRef.current, vx, lastX: e.clientX, lastY: e.clientY };
       dragRotationRef.current = Math.max(-1, Math.min(1, vx * 0.15));
 
-      // Repel nearby cards (accounting for importance scaling)
+      // Repel nearby cards. Use the effective footprint (base + orbital
+      // photo chips + category stack row) so the repulsion respects every
+      // node's actual visual extent, not just the base card.
       const dragged = nodesRef.current.find(n => n.id === dragState.nodeId);
       if (dragged) {
         const ds = getScaledCardSize(dragged);
-        const dcx = nx + ds.w / 2;
-        const dcy = ny + ds.h / 2;
+        const dEff = getEffectiveCardFootprint(ds.w, ds.h, dragged.pinnedEvidence);
+        const dcx = nx + dEff.offsetX + dEff.w / 2;
+        const dcy = ny + dEff.offsetY + dEff.h / 2;
         const offsets: Record<string, { dx: number; dy: number }> = {};
         for (const other of nodesRef.current) {
           if (other.id === dragState.nodeId) continue;
           const os = getScaledCardSize(other);
-          const ow = os.w;
-          const ocx = other.position.x + ow / 2;
-          const ocy = other.position.y + os.h / 2;
+          const oEff = getEffectiveCardFootprint(os.w, os.h, other.pinnedEvidence);
+          const ocx = other.position.x + oEff.offsetX + oEff.w / 2;
+          const ocy = other.position.y + oEff.offsetY + oEff.h / 2;
           const ddx = ocx - dcx;
           const ddy = ocy - dcy;
           const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-          const minDist = (ds.w + ow) / 2 + REPEL_RADIUS;
+          // Use axis-aware minimum distance: half-widths along x, half-heights
+          // along y. This prevents a card's tall stack row from also inflating
+          // its horizontal repel radius.
+          const minDx = (dEff.w + oEff.w) / 2;
+          const minDy = (dEff.h + oEff.h) / 2;
+          // Interpolate between the two based on angle so repulsion is a
+          // smooth ellipse around the effective rectangle.
+          const t = dist > 0 ? Math.abs(ddx) / dist : 0;
+          const minDist = minDx * t + minDy * (1 - t) + REPEL_RADIUS;
           if (dist < minDist && dist > 0) {
             const force = ((minDist - dist) / minDist) * REPEL_STRENGTH;
             offsets[other.id] = { dx: (ddx / dist) * force, dy: (ddy / dist) * force };
@@ -2090,35 +2140,49 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       }
     };
     const onUp = () => {
-      // Nudge if overlapping another card (accounting for importance scaling)
+      // Nudge if overlapping another card's EFFECTIVE footprint (base card
+      // plus orbital photo chips and the category stack row).
       const dragged = nodes.find(n => n.id === dragState.nodeId);
       if (dragged) {
-        const PAD = 20;
+        const PAD = 8;
         const ds = getScaledCardSize(dragged);
-        const dw = ds.w;
-        const dh = ds.h;
+        const dEff = getEffectiveCardFootprint(ds.w, ds.h, dragged.pinnedEvidence);
         let { x, y } = dragged.position;
         let nudged = false;
+        // Effective AABB of the dragged node, in world coords
+        let dL = x + dEff.offsetX - PAD;
+        let dT = y + dEff.offsetY - PAD;
+        let dR = dL + dEff.w + PAD * 2;
+        let dB = dT + dEff.h + PAD * 2;
         for (const other of nodes) {
           if (other.id === dragState.nodeId) continue;
           const os = getScaledCardSize(other);
-          const ow = os.w;
-          const oh = os.h;
-          if (x < other.position.x + ow + PAD && x + dw + PAD > other.position.x &&
-              y < other.position.y + oh + PAD && y + dh + PAD > other.position.y) {
-            const overlapR = (x + dw + PAD) - other.position.x;
-            const overlapL = (other.position.x + ow + PAD) - x;
-            const overlapD = (y + dh + PAD) - other.position.y;
-            const overlapU = (other.position.y + oh + PAD) - y;
+          const oEff = getEffectiveCardFootprint(os.w, os.h, other.pinnedEvidence);
+          const oL = other.position.x + oEff.offsetX;
+          const oT = other.position.y + oEff.offsetY;
+          const oR = oL + oEff.w;
+          const oB = oT + oEff.h;
+          if (dL < oR && dR > oL && dT < oB && dB > oT) {
+            const overlapR = dR - oL;
+            const overlapL = oR - dL;
+            const overlapD = dB - oT;
+            const overlapU = oB - dT;
             const minOverlap = Math.min(overlapR, overlapL, overlapD, overlapU);
             if (minOverlap === overlapR) x -= overlapR;
             else if (minOverlap === overlapL) x += overlapL;
             else if (minOverlap === overlapD) y -= overlapD;
             else y += overlapU;
+            // Recompute effective bounds after the nudge for subsequent checks
+            dL = x + dEff.offsetX - PAD;
+            dT = y + dEff.offsetY - PAD;
+            dR = dL + dEff.w + PAD * 2;
+            dB = dT + dEff.h + PAD * 2;
             nudged = true;
           }
         }
         if (nudged) onMoveNode(dragState.nodeId, Math.max(0, x), Math.max(0, y));
+        const dw = ds.w;
+        const dh = ds.h;
 
         // Bounce + ripple + sound
         playSound("drop");
@@ -2794,7 +2858,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
               {/* Pinned evidence distributed along each connection line.
                   Items alternate above/below (perpendicular) with a small
-                  connector line to their anchor point on the line. */}
+                  connector line to their anchor point on the line.
+                  Chip size shrinks when the connected cards are close
+                  together so chips don't pile up or cover the cards. */}
               {connections.filter(c => c.pinnedEvidence && c.pinnedEvidence.length > 0).map((conn) => {
                 const from = getNodeCenter(conn.sourceId);
                 const to = getNodeCenter(conn.targetId);
@@ -2806,13 +2872,53 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 // Perpendicular unit vector
                 const perpX = -dy / len;
                 const perpY = dx / len;
-                const OFFSET = 46; // how far from the line
-                const CHIP = 56; // chip size (square)
+                // Compute the t-range along the line that's OUTSIDE both end
+                // cards, so chips stay in the visible gap instead of being
+                // covered by the cards. Use the line↔rectangle exit distance
+                // (not the max-dim radius) so long narrow cards don't
+                // over-reserve space.
+                const srcNode = nodes.find(n => n.id === conn.sourceId);
+                const tgtNode = nodes.find(n => n.id === conn.targetId);
+                const srcSize = srcNode ? getScaledCardSize(srcNode) : { w: 240, h: 240 };
+                const tgtSize = tgtNode ? getScaledCardSize(tgtNode) : { w: 240, h: 240 };
+                const dirX = dx / len;
+                const dirY = dy / len;
+                const exitDist = (halfW: number, halfH: number) => {
+                  const tX = Math.abs(dirX) > 0.001 ? halfW / Math.abs(dirX) : Infinity;
+                  const tY = Math.abs(dirY) > 0.001 ? halfH / Math.abs(dirY) : Infinity;
+                  return Math.min(tX, tY);
+                };
+                const srcExit = exitDist(srcSize.w / 2, srcSize.h / 2);
+                const tgtEnter = exitDist(tgtSize.w / 2, tgtSize.h / 2);
+                const effLen = Math.max(40, len - srcExit - tgtEnter);
+                // Add a small buffer past each card edge so chips don't kiss the cards
+                const BUFFER = 12;
+                let tStart = (srcExit + BUFFER) / len;
+                let tEnd = 1 - (tgtEnter + BUFFER) / len;
+                if (tEnd <= tStart) {
+                  // Cards touch / overlap — fall back to midpoint
+                  tStart = 0.5;
+                  tEnd = 0.5;
+                }
+
+                // Dynamic chip sizing: chips alternate sides, so the
+                // constraint is the along-line spacing between two SAME-side
+                // chips (every other index). Shrink chip down to CHIP_MIN
+                // when that spacing is tight.
+                const sameSideCount = Math.max(1, Math.ceil(pinned.length / 2));
+                const slotLen = effLen / sameSideCount;
+                const CHIP_MAX = 56;
+                const CHIP_MIN = 26;
+                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen * 0.75));
+                const OFFSET = Math.max(22, CHIP * 0.82);
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
-                      // Distribute along the line: t = (i+1)/(n+1)
-                      const t = (i + 1) / (pinned.length + 1);
+                      // Distribute within the valid [tStart, tEnd] gap
+                      // between the two cards so chips aren't covered.
+                      const t = pinned.length === 1
+                        ? (tStart + tEnd) / 2
+                        : tStart + ((i) / (pinned.length - 1)) * (tEnd - tStart);
                       const ax = from.cx + dx * t;
                       const ay = from.cy + dy * t;
                       const side = i % 2 === 0 ? 1 : -1;
