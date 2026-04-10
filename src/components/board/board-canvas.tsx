@@ -3841,6 +3841,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchTab, setSearchTab] = useState<"all" | EvidenceType>("all");
+  const [hoveredResult, setHoveredResult] = useState<{ r: SearchResult; x: number; y: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   const relatedConns = connections.filter(
     (c) => c.sourceId === node.id || c.targetId === node.id
@@ -3915,14 +3918,14 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   })();
 
   // Fetch evidence across the whole archive matching this node's name or aliases.
-  // Runs when the search button is first opened, and again whenever the query changes.
+  // Runs whenever the search panel is open and the query or active tab changes.
   useEffect(() => {
     if (!searchOpen) return;
     let cancelled = false;
     const effectiveQuery = query.trim() || headerBits.nameForSearch;
     if (!effectiveQuery) return;
     setSearchLoading(true);
-    fetch(`/api/search?q=${encodeURIComponent(effectiveQuery)}&type=all&limit=40`)
+    fetch(`/api/search?q=${encodeURIComponent(effectiveQuery)}&type=${searchTab}&limit=60`)
       .then((r) => r.json())
       .then((data: { results?: SearchResult[] }) => {
         if (cancelled) return;
@@ -3931,7 +3934,21 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
       .catch(() => { if (!cancelled) setSearchResults([]); })
       .finally(() => { if (!cancelled) setSearchLoading(false); });
     return () => { cancelled = true; };
-  }, [searchOpen, query, headerBits.nameForSearch]);
+  }, [searchOpen, query, searchTab, headerBits.nameForSearch]);
+
+  // Click outside the panel closes it (so you can drag from panel → board freely).
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      if (!panel.contains(e.target as Node)) onClose();
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", handler);
+    };
+  }, [onClose]);
 
   // Seed the query with the node's name the first time the search panel opens.
   const didSeedQueryRef = useRef(false);
@@ -3948,14 +3965,11 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   if (typeof document === "undefined") return null;
   return createPortal(
     <>
-      {/* Backdrop — click to close */}
+      {/* Panel — slides in from the left, no modal backdrop so the board beyond
+          it stays interactive for drag-and-drop of evidence from search results. */}
       <div
-        className="fixed inset-0 z-[1000] bg-black/50 backdrop-blur-[2px]"
-        onMouseDown={(e) => { e.stopPropagation(); onClose(); }}
-      />
-      {/* Panel — fixed right-side, ~50% of the screen */}
-      <div
-        className="fixed z-[1001] right-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/70"
+        ref={panelRef}
+        className="fixed z-[1001] left-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80"
         style={{ width: "min(50vw, 760px)", minWidth: 480 }}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
@@ -3970,11 +3984,11 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
           </svg>
         </button>
 
-        {/* Header — photo + name row, then centered score */}
+        {/* Header — bigger photo + name row, then centered "SCORE 1234" */}
         <div className="flex-shrink-0 px-6 pt-6 pb-5 border-b border-[#1c1c1c]">
-          <div className="flex items-center gap-5">
-            {/* Photo / placeholder */}
-            <div className="flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#111] shadow-lg shadow-black/50">
+          <div className="flex items-center gap-6">
+            {/* Photo / placeholder — bigger */}
+            <div className="flex-shrink-0 w-36 h-36 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#111] shadow-lg shadow-black/50">
               {headerBits.photoUrl ? (
                 <img
                   src={headerBits.photoUrl}
@@ -3983,7 +3997,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-[#333] text-3xl">·</div>
+                <div className="w-full h-full flex items-center justify-center text-[#333] text-4xl">·</div>
               )}
             </div>
             {/* Name + subtitle */}
@@ -3997,16 +4011,15 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
             </div>
           </div>
 
-          {/* Centered glowing green score */}
-          <div className="mt-5 flex justify-center">
-            <div
-              className="text-7xl font-black text-green-400 tabular-nums leading-none"
-              style={{
-                textShadow: "0 0 22px rgba(74,222,128,0.85), 0 0 48px rgba(74,222,128,0.5), 0 0 80px rgba(74,222,128,0.25)",
-              }}
-            >
-              {score}
-            </div>
+          {/* Centered glowing green "SCORE 1234" */}
+          <div
+            className="mt-5 flex items-center justify-center gap-4 text-green-400 tabular-nums"
+            style={{
+              textShadow: "0 0 22px rgba(74,222,128,0.9), 0 0 48px rgba(74,222,128,0.55), 0 0 84px rgba(74,222,128,0.28)",
+            }}
+          >
+            <span className="text-3xl font-black uppercase tracking-[0.2em]">Score</span>
+            <span className="text-7xl font-black leading-none">{score}</span>
           </div>
 
           {/* Action row: connections dropdown + search */}
@@ -4068,7 +4081,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
             <div className="text-[12px] text-[#555] italic px-1">No connections yet.</div>
           )}
 
-          {/* Search — queries the whole archive by default, seeded with the node's name */}
+          {/* Search — queries the whole archive, seeded with the node's name.
+              Tabs switch the type filter. Results are draggable onto the board
+              and show a large hover preview. */}
           {searchOpen && (
             <div className="rounded border border-[#2a2a2a] bg-[#0a0a0a]">
               <div className="px-4 py-3 border-b border-[#1c1c1c]">
@@ -4081,25 +4096,75 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                   className="w-full bg-transparent outline-none text-[15px] text-white placeholder:text-[#555]"
                 />
                 <div className="mt-1 text-[10px] text-[#666] tabular-nums">
-                  {searchLoading ? "Searching…" : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"} across the archive`}
+                  {searchLoading ? "Searching…" : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`}
                   {headerBits.aliasesForSearch.length > 0 && !searchLoading && (
                     <span className="text-[#444]"> · aliases: {headerBits.aliasesForSearch.slice(0, 3).join(", ")}{headerBits.aliasesForSearch.length > 3 ? "…" : ""}</span>
                   )}
                 </div>
               </div>
-              {searchResults.length > 0 && (
-                <div className="max-h-[280px] overflow-y-auto divide-y divide-[#161616]">
-                  {searchResults.map((r) => (
+              {/* Type tabs */}
+              <div className="flex items-center gap-1 px-3 py-2 border-b border-[#1c1c1c]">
+                {([
+                  { key: "all" as const, label: "All" },
+                  { key: "photo" as const, label: "Photos", icon: "📸" },
+                  { key: "email" as const, label: "Emails", icon: "✉️" },
+                  { key: "document" as const, label: "Docs", icon: "📄" },
+                  { key: "imessage" as const, label: "iMessages", icon: "💬" },
+                ]).map((t) => {
+                  const active = searchTab === t.key;
+                  return (
                     <button
-                      key={`${r.type}-${r.id}`}
+                      key={t.key}
                       type="button"
+                      onClick={() => setSearchTab(t.key)}
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide transition ${active ? "bg-red-600/20 text-red-300 border border-red-500/50" : "border border-transparent text-[#888] hover:text-white hover:bg-[#151515]"}`}
+                    >
+                      {"icon" in t && <span className="text-[12px]">{t.icon}</span>}
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {searchResults.length > 0 && (
+                <div className="max-h-[320px] overflow-y-auto divide-y divide-[#161616]">
+                  {searchResults.map((r) => (
+                    <div
+                      key={`${r.type}-${r.id}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        const payload = {
+                          id: r.id,
+                          kind: "evidence",
+                          data: {
+                            id: r.id,
+                            type: r.type,
+                            title: r.title,
+                            snippet: r.snippet,
+                            date: r.date,
+                            sender: r.sender,
+                            score: (r as SearchResult).score ?? 0,
+                            starCount: r.starCount,
+                          },
+                        };
+                        e.dataTransfer.setData("application/board-item", JSON.stringify(payload));
+                        e.dataTransfer.effectAllowed = "move";
+                        (e.currentTarget as HTMLElement).classList.add("dragging-source");
+                        setHoveredResult(null);
+                      }}
+                      onDragEnd={(e) => (e.currentTarget as HTMLElement).classList.remove("dragging-source")}
+                      onMouseEnter={(e) => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setHoveredResult({ r, x: rect.right + 12, y: rect.top });
+                      }}
+                      onMouseLeave={() => setHoveredResult(null)}
                       onClick={(e) => {
                         e.stopPropagation();
                         onOpenEvidence({ id: r.id, type: r.type, title: r.title, snippet: r.snippet, date: r.date, sender: r.sender, starCount: r.starCount });
                       }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-[#121212] transition flex items-start gap-2.5"
+                      className="w-full text-left px-4 py-2.5 hover:bg-[#121212] transition flex items-start gap-2.5 cursor-grab active:cursor-grabbing"
                     >
-                      <span className="text-[14px] flex-shrink-0">{EVIDENCE_TYPE_ICON[r.type]}</span>
+                      <span className="text-[16px] flex-shrink-0">{EVIDENCE_TYPE_ICON[r.type]}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-bold text-white/90 truncate">{r.title}</p>
                         {r.snippet && (
@@ -4110,7 +4175,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                           {r.sender && <span className="text-[10px] text-[#666] truncate">{r.sender}</span>}
                         </div>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -4154,6 +4219,43 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
           )}
         </div>
       </div>
+
+      {/* Hover preview for search results — large thumbnail for photos,
+          expanded metadata card for other evidence types. */}
+      {hoveredResult && (() => {
+        const r = hoveredResult.r;
+        const isPhoto = r.type === "photo";
+        const thumbUrl = isPhoto
+          ? `https://assets.getkino.com/cdn-cgi/image/width=500,quality=85,format=auto/photos-deboned/${r.id}`
+          : null;
+        // Clamp so the preview stays on-screen
+        const top = Math.min(hoveredResult.y, window.innerHeight - 340);
+        const left = Math.min(hoveredResult.x, window.innerWidth - 360);
+        return (
+          <div
+            className="fixed z-[1100] pointer-events-none rounded-xl border border-[#333] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80 overflow-hidden"
+            style={{ left, top, width: 340 }}
+          >
+            {isPhoto && thumbUrl && (
+              <img src={thumbUrl} alt={r.title} className="w-full object-cover" style={{ maxHeight: 320 }} />
+            )}
+            <div className="p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[13px]">{EVIDENCE_TYPE_ICON[r.type]}</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#666]">
+                  {EVIDENCE_TYPE_LABEL[r.type]}
+                </span>
+              </div>
+              <p className="text-[13px] font-bold text-white leading-tight">{r.title}</p>
+              {r.date && <p className="text-[10px] text-[#666] tabular-nums mt-0.5">{r.date}</p>}
+              {r.sender && <p className="text-[10px] text-[#777] mt-0.5 truncate">{r.sender}</p>}
+              {r.snippet && !isPhoto && (
+                <p className="text-[11px] text-[#999] mt-2 leading-relaxed line-clamp-6">{r.snippet}</p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </>,
     document.body
   );
