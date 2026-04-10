@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { BoardNode, BoardConnection, FocusState, PinnedEvidence } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
@@ -3923,16 +3924,20 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
     };
   })();
 
-  return (
+  // Portal to document.body so `position: fixed` escapes the board viewport's
+  // transform: scale(...) — otherwise fixed coordinates get reinterpreted
+  // relative to the transformed ancestor and the panel lands off-screen.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <>
       {/* Backdrop — click to close */}
       <div
-        className="fixed inset-0 z-[34] bg-black/50 backdrop-blur-[2px]"
+        className="fixed inset-0 z-[1000] bg-black/50 backdrop-blur-[2px]"
         onMouseDown={(e) => { e.stopPropagation(); onClose(); }}
       />
       {/* Panel — fixed right-side, ~50% of the screen */}
       <div
-        className="fixed z-[35] right-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/70"
+        className="fixed z-[1001] right-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/70"
         style={{ width: "min(50vw, 760px)", minWidth: 480 }}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
@@ -4098,7 +4103,8 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
