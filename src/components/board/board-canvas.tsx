@@ -3,6 +3,8 @@
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
 import type { BoardNode, BoardEvidenceNode, BoardConnection, FocusState } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType } from "@/lib/types";
+import { SEED_ENTITIES } from "@/lib/entity-seed-data";
+import type { SeedEntity } from "@/lib/entity-seed-data";
 import type { InvestigationStep } from "@/lib/investigation-types";
 import {
   EVIDENCE_TYPE_ICON,
@@ -44,6 +46,7 @@ interface BoardCanvasProps {
   onBatchMoveNodes?: (moves: Record<string, { x: number; y: number }>) => void;
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   onAddPerson: (personId: string, x?: number, y?: number) => void;
+  onAddEntity?: (entity: SeedEntity, x?: number, y?: number) => void;
   onStartConnection: (fromId: string) => void;
   onCompleteConnection: (toId: string) => void;
   onDirectConnection?: (fromId: string, toId: string) => void;
@@ -77,6 +80,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onBatchMoveNodes,
     onAddEvidence,
     onAddPerson,
+    onAddEntity,
     onStartConnection,
     onCompleteConnection,
     onDirectConnection,
@@ -302,8 +306,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   // Card dimensions accounting for importance scaling
   const getScaledCardSize = useCallback((node: BoardNode): { w: number; h: number } => {
-    const baseW = node.kind === "person" ? 260 : 190;
-    const baseH = node.kind === "person" ? 300 : 160;
+    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : 190;
+    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : 160;
     const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
     return { w: baseW * scale, h: baseH * scale };
   }, [getNodeScale]);
@@ -347,8 +351,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const vp = viewportRef.current;
     if (!node || !vp) return;
 
-    const cardW = node.kind === "person" ? 260 : 190;
-    const cardH = node.kind === "person" ? 260 : 140;
+    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : 190;
+    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : 140;
 
     // The centre of the card in world-space, then scaled
     const scaledX = (node.position.x + cardW / 2) * zoom;
@@ -456,8 +460,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const node = nodesRef.current.find(n => n.id === nodeId);
     if (node) {
       const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
-      const baseW = node.kind === "person" ? 260 : 190;
-      const baseH = node.kind === "person" ? 300 : 160;
+      const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : 190;
+      const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : 160;
       return { w: baseW * scale, h: baseH * scale };
     }
     return { w: 260, h: 300 };
@@ -2274,6 +2278,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         } else if (parsed.kind === "evidence" && parsed.data) {
           onAddEvidence(parsed.data as SearchResult, x, y);
           droppedId = parsed.data.id ?? parsed.id;
+        } else if (parsed.kind === "entity" && onAddEntity) {
+          const entity = SEED_ENTITIES.find((e: SeedEntity) => e.id === parsed.id);
+          if (entity) {
+            onAddEntity(entity, x, y);
+            droppedId = entity.id;
+          }
         }
         // Bounce + ripple + sound for intake drops
         if (droppedId) {
@@ -2285,7 +2295,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       } catch { /* ignore */ }
     },
-    [zoom, onAddEvidence, onAddPerson, firstPlacementMode, onFirstPlacement, playSound]
+    [zoom, onAddEvidence, onAddPerson, onAddEntity, firstPlacementMode, onFirstPlacement, playSound]
   );
 
   // Returns the bottom-edge center of the card (where the handle is)
@@ -2365,7 +2375,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             Focused: {(() => {
               const n = nodes.find((n) => n.id === focusedNodeId);
               if (!n) return "Unknown";
-              return n.kind === "person" ? n.data.name : n.data.title;
+              return n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title;
             })()}
           </span>
           <button onClick={() => onFocusNode(null)} className="ml-auto text-xs font-bold text-red-500/60 hover:text-red-400 transition uppercase tracking-wider">
@@ -2821,6 +2831,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         onToggleCollapse={(evType) => toggleCollapse(node.id, evType)}
                         onFocus={() => onFocusNode(node.id)}
                         zoom={zoom} />
+                    ) : node.kind === "entity" ? (
+                      <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
                     ) : (
                       <EvidenceCard data={node.data} evidenceType={node.evidenceType} isSelected={selectedNodeId === node.id}
                         onFocus={() => onFocusNode(node.id)}
@@ -3082,17 +3094,19 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 </div>
                 {(() => {
                   const people = nodes.filter(n => n.kind === "person");
+                  const entities = nodes.filter(n => n.kind === "entity");
                   const photos = nodes.filter(n => n.kind === "evidence" && (n as BoardEvidenceNode).evidenceType === "photo");
                   const other = nodes.filter(n => n.kind === "evidence" && (n as BoardEvidenceNode).evidenceType !== "photo");
                   const groups = [
                     { label: "People", items: people },
+                    { label: "Entities", items: entities },
                     { label: "Photos", items: photos },
                     { label: "Evidence", items: other },
                   ].filter(g => g.items.length > 0);
 
                   const renderItem = (n: BoardNode) => {
                     const picked = pathPicker.selected.includes(n.id);
-                    const label = n.kind === "person" ? n.data.name : n.data.title;
+                    const label = n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title;
                     return (
                       <button
                         key={n.id}
@@ -3494,6 +3508,86 @@ function EvidenceGroupCard({
 }
 
 
+/* ─── Entity Board Card ──────────────────────────────────────────────────── */
+
+function EntityBoardCard({ data, isSelected, zoom = 1 }: {
+  data: SeedEntity; isSelected: boolean; zoom?: number;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const hasImage = data.image.strategy !== "none" && !imgError;
+  const imgSrc = data.image.strategy !== "none" ? `/entity-images/${data.id}.jpg` : null;
+
+  const typeColor = data.type === "place" ? "teal" : data.type === "organization" ? "amber" : "purple";
+  const typeLabel = data.type === "place" ? "Place" : data.type === "organization" ? "Organization" : "Event";
+  const typeIcon = data.type === "place" ? "📍" : data.type === "organization" ? "🏢" : "📅";
+  const accentBorder = data.type === "place" ? "border-l-teal-500" : data.type === "organization" ? "border-l-amber-500" : "border-l-purple-500";
+  const accentBg = data.type === "place" ? "from-teal-950/20" : data.type === "organization" ? "from-amber-950/15" : "from-purple-950/15";
+
+  // Mini card at low zoom
+  if (zoom < 0.6) {
+    return (
+      <div className={`flex items-center gap-1 rounded bg-[#141414] border border-[#2a2a2a] border-l-2 ${accentBorder} px-1.5 py-1 cursor-grab active:cursor-grabbing`}
+        style={{ width: 130 }}>
+        <span className="text-[10px] shrink-0">{typeIcon}</span>
+        <span className="text-[9px] text-white truncate">{data.shortName || data.name}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`w-[220px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
+      isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
+    }`}>
+      {/* Image or stylized header */}
+      {hasImage && imgSrc ? (
+        <div className="relative w-full h-24 bg-[#0a0a0a] overflow-hidden">
+          <img src={imgSrc} alt={data.name} className="h-full w-full object-cover"
+            onError={() => setImgError(true)} />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#111] via-transparent to-transparent" />
+          {/* Type badge */}
+          <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-[#0a0a0a]/80 border border-[#333]/50 px-2 py-0.5 backdrop-blur-sm">
+            <span className="text-[9px]">{typeIcon}</span>
+            <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#999]">{typeLabel}</span>
+          </div>
+        </div>
+      ) : (
+        <div className={`relative border-l-4 ${accentBorder} px-3 py-2.5 bg-gradient-to-r ${accentBg} to-transparent`}>
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-[9px]">{typeIcon}</span>
+            <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#666]">{typeLabel}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="px-3 py-2">
+        <h4 className="font-[family-name:var(--font-display)] text-[14px] font-bold text-white tracking-wide leading-tight">
+          {data.shortName || data.name}
+        </h4>
+        {data.dateRange && (
+          <p className="font-[family-name:var(--font-mono)] text-[9px] text-[#666] mt-0.5">{data.dateRange}</p>
+        )}
+        {data.location && (
+          <p className="text-[9px] text-[#555] mt-0.5 truncate">{data.location}</p>
+        )}
+        {data.keyPeople.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-0.5">
+            {data.keyPeople.slice(0, 3).map(name => (
+              <span key={name} className="rounded bg-[#1a1a1a] border border-[#222] px-1 py-px text-[7px] text-[#777]">{name}</span>
+            ))}
+            {data.keyPeople.length > 3 && (
+              <span className="text-[7px] text-[#444]">+{data.keyPeople.length - 3}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Pin at top center */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-red-500 bg-[#141414] z-10" />
+    </div>
+  );
+}
+
 /* ─── Connection Editor Popup ─────────────────────────────────────────────── */
 
 function ConnectionEditor({
@@ -3518,8 +3612,8 @@ function ConnectionEditor({
 
   const sourceNode = nodes.find(n => n.id === connection.sourceId);
   const targetNode = nodes.find(n => n.id === connection.targetId);
-  const sourceName = sourceNode ? (sourceNode.kind === "person" ? sourceNode.data.name : sourceNode.data.title) : connection.sourceId;
-  const targetName = targetNode ? (targetNode.kind === "person" ? targetNode.data.name : targetNode.data.title) : connection.targetId;
+  const sourceName = sourceNode ? (sourceNode.kind === "person" ? sourceNode.data.name : sourceNode.kind === "entity" ? sourceNode.data.name : sourceNode.data.title) : connection.sourceId;
+  const targetName = targetNode ? (targetNode.kind === "person" ? targetNode.data.name : targetNode.kind === "entity" ? targetNode.data.name : targetNode.data.title) : connection.targetId;
 
   return (
     <div

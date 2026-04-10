@@ -1,6 +1,7 @@
 // Board workspace types — client-side state for the investigation board
 
 import type { Person, Evidence, EvidenceType, ConnectionType, SearchResult } from "./types";
+import type { SeedEntity, EntityType } from "./entity-seed-data";
 
 // ─── Evidence Categories ────────────────────────────────────────────────────
 
@@ -46,7 +47,15 @@ export interface BoardEvidenceNode {
   position: BoardPosition;
 }
 
-export type BoardNode = BoardPersonNode | BoardEvidenceNode;
+export interface BoardEntityNode {
+  kind: "entity";
+  id: string;
+  entityType: EntityType;
+  data: SeedEntity;
+  position: BoardPosition;
+}
+
+export type BoardNode = BoardPersonNode | BoardEvidenceNode | BoardEntityNode;
 
 export interface BoardConnection {
   id: string;
@@ -61,7 +70,7 @@ export interface BoardConnection {
 
 // ─── Right Panel ────────────────────────────────────────────────────────────
 
-export type RightPanelTab = "persons" | "details";
+export type RightPanelTab = "persons" | "places" | "orgs" | "events" | "details";
 
 // ─── Timeline ───────────────────────────────────────────────────────────────
 

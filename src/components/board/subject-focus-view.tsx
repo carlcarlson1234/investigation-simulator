@@ -933,7 +933,7 @@ function LinksPanel({
     const q = linkSearch.toLowerCase();
     return linkableItems.filter((n) => {
       const name =
-        n.kind === "person" ? n.data.name : n.data.title;
+        n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title;
       return name.toLowerCase().includes(q);
     });
   }, [linkableItems, linkSearch]);
@@ -998,7 +998,7 @@ function LinksPanel({
                     <p className="text-[11px] font-bold text-white truncate">
                       {node.kind === "person"
                         ? node.data.name
-                        : node.data.title}
+                        : node.kind === "entity" ? node.data.name : node.data.title}
                     </p>
                     <p className="text-[9px] text-[#555]">
                       {conn?.type || "manual"}
@@ -1071,7 +1071,7 @@ function LinksPanel({
                     <span className="text-white font-bold truncate">
                       {node.kind === "person"
                         ? node.data.name
-                        : node.data.title}
+                        : node.kind === "entity" ? node.data.name : node.data.title}
                     </span>
                     <span className="ml-auto text-[9px] text-red-500/60">
                       + Link

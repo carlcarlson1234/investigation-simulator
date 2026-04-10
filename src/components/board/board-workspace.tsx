@@ -22,6 +22,7 @@ import { LEAD_CATALOG } from "@/lib/lead-definitions";
 import { LeadsModal } from "./leads-modal";
 import { FocusedInvestigation } from "./focused-investigation";
 import type { InvestigationResult } from "./focused-investigation";
+import type { SeedEntity } from "@/lib/entity-seed-data";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -90,6 +91,22 @@ export function BoardWorkspace({
   const clearSpotlight = useCallback(() => {
     setSpotlightPersonIds(new Set());
   }, []);
+
+  const spotlightEntity = useCallback((entity: SeedEntity) => {
+    // Find people on board whose names match the entity's keyPeople
+    const matchingIds = new Set<string>();
+    for (const node of boardNodes) {
+      if (node.kind === "person") {
+        const nameMatch = entity.keyPeople.some(
+          kp => kp.toLowerCase() === node.data.name.toLowerCase()
+        );
+        if (nameMatch) matchingIds.add(node.id);
+      }
+    }
+    if (matchingIds.size > 0) {
+      setSpotlightPersonIds(matchingIds);
+    }
+  }, [boardNodes]);
 
   // Compute spotlight focus state from multi-selected people
   const spotlightFocusState = useMemo(() => {
@@ -242,6 +259,27 @@ export function BoardWorkspace({
           id: result.id,
           evidenceType: result.type,
           data: result,
+          position: { x, y },
+        },
+      ]);
+    },
+    [isOnBoard, findClearPosition]
+  );
+
+  const addEntityToBoard = useCallback(
+    (entity: SeedEntity, dropX?: number, dropY?: number) => {
+      if (isOnBoard(entity.id)) return;
+
+      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
+      const { x, y } = findClearPosition(raw.x, raw.y, 220, 180);
+
+      setBoardNodes((prev) => [
+        ...prev,
+        {
+          kind: "entity",
+          id: entity.id,
+          entityType: entity.type,
+          data: entity,
           position: { x, y },
         },
       ]);
@@ -518,7 +556,8 @@ export function BoardWorkspace({
     if (selectedNode && selectedNode.id !== prevSelectedId.current) {
       setRightTab("details");
     } else if (!selectedNode && !selectedEmailId && prevSelectedId.current) {
-      setRightTab("persons");
+      // Only auto-switch back to persons if we were on the details tab
+      setRightTab(prev => prev === "details" ? "persons" : prev);
     }
     prevSelectedId.current = selectedNode?.id ?? null;
   }, [selectedNode, selectedEmailId]);
@@ -830,6 +869,7 @@ export function BoardWorkspace({
             onBatchMoveNodes={batchMoveNodes}
             onAddEvidence={addEvidenceToBoard}
             onAddPerson={addPersonToBoard}
+            onAddEntity={addEntityToBoard}
             onStartConnection={startConnection}
             onCompleteConnection={completeConnection}
             onDirectConnection={directConnection}
@@ -894,6 +934,8 @@ export function BoardWorkspace({
             spotlightPersonIds={spotlightPersonIds}
             onToggleSpotlight={toggleSpotlight}
             onClearSpotlight={clearSpotlight}
+            onAddEntity={addEntityToBoard}
+            onSpotlightEntity={spotlightEntity}
           />
         )}
       </div>

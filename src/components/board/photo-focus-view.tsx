@@ -362,7 +362,7 @@ export function PhotoFocusView({
                             {n.kind === "person" ? "👤" : "📄"}
                           </span>
                           <span className="text-[11px] font-bold text-white truncate">
-                            {n.kind === "person" ? n.data.name : n.data.title}
+                            {n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title}
                           </span>
                           <span className="ml-auto text-[8px] text-[#555] uppercase tracking-wider">
                             Focus →

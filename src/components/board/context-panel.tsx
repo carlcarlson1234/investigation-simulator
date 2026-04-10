@@ -15,6 +15,8 @@ import {
   EVIDENCE_TYPE_LABEL,
   CONNECTION_TYPE_COLOR,
 } from "@/lib/board-types";
+import { PLACES, ORGANIZATIONS, EVENTS } from "@/lib/entity-seed-data";
+import type { SeedEntity, EntityType } from "@/lib/entity-seed-data";
 
 interface ContextPanelProps {
   activeTab: RightPanelTab;
@@ -35,10 +37,15 @@ interface ContextPanelProps {
   spotlightPersonIds?: Set<string>;
   onToggleSpotlight?: (personId: string) => void;
   onClearSpotlight?: () => void;
+  onAddEntity?: (entity: SeedEntity) => void;
+  onSpotlightEntity?: (entity: SeedEntity) => void;
 }
 
 const TABS: { key: RightPanelTab; label: string }[] = [
-  { key: "persons", label: "Persons" },
+  { key: "persons", label: "People" },
+  { key: "places", label: "Places" },
+  { key: "orgs", label: "Orgs" },
+  { key: "events", label: "Events" },
   { key: "details", label: "Details" },
 ];
 
@@ -61,8 +68,11 @@ export function ContextPanel({
   spotlightPersonIds,
   onToggleSpotlight,
   onClearSpotlight,
+  onAddEntity,
+  onSpotlightEntity,
 }: ContextPanelProps) {
   const [personSearch, setPersonSearch] = useState("");
+  const [entitySearch, setEntitySearch] = useState("");
   const isOnboarding = investigationStep != null;
 
   // Track which imageUrls actually load (not 404)
@@ -113,8 +123,8 @@ export function ContextPanel({
       }`}>
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => onTabChange(tab.key)}
-            className={`flex-1 py-2.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] transition ${
-              activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#aaa] hover:text-white hover:border-b-2 hover:border-[#555]"
+            className={`flex-1 py-2 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] transition min-w-0 px-0.5 ${
+              activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#666] hover:text-white hover:border-b-2 hover:border-[#555]"
             }`}>
             {tab.label}
           </button>
@@ -127,6 +137,24 @@ export function ContextPanel({
             isOnBoard={isOnBoard} onAddPerson={onAddPerson} focusedNodeId={focusedNodeId} onFocusNode={onFocusNode}
             suggestedPeople={suggestedPeople} investigationStep={investigationStep} boardConnections={boardConnections}
             spotlightPersonIds={spotlightPersonIds} onToggleSpotlight={onToggleSpotlight} onClearSpotlight={onClearSpotlight} />
+        )}
+        {activeTab === "places" && (
+          <EntityListTab entities={PLACES} entityType="place" search={entitySearch}
+            onSearchChange={setEntitySearch} isOnBoard={isOnBoard} onAddEntity={onAddEntity}
+            onSpotlightEntity={onSpotlightEntity} boardNodes={boardNodes}
+            spotlightPersonIds={spotlightPersonIds} people={people} />
+        )}
+        {activeTab === "orgs" && (
+          <EntityListTab entities={ORGANIZATIONS} entityType="organization" search={entitySearch}
+            onSearchChange={setEntitySearch} isOnBoard={isOnBoard} onAddEntity={onAddEntity}
+            onSpotlightEntity={onSpotlightEntity} boardNodes={boardNodes}
+            spotlightPersonIds={spotlightPersonIds} people={people} />
+        )}
+        {activeTab === "events" && (
+          <EntityListTab entities={EVENTS} entityType="event" search={entitySearch}
+            onSearchChange={setEntitySearch} isOnBoard={isOnBoard} onAddEntity={onAddEntity}
+            onSpotlightEntity={onSpotlightEntity} boardNodes={boardNodes}
+            spotlightPersonIds={spotlightPersonIds} people={people} />
         )}
         {activeTab === "details" && (
           selectedEmailDetail && !selectedNode ? (
@@ -583,6 +611,48 @@ function DetailsTab({
     );
   }
 
+  if (selectedNode.kind === "entity") {
+    const d = selectedNode.data;
+    const typeColor = d.type === "place" ? "teal" : d.type === "organization" ? "amber" : "purple";
+    const typeLabel = d.type === "place" ? "Place" : d.type === "organization" ? "Organization" : "Event";
+    return (
+      <div className="p-4 space-y-4">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`h-3 w-3 rounded-full bg-${typeColor}-500`} />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted/60">{typeLabel}</span>
+            <button onClick={() => onFocusNode(selectedNode.id)}
+              className={`ml-auto text-[9px] rounded px-2 py-0.5 transition ${isFocused ? "bg-accent/20 text-accent" : "bg-accent/10 text-accent/60"}`}>
+              {isFocused ? "Unfocus" : "Focus"}
+            </button>
+          </div>
+          <h3 className="text-base font-bold">{d.shortName || d.name}</h3>
+          {d.location && <p className="mt-0.5 text-xs text-muted">{d.location}</p>}
+          {d.dateRange && <p className="mt-0.5 text-xs text-muted/50 tabular-nums">{d.dateRange}</p>}
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface p-3">
+          <p className="text-xs leading-relaxed text-muted/80">{d.description}</p>
+        </div>
+
+        {d.keyPeople.length > 0 && (
+          <div className="text-[10px]">
+            <span className="text-muted/50 font-bold uppercase tracking-widest">Key People</span>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {d.keyPeople.map(name => (
+                <span key={name} className="rounded bg-[#1a1a1a] border border-[#2a2a2a] px-1.5 py-0.5 text-[#aaa]">{name}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {relatedConns.length > 0 && (
+          <ConnectionsList connections={relatedConns} currentNodeId={selectedNode.id} boardNodes={boardNodes} onSelectNode={onSelectNode} />
+        )}
+      </div>
+    );
+  }
+
   // Evidence details
   const d = selectedNode.data;
   return (
@@ -703,7 +773,7 @@ function ConnectionsList({ connections, currentNodeId, boardNodes, onSelectNode 
           const otherId = conn.sourceId === currentNodeId ? conn.targetId : conn.sourceId;
           const otherNode = boardNodes.find((n) => n.id === otherId);
           const otherName = otherNode
-            ? otherNode.kind === "person" ? otherNode.data.name : otherNode.data.title
+            ? otherNode.kind === "person" ? otherNode.data.name : otherNode.kind === "entity" ? otherNode.data.name : otherNode.data.title
             : "Unknown";
           const color = CONNECTION_TYPE_COLOR[conn.type] ?? "#6366f1";
           return (
@@ -714,6 +784,353 @@ function ConnectionsList({ connections, currentNodeId, boardNodes, onSelectNode 
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Entity List Tab (Places / Organizations / Events) ─────────────────────
+
+function EntityListTab({ entities, entityType, search, onSearchChange, isOnBoard, onAddEntity, onSpotlightEntity, boardNodes, spotlightPersonIds, people }: {
+  entities: SeedEntity[];
+  entityType: EntityType;
+  search: string;
+  onSearchChange: (v: string) => void;
+  isOnBoard: (id: string) => boolean;
+  onAddEntity?: (entity: SeedEntity) => void;
+  onSpotlightEntity?: (entity: SeedEntity) => void;
+  boardNodes: BoardNode[];
+  spotlightPersonIds?: Set<string>;
+  people: Person[];
+}) {
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    let list = entities;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = entities.filter(e =>
+        e.name.toLowerCase().includes(q) ||
+        (e.shortName && e.shortName.toLowerCase().includes(q)) ||
+        (e.location && e.location.toLowerCase().includes(q)) ||
+        e.keyPeople.some(p => p.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [entities, search]);
+
+  const label = entityType === "place" ? "places" : entityType === "organization" ? "orgs" : "events";
+
+  // Build set of person names on the board for spotlight matching
+  const boardPersonNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const n of boardNodes) {
+      if (n.kind === "person") names.add(n.data.name.toLowerCase());
+    }
+    return names;
+  }, [boardNodes]);
+
+  return (
+    <div className="p-3 space-y-1.5">
+      {/* Search bar */}
+      <div className="sticky top-0 z-10 bg-[#0a0a0a] pb-2 -mx-3 px-3 pt-0">
+        {searchOpen ? (
+          <div className="relative">
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-red-500/50"
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)}
+              autoFocus
+              placeholder={`Search ${entities.length} ${label}…`}
+              className="w-full rounded-lg border border-[#333] bg-[#141414] py-2.5 pl-9 pr-9 text-sm font-bold text-white placeholder:text-[#777] focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20 focus:outline-none transition"
+            />
+            <button
+              onClick={() => { setSearchOpen(false); onSearchChange(""); }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555] hover:text-white transition"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="w-full flex items-center gap-2.5 rounded-lg border border-[#222] bg-[#111] px-3 py-2.5 text-[#555] hover:border-[#444] hover:text-[#888] transition"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.12em]">
+              Search {entities.length} {label}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* Entity cards */}
+      {filtered.map(entity => {
+        const onBoard = isOnBoard(entity.id);
+        // Count how many keyPeople are on the board
+        const matchedPeople = entity.keyPeople.filter(name => boardPersonNames.has(name.toLowerCase())).length;
+
+        if (entityType === "place") {
+          return <PlaceCard key={entity.id} entity={entity} isOnBoard={onBoard} onAdd={onAddEntity} onSpotlight={onSpotlightEntity} matchedPeople={matchedPeople} />;
+        }
+        if (entityType === "organization") {
+          return <OrgCard key={entity.id} entity={entity} isOnBoard={onBoard} onAdd={onAddEntity} onSpotlight={onSpotlightEntity} matchedPeople={matchedPeople} />;
+        }
+        return <EventCard key={entity.id} entity={entity} isOnBoard={onBoard} onAdd={onAddEntity} onSpotlight={onSpotlightEntity} matchedPeople={matchedPeople} />;
+      })}
+
+      {filtered.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-[#555] text-sm">No {label} found</p>
+          <p className="text-[#333] text-xs mt-1">Try a different search term</p>
+        </div>
+      )}
+
+      {/* Credit line */}
+      <div className="pt-4 pb-2">
+        <p className="text-[8px] text-[#333] text-center leading-relaxed">
+          Entity imagery sourced from Wikipedia and Wikimedia Commons under CC BY-SA / public domain licenses.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Place Card ────────────────────────────────────────────────────────────
+
+function PlaceCard({ entity, isOnBoard, onAdd, onSpotlight, matchedPeople }: {
+  entity: SeedEntity; isOnBoard: boolean;
+  onAdd?: (e: SeedEntity) => void; onSpotlight?: (e: SeedEntity) => void;
+  matchedPeople: number;
+}) {
+  const [imgLoaded, setImgLoaded] = useState(true);
+  const hasImage = entity.image.strategy !== "none" && imgLoaded;
+  const imgSrc = entity.image.strategy !== "none" ? `/entity-images/${entity.id}.jpg` : null;
+
+  return (
+    <div
+      draggable={!isOnBoard}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/board-item", JSON.stringify({ id: entity.id, kind: "entity", entityType: entity.type }));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onClick={() => onSpotlight?.(entity)}
+      className={`group rounded-xl border overflow-hidden transition-all cursor-pointer ${
+        isOnBoard
+          ? "border-green-600/15 bg-green-950/5 opacity-50 hover:opacity-70"
+          : "border-[#1e1e1e] bg-[#0e0e0e] hover:border-teal-500/30 hover:bg-[#111] cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-black/30"
+      }`}
+    >
+      {/* Landscape photo with name overlay */}
+      {hasImage && imgSrc ? (
+        <div className="relative w-full h-28 bg-gradient-to-br from-[#1a1a1a] via-[#111] to-[#0a0a0a] overflow-hidden">
+          <img src={imgSrc} alt={entity.name} className="h-full w-full object-cover"
+            onError={() => setImgLoaded(false)} />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 px-2 pb-1.5">
+            <p className="font-[family-name:var(--font-display)] text-[14px] font-bold text-white tracking-wide leading-tight drop-shadow-lg">
+              {entity.shortName || entity.name}
+            </p>
+          </div>
+          {isOnBoard && (
+            <div className="absolute top-1 right-1 rounded bg-green-900/50 border border-green-600/30 px-1 py-0.5 backdrop-blur-sm">
+              <span className="text-[7px] font-bold text-green-400">✓ Board</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Stylized no-image place card — teal accent */
+        <div className="relative border-l-4 border-l-teal-500 px-2.5 py-3 bg-gradient-to-r from-teal-950/20 to-transparent">
+          <div className="flex items-start gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-500/60 flex-shrink-0 mt-0.5">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+            </svg>
+            <div>
+              <p className="font-[family-name:var(--font-display)] text-[14px] font-bold text-white tracking-wide leading-tight">
+                {entity.shortName || entity.name}
+              </p>
+              {entity.location && (
+                <p className="text-[10px] text-teal-400/50 mt-0.5">{entity.location}</p>
+              )}
+            </div>
+          </div>
+          {isOnBoard && (
+            <span className="absolute top-1 right-1 text-[7px] font-bold text-green-400">✓ Board</span>
+          )}
+        </div>
+      )}
+
+      {/* Info strip */}
+      <div className="px-2 py-1.5">
+        <div className="flex items-center gap-1">
+          {matchedPeople > 0 && (
+            <div className="flex items-center gap-0.5 rounded bg-black/50 border border-teal-600/30 px-1 py-px">
+              <span className="font-[family-name:var(--font-mono)] text-[7px] text-teal-400">{matchedPeople} linked</span>
+            </div>
+          )}
+          {entity.dateRange && (
+            <span className="font-[family-name:var(--font-mono)] text-[8px] text-[#555] ml-auto">{entity.dateRange}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Organization Card ─────────────────────────────────────────────────────
+
+function OrgCard({ entity, isOnBoard, onAdd, onSpotlight, matchedPeople }: {
+  entity: SeedEntity; isOnBoard: boolean;
+  onAdd?: (e: SeedEntity) => void; onSpotlight?: (e: SeedEntity) => void;
+  matchedPeople: number;
+}) {
+  const [imgLoaded, setImgLoaded] = useState(true);
+  const hasImage = entity.image.strategy !== "none" && imgLoaded;
+  const imgSrc = entity.image.strategy !== "none" ? `/entity-images/${entity.id}.jpg` : null;
+
+  return (
+    <div
+      draggable={!isOnBoard}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/board-item", JSON.stringify({ id: entity.id, kind: "entity", entityType: entity.type }));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onClick={() => onSpotlight?.(entity)}
+      className={`group rounded-xl border overflow-hidden transition-all cursor-pointer ${
+        isOnBoard
+          ? "border-green-600/15 bg-green-950/5 opacity-50 hover:opacity-70"
+          : "border-[#1e1e1e] bg-[#0e0e0e] hover:border-amber-500/30 hover:bg-[#111] cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-black/30"
+      }`}
+    >
+      {/* Image in top half if available */}
+      {hasImage && imgSrc && (
+        <div className="relative w-full h-20 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] overflow-hidden">
+          <img src={imgSrc} alt={entity.name} className="h-full w-full object-cover opacity-80"
+            onError={() => setImgLoaded(false)} />
+          {isOnBoard && (
+            <div className="absolute top-1 right-1 rounded bg-green-900/50 border border-green-600/30 px-1 py-0.5 backdrop-blur-sm">
+              <span className="text-[7px] font-bold text-green-400">✓ Board</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Letterhead-style label */}
+      <div className={`relative px-2.5 py-2.5 ${!hasImage ? "border-l-4 border-l-amber-500 bg-gradient-to-r from-amber-950/15 to-transparent" : "border-t border-amber-500/20"}`}>
+        {!hasImage && (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-amber-500/40 mb-1">
+            <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M3 9h6M3 15h6" />
+          </svg>
+        )}
+        <p className="font-[family-name:var(--font-mono)] text-[12px] font-bold text-white tracking-wide leading-tight">
+          {entity.shortName || entity.name}
+        </p>
+        {entity.location && (
+          <p className="text-[9px] text-amber-400/40 mt-0.5 font-[family-name:var(--font-mono)] tracking-wider uppercase">{entity.location}</p>
+        )}
+        {!hasImage && isOnBoard && (
+          <span className="absolute top-1 right-1 text-[7px] font-bold text-green-400">✓ Board</span>
+        )}
+      </div>
+
+      {/* Info strip */}
+      <div className="px-2 py-1">
+        <div className="flex items-center gap-1">
+          {matchedPeople > 0 && (
+            <div className="flex items-center gap-0.5 rounded bg-black/50 border border-amber-600/30 px-1 py-px">
+              <span className="font-[family-name:var(--font-mono)] text-[7px] text-amber-400">{matchedPeople} linked</span>
+            </div>
+          )}
+          {entity.dateRange && (
+            <span className="font-[family-name:var(--font-mono)] text-[8px] text-[#555] ml-auto">{entity.dateRange}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Event Card ────────────────────────────────────────────────────────────
+
+function EventCard({ entity, isOnBoard, onAdd, onSpotlight, matchedPeople }: {
+  entity: SeedEntity; isOnBoard: boolean;
+  onAdd?: (e: SeedEntity) => void; onSpotlight?: (e: SeedEntity) => void;
+  matchedPeople: number;
+}) {
+  // Deterministic tilt from entity id
+  const tilt = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < entity.id.length; i++) hash = ((hash << 5) - hash) + entity.id.charCodeAt(i);
+    return ((hash % 3) - 1) * 1.2; // -1.2 to 1.2 degrees
+  }, [entity.id]);
+
+  const [imgLoaded, setImgLoaded] = useState(true);
+  const hasImage = entity.image.strategy !== "none" && imgLoaded;
+  const imgSrc = entity.image.strategy !== "none" ? `/entity-images/${entity.id}.jpg` : null;
+
+  return (
+    <div
+      draggable={!isOnBoard}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/board-item", JSON.stringify({ id: entity.id, kind: "entity", entityType: entity.type }));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onClick={() => onSpotlight?.(entity)}
+      style={{ transform: `rotate(${tilt}deg)` }}
+      className={`group rounded-sm border-2 overflow-hidden transition-all cursor-pointer shadow-md shadow-black/40 ${
+        isOnBoard
+          ? "border-[#d4d0c8]/30 bg-[#d4d0c8]/5 opacity-50 hover:opacity-70"
+          : "border-[#d4d0c8]/60 bg-[#f5f0e8]/5 hover:border-purple-400/50 cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-purple-900/20"
+      }`}
+    >
+      {/* Polaroid style: image if available */}
+      {hasImage && imgSrc && (
+        <div className="relative w-full h-20 bg-[#1a1a1a] overflow-hidden">
+          <img src={imgSrc} alt={entity.name} className="h-full w-full object-cover"
+            onError={() => setImgLoaded(false)} />
+        </div>
+      )}
+
+      {/* Content area */}
+      <div className={`px-2.5 py-2 ${!hasImage ? "border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-950/15 to-transparent" : ""}`}>
+        {/* Date range in small-caps monospace */}
+        {entity.dateRange && (
+          <p className="font-[family-name:var(--font-mono)] text-[9px] text-purple-400/70 uppercase tracking-[0.15em] mb-0.5">
+            {entity.dateRange}
+          </p>
+        )}
+        <p className="text-[12px] font-bold text-white leading-tight">
+          {entity.shortName || entity.name}
+        </p>
+        {!hasImage && (
+          <div className="flex items-center gap-1 mt-1">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-500/40">
+              <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            {entity.location && (
+              <span className="text-[8px] text-[#666]">{entity.location}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer strip */}
+      <div className="px-2 py-1 border-t border-[#1a1a1a]">
+        <div className="flex items-center gap-1">
+          {matchedPeople > 0 && (
+            <div className="flex items-center gap-0.5 rounded bg-black/50 border border-purple-600/30 px-1 py-px">
+              <span className="font-[family-name:var(--font-mono)] text-[7px] text-purple-400">{matchedPeople} linked</span>
+            </div>
+          )}
+          {isOnBoard && (
+            <span className="text-[7px] font-bold text-green-400 ml-auto">✓ Board</span>
+          )}
+        </div>
       </div>
     </div>
   );

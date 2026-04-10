@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# entity images (fetched from Wikipedia/Wikimedia at seed time)
+/public/entity-images/
