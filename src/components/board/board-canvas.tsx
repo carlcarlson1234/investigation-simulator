@@ -24,6 +24,35 @@ const DEFAULT_ZOOM = 1;
 const BASE_WORLD_W = 4000;
 const BASE_WORLD_H = 3000;
 
+/* ── Pinned-evidence buckets (node pins only) ───────────────────────────── */
+type PinBucket = "documents" | "communications" | "photos";
+function bucketOf(t: EvidenceType): PinBucket {
+  if (t === "document") return "documents";
+  if (t === "photo") return "photos";
+  return "communications"; // email + imessage
+}
+const BUCKET_ICON: Record<PinBucket, string> = {
+  documents: "📄",
+  communications: "✉️",
+  photos: "📸",
+};
+const BUCKET_LABEL: Record<PinBucket, string> = {
+  documents: "Documents",
+  communications: "Comms",
+  photos: "Photos",
+};
+// Tailwind color classes per bucket — match existing PinnedEvidenceChip palette
+const BUCKET_BG: Record<PinBucket, string> = {
+  documents: "bg-[#1a1a1a]",
+  communications: "bg-[#1a2530]",
+  photos: "bg-[#1f1512]",
+};
+const BUCKET_BORDER: Record<PinBucket, string> = {
+  documents: "border-[#888]",
+  communications: "border-[#4A6D8C]",
+  photos: "border-[#c86464]",
+};
+
 /* ── Public handle so parent can call centerOnNode ──────────────────────── */
 export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
@@ -160,6 +189,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
   const [focusedPinnedEvidence, setFocusedPinnedEvidence] = useState<PinnedEvidence | null>(null);
+  // Bucketed pin UI: which (nodeId, bucket) is expanded, and which evidence IDs are "pinned big" on the perimeter
+  const [expandedBucket, setExpandedBucket] = useState<{ nodeId: string; bucket: PinBucket } | null>(null);
+  const [bigPinnedIds, setBigPinnedIds] = useState<Set<string>>(new Set());
+  const toggleBigPinned = useCallback((id: string) => {
+    setBigPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
   const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
   // Track connections that just gained evidence (power-up animation)
   const [poweredUpConnectionIds, setPoweredUpConnectionIds] = useState<Set<string>>(new Set());
@@ -2983,69 +3022,131 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     ) : (
                       <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
-                    {/* Pinned evidence chips flush against the card edges.
-                        Fill order: right → bottom → left → top, max 4 per side.
-                        Overflow beyond 16 stacks as a second layer peeking out
-                        half-width from behind the first layer (offset outward). */}
+                    {/* Pinned evidence: big-pinned items + collapsible per-bucket category chips.
+                        Fill order around perimeter: right → bottom → left → top, max 4 per side. */}
                     {node.pinnedEvidence && node.pinnedEvidence.length > 0 && zoom >= 0.5 && (() => {
                       const cardEl = viewportRef.current?.querySelector(`[data-node-id="${node.id}"] > div`) as HTMLElement | null;
                       const w = cardEl?.offsetWidth ?? getScaledCardSize(node).w;
                       const h = cardEl?.offsetHeight ?? getScaledCardSize(node).h;
-                      const pins = node.pinnedEvidence;
+                      const all = node.pinnedEvidence;
+
+                      // Partition into big-pinned vs collapsed-by-bucket
+                      const bigItems = all.filter((e) => bigPinnedIds.has(e.id));
+                      const collapsed = all.filter((e) => !bigPinnedIds.has(e.id));
+                      const byBucket: Record<PinBucket, PinnedEvidence[]> = {
+                        documents: [],
+                        communications: [],
+                        photos: [],
+                      };
+                      for (const ev of collapsed) byBucket[bucketOf(ev.type)].push(ev);
+                      const bucketOrder: PinBucket[] = ["documents", "communications", "photos"];
+                      const activeBuckets = bucketOrder.filter((b) => byBucket[b].length > 0);
+
                       const CHIP = 44;
+                      const BIG = 60;
                       const SPACING = 4;
                       const PER_SIDE = 4;
-                      const SIDES_CAP = PER_SIDE * 4; // 16 chips per layer
-                      // Second-layer offset: half chip width peeking out
+                      const SIDES_CAP = PER_SIDE * 4;
                       const OFFSET_2 = CHIP / 2;
 
-                      // Compute (x, y, zIndex) for chip at position i
-                      const posFor = (i: number) => {
+                      // Slot list drives perimeter placement: big items first, then category chips.
+                      type Slot =
+                        | { kind: "big"; ev: PinnedEvidence }
+                        | { kind: "bucket"; bucket: PinBucket; items: PinnedEvidence[] };
+                      const slots: Slot[] = [
+                        ...bigItems.map<Slot>((ev) => ({ kind: "big", ev })),
+                        ...activeBuckets.map<Slot>((b) => ({ kind: "bucket", bucket: b, items: byBucket[b] })),
+                      ];
+                      if (slots.length === 0) return null;
+
+                      // Compute (x, y, zIndex) for slot at position i — matches previous orbit math.
+                      const posFor = (i: number, size: number) => {
                         const layer = Math.floor(i / SIDES_CAP);
                         const localIdx = i % SIDES_CAP;
-                        // Determine which side of the perimeter this chip lands on
-                        const side = Math.floor(localIdx / PER_SIDE); // 0=right, 1=bottom, 2=left, 3=top
+                        const side = Math.floor(localIdx / PER_SIDE);
                         const idxInSide = localIdx % PER_SIDE;
-                        // Number of chips actually on this side for this layer
-                        const remainingThisLayer = Math.min(SIDES_CAP, pins.length - layer * SIDES_CAP);
+                        const remainingThisLayer = Math.min(SIDES_CAP, slots.length - layer * SIDES_CAP);
                         const chipsOnSide = Math.min(PER_SIDE, Math.max(0, remainingThisLayer - side * PER_SIDE));
-
                         const extraOut = layer * OFFSET_2;
-                        // Lower z for later layers so they peek from behind
                         const z = 30 - layer;
-
                         let x = 0, y = 0;
                         if (side === 0) {
-                          // Right edge
                           x = w + extraOut;
                           y = (h - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
                         } else if (side === 1) {
-                          // Bottom edge
                           x = (w - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
                           y = h + extraOut;
                         } else if (side === 2) {
-                          // Left edge
                           x = -CHIP - extraOut;
                           y = (h - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
                         } else {
-                          // Top edge
                           x = (w - chipsOnSide * CHIP - (chipsOnSide - 1) * SPACING) / 2 + idxInSide * (CHIP + SPACING);
                           y = -CHIP - extraOut;
+                        }
+                        // If this slot is "big", shift outward so its larger box stays flush-ish with the smaller slots
+                        if (size > CHIP) {
+                          const delta = (size - CHIP) / 2;
+                          if (side === 0) { x += delta; y -= delta; }
+                          else if (side === 1) { x -= delta; y += delta; }
+                          else if (side === 2) { x -= delta; y -= delta; }
+                          else { x -= delta; y -= delta; }
                         }
                         return { x, y, z };
                       };
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
-                          {pins.map((ev, i) => {
-                            const { x, y, z } = posFor(i);
+                          {slots.map((slot, i) => {
+                            const size = slot.kind === "big" ? BIG : CHIP;
+                            const { x, y, z } = posFor(i, size);
+                            if (slot.kind === "big") {
+                              return (
+                                <div
+                                  key={`big-${slot.ev.id}`}
+                                  className="absolute pointer-events-auto group"
+                                  style={{ left: x, top: y, width: size, height: size, zIndex: z + 1 }}
+                                >
+                                  <PinnedEvidenceChip evidence={slot.ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                                  <button
+                                    type="button"
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 border border-amber-300 text-[10px] leading-none flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                    title="Unpin from perimeter"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => { e.stopPropagation(); toggleBigPinned(slot.ev.id); }}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              );
+                            }
+                            const isOpen = expandedBucket?.nodeId === node.id && expandedBucket.bucket === slot.bucket;
                             return (
                               <div
-                                key={ev.id}
+                                key={`bucket-${slot.bucket}`}
                                 className="absolute pointer-events-auto"
-                                style={{ left: x, top: y, width: CHIP, height: CHIP, zIndex: z }}
+                                style={{ left: x, top: y, width: size, height: size, zIndex: z }}
                               >
-                                <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                                <CategoryChip
+                                  bucket={slot.bucket}
+                                  count={slot.items.length}
+                                  open={isOpen}
+                                  onClick={() => {
+                                    setExpandedBucket((prev) =>
+                                      prev && prev.nodeId === node.id && prev.bucket === slot.bucket
+                                        ? null
+                                        : { nodeId: node.id, bucket: slot.bucket }
+                                    );
+                                  }}
+                                />
+                                {isOpen && (
+                                  <CategoryPopoverStack
+                                    items={slot.items}
+                                    bucket={slot.bucket}
+                                    onClose={() => setExpandedBucket(null)}
+                                    onPinBig={(id) => toggleBigPinned(id)}
+                                    onDoubleClickItem={setFocusedPinnedEvidence}
+                                  />
+                                )}
                               </div>
                             );
                           })}
@@ -3607,6 +3708,108 @@ function PinnedEvidenceStack({ pinned, direction = "row", onDoubleClick }: {
           +{overflow}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Category Chip (collapsible bucket on node perimeter) ────────────── */
+
+function CategoryChip({ bucket, count, open, onClick }: {
+  bucket: PinBucket;
+  count: number;
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`w-full h-full rounded-md border-2 ${BUCKET_BORDER[bucket]} ${BUCKET_BG[bucket]} shadow-lg shadow-black/70 flex flex-col items-center justify-center relative backdrop-blur-sm transition-transform ${open ? "scale-105 ring-2 ring-amber-400/60" : "hover:scale-105"}`}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={`${BUCKET_LABEL[bucket]} (${count})`}
+    >
+      <span className="text-[20px] leading-none">{BUCKET_ICON[bucket]}</span>
+      <span className="text-[8px] font-black uppercase tracking-wider text-white/70 mt-0.5">
+        {BUCKET_LABEL[bucket]}
+      </span>
+      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 border border-amber-300 text-[10px] font-black text-black flex items-center justify-center shadow-md">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/* ─── Category Popover Stack (expanded bucket contents) ───────────────── */
+
+function CategoryPopoverStack({ items, bucket, onClose, onPinBig, onDoubleClickItem }: {
+  items: PinnedEvidence[];
+  bucket: PinBucket;
+  onClose: () => void;
+  onPinBig: (id: string) => void;
+  onDoubleClickItem: (ev: PinnedEvidence) => void;
+}) {
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-category-popover]")) {
+        onClose();
+      }
+    };
+    // Defer registration so the click that opened the popover doesn't immediately close it
+    const t = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", handler);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      data-category-popover
+      className="absolute left-full top-0 ml-2 pointer-events-auto"
+      style={{ zIndex: 80 }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className={`rounded-lg border-2 ${BUCKET_BORDER[bucket]} ${BUCKET_BG[bucket]} shadow-2xl shadow-black/80 backdrop-blur-md p-2 min-w-[220px] max-h-[320px] overflow-y-auto`}>
+        <div className="flex items-center justify-between mb-2 px-1">
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-white/60">
+            {BUCKET_ICON[bucket]} {BUCKET_LABEL[bucket]} · {items.length}
+          </span>
+          <button
+            type="button"
+            className="text-[10px] text-white/50 hover:text-white/90 px-1"
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {items.map((ev) => (
+            <div
+              key={ev.id}
+              className="relative group flex items-center gap-2 rounded border border-[#333] bg-[#0a0a0a]/70 px-2 py-1.5 cursor-pointer hover:border-amber-500/60"
+              onDoubleClick={(e) => { e.stopPropagation(); onDoubleClickItem(ev); }}
+            >
+              <span className="text-[14px] leading-none flex-shrink-0">{EVIDENCE_TYPE_ICON[ev.type]}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-bold text-white/90 truncate">{ev.title}</p>
+                {ev.date && <p className="text-[9px] text-white/40 tabular-nums">{ev.date}</p>}
+              </div>
+              <button
+                type="button"
+                className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/90 border border-amber-300 text-[11px] leading-none flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
+                title="Pin to perimeter (show bigger)"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onPinBig(ev.id); }}
+              >
+                📌
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
