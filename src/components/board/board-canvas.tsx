@@ -2872,15 +2872,39 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 // Perpendicular unit vector
                 const perpX = -dy / len;
                 const perpY = dx / len;
+                // Compute the t-range along the line that's OUTSIDE both end
+                // cards, so chips stay in the visible gap instead of being
+                // covered by the cards. Use the line↔rectangle exit distance
+                // (not the max-dim radius) so long narrow cards don't
+                // over-reserve space.
+                const srcNode = nodes.find(n => n.id === conn.sourceId);
+                const tgtNode = nodes.find(n => n.id === conn.targetId);
+                const srcSize = srcNode ? getScaledCardSize(srcNode) : { w: 240, h: 240 };
+                const tgtSize = tgtNode ? getScaledCardSize(tgtNode) : { w: 240, h: 240 };
+                const dirX = dx / len;
+                const dirY = dy / len;
+                const exitDist = (halfW: number, halfH: number) => {
+                  const tX = Math.abs(dirX) > 0.001 ? halfW / Math.abs(dirX) : Infinity;
+                  const tY = Math.abs(dirY) > 0.001 ? halfH / Math.abs(dirY) : Infinity;
+                  return Math.min(tX, tY);
+                };
+                const srcExit = exitDist(srcSize.w / 2, srcSize.h / 2);
+                const tgtEnter = exitDist(tgtSize.w / 2, tgtSize.h / 2);
+                const effLen = Math.max(40, len - srcExit - tgtEnter);
+                // Add a small buffer past each card edge so chips don't kiss the cards
+                const BUFFER = 12;
+                let tStart = (srcExit + BUFFER) / len;
+                let tEnd = 1 - (tgtEnter + BUFFER) / len;
+                if (tEnd <= tStart) {
+                  // Cards touch / overlap — fall back to midpoint
+                  tStart = 0.5;
+                  tEnd = 0.5;
+                }
+
                 // Dynamic chip sizing: chips alternate sides, so the
                 // constraint is the along-line spacing between two SAME-side
                 // chips (every other index). Shrink chip down to CHIP_MIN
                 // when that spacing is tight.
-                const srcNode = nodes.find(n => n.id === conn.sourceId);
-                const tgtNode = nodes.find(n => n.id === conn.targetId);
-                const srcRadius = srcNode ? Math.max(getScaledCardSize(srcNode).w, getScaledCardSize(srcNode).h) / 2 : 120;
-                const tgtRadius = tgtNode ? Math.max(getScaledCardSize(tgtNode).w, getScaledCardSize(tgtNode).h) / 2 : 120;
-                const effLen = Math.max(40, len - srcRadius - tgtRadius);
                 const sameSideCount = Math.max(1, Math.ceil(pinned.length / 2));
                 const slotLen = effLen / sameSideCount;
                 const CHIP_MAX = 56;
@@ -2890,8 +2914,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
-                      // Distribute along the line: t = (i+1)/(n+1)
-                      const t = (i + 1) / (pinned.length + 1);
+                      // Distribute within the valid [tStart, tEnd] gap
+                      // between the two cards so chips aren't covered.
+                      const t = pinned.length === 1
+                        ? (tStart + tEnd) / 2
+                        : tStart + ((i) / (pinned.length - 1)) * (tEnd - tStart);
                       const ax = from.cx + dx * t;
                       const ay = from.cy + dy * t;
                       const side = i % 2 === 0 ? 1 : -1;
