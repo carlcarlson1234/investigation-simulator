@@ -3974,12 +3974,19 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   return createPortal(
     <>
       {/* Panel — slides in from the left, no modal backdrop so the board beyond
-          it stays interactive for drag-and-drop of evidence from search results. */}
+          it stays interactive for drag-and-drop of evidence from search results.
+          When the split-screen evidence viewer is open, this panel shrinks to
+          exactly the left half of the viewport so the two panels meet in the
+          middle with no gap. */}
       <div
         ref={panelRef}
         data-detail-root
         className="fixed z-[1001] left-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80"
-        style={{ width: "min(50vw, 760px)", minWidth: 480 }}
+        style={
+          splitEvidence
+            ? { right: "50vw" }
+            : { width: "min(50vw, 760px)", minWidth: 480 }
+        }
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
@@ -4816,12 +4823,14 @@ function FullScreenEvidenceViewer({ evidence, onClose, variant = "fullscreen" }:
   );
 
   // Side variant: docked to the right as a split-screen companion. No backdrop.
+  // Spans the full right half of the viewport so it sits flush with the
+  // NodeDetailCard on the left — no middle gap.
   if (variant === "side") {
     return (
       <div
         data-detail-root
         className="fixed z-[1050] right-4 top-[6vh] bottom-[6vh] rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80 flex flex-col overflow-hidden"
-        style={{ width: "min(44vw, 680px)", minWidth: 420 }}
+        style={{ left: "50vw" }}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
