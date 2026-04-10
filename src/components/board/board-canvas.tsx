@@ -3819,7 +3819,7 @@ function EntityBoardCard({ data, isSelected, pinnedEvidence, onPinnedEvidenceDou
 
 /* ─── Node Detail Card (half-screen right panel) ──────────────────────────── */
 
-function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSelectNode, focusedNodeId, onOpenEvidence }: {
+function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpenEvidence }: {
   node: BoardNode;
   connections: BoardConnection[];
   nodes: BoardNode[];
@@ -3839,11 +3839,12 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const relatedConns = connections.filter(
     (c) => c.sourceId === node.id || c.targetId === node.id
   );
-  const isFocused = focusedNodeId === node.id;
 
   // Score — "how implicated is this node": weighted count of connections and
   // evidence they carry, plus evidence pinned directly to the node.
@@ -3851,43 +3852,33 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
   const ownEvidenceCount = node.pinnedEvidence?.length ?? 0;
   const score = relatedConns.length * 10 + totalConnEvidence * 5 + ownEvidenceCount * 2;
 
-  // Partition pinned evidence + apply search filter
+  // All evidence attached to this card, grouped by category — no "pinned" distinction here.
   const part = partitionNodeEvidence(node.pinnedEvidence);
-  const q = query.trim().toLowerCase();
-  const matchesQuery = (ev: PinnedEvidence) => {
-    if (!q) return true;
-    return (
-      ev.title.toLowerCase().includes(q) ||
-      (ev.snippet ?? "").toLowerCase().includes(q) ||
-      (ev.sender ?? "").toLowerCase().includes(q)
-    );
-  };
-  const allPhotos = [...part.orbitalPhotos, ...part.overflowPhotos].filter(matchesQuery);
-  const filteredEmails = part.emails.filter(matchesQuery);
-  const filteredDocs = part.documents.filter(matchesQuery);
-  const filteredIms = part.imessages.filter(matchesQuery);
-
-  const totalRawCount = (node.pinnedEvidence?.length ?? 0);
+  const allPhotos = [...part.orbitalPhotos, ...part.overflowPhotos];
+  const allEmails = part.emails;
+  const allDocs = part.documents;
+  const allIms = part.imessages;
   const hasPhotos = allPhotos.length > 0;
-  const otherCount = filteredEmails.length + filteredDocs.length + filteredIms.length;
+  const otherCount = allEmails.length + allDocs.length + allIms.length;
   const hasOther = otherCount > 0;
-  const hasAnyFiltered = hasPhotos || hasOther;
+  const totalRawCount = ownEvidenceCount;
 
-  // Header content (name + metadata) varies by node kind
+  // Node metadata — photo, display name, optional location/date line for entities.
   const headerBits = (() => {
     if (node.kind === "person") {
       const d = node.data;
       return {
-        kindIcon: <span className="h-3 w-3 rounded-full bg-purple-500 inline-block" />,
-        kindLabel: "Person",
         title: d.name,
-        subtitle: d.source || null,
+        subtitle: null as string | null,
+        photoUrl: d.imageUrl,
+        nameForSearch: d.name,
+        aliasesForSearch: d.aliases,
         extraRows: (
           <>
             {d.aliases.length > 0 && (
-              <div className="rounded border border-[#222] bg-[#111] px-2.5 py-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-[#555]">Aliases</span>
-                <div className="text-[11px] text-[#ccc] mt-0.5">{d.aliases.join(", ")}</div>
+              <div className="rounded border border-[#222] bg-[#111] px-3 py-2">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#555]">Aliases</span>
+                <div className="text-[13px] text-[#ccc] mt-1">{d.aliases.join(", ")}</div>
               </div>
             )}
           </>
@@ -3895,26 +3886,25 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
       };
     }
     const d = node.data;
-    const typeIcon = d.type === "place" ? "📍" : d.type === "organization" ? "🏢" : "📅";
-    const typeLabel = d.type === "place" ? "Place" : d.type === "organization" ? "Organization" : "Event";
     return {
-      kindIcon: <span className="text-[14px]">{typeIcon}</span>,
-      kindLabel: typeLabel,
       title: d.shortName || d.name,
       subtitle: [d.location, d.dateRange].filter(Boolean).join(" · ") || null,
+      photoUrl: d.image.strategy !== "none" ? `/entity-images/${d.id}.jpg` : null,
+      nameForSearch: d.name,
+      aliasesForSearch: [] as string[],
       extraRows: (
         <>
           {d.description && (
-            <div className="rounded border border-[#222] bg-[#111] px-3 py-2">
-              <p className="text-[11px] leading-relaxed text-[#999]">{d.description}</p>
+            <div className="rounded border border-[#222] bg-[#111] px-3 py-2.5">
+              <p className="text-[13px] leading-relaxed text-[#ccc]">{d.description}</p>
             </div>
           )}
           {d.keyPeople.length > 0 && (
             <div>
-              <span className="text-[9px] font-bold uppercase tracking-widest text-[#555]">Key People</span>
-              <div className="mt-1 flex flex-wrap gap-1">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#555]">Key People</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {d.keyPeople.map(name => (
-                  <span key={name} className="rounded bg-[#1a1a1a] border border-[#222] px-2 py-0.5 text-[10px] text-[#aaa]">{name}</span>
+                  <span key={name} className="rounded bg-[#1a1a1a] border border-[#222] px-2.5 py-1 text-[12px] text-[#aaa]">{name}</span>
                 ))}
               </div>
             </div>
@@ -3923,6 +3913,34 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
       ),
     };
   })();
+
+  // Fetch evidence across the whole archive matching this node's name or aliases.
+  // Runs when the search button is first opened, and again whenever the query changes.
+  useEffect(() => {
+    if (!searchOpen) return;
+    let cancelled = false;
+    const effectiveQuery = query.trim() || headerBits.nameForSearch;
+    if (!effectiveQuery) return;
+    setSearchLoading(true);
+    fetch(`/api/search?q=${encodeURIComponent(effectiveQuery)}&type=all&limit=40`)
+      .then((r) => r.json())
+      .then((data: { results?: SearchResult[] }) => {
+        if (cancelled) return;
+        setSearchResults(Array.isArray(data.results) ? data.results : []);
+      })
+      .catch(() => { if (!cancelled) setSearchResults([]); })
+      .finally(() => { if (!cancelled) setSearchLoading(false); });
+    return () => { cancelled = true; };
+  }, [searchOpen, query, headerBits.nameForSearch]);
+
+  // Seed the query with the node's name the first time the search panel opens.
+  const didSeedQueryRef = useRef(false);
+  useEffect(() => {
+    if (searchOpen && !didSeedQueryRef.current) {
+      didSeedQueryRef.current = true;
+      setQuery(headerBits.nameForSearch);
+    }
+  }, [searchOpen, headerBits.nameForSearch]);
 
   // Portal to document.body so `position: fixed` escapes the board viewport's
   // transform: scale(...) — otherwise fixed coordinates get reinterpreted
@@ -3952,48 +3970,54 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
           </svg>
         </button>
 
-        {/* Header — kind/label + score */}
-        <div className="flex-shrink-0 p-5 pb-3 border-b border-[#1c1c1c]">
-          <div className="flex items-start gap-4">
-            {/* Left: kind + title + subtitle */}
-            <div className="flex-1 min-w-0 pr-8">
-              <div className="flex items-center gap-2 mb-1.5">
-                {headerBits.kindIcon}
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#666]">{headerBits.kindLabel}</span>
-                <button onClick={() => onFocusNode(isFocused ? null : node.id)}
-                  className={`ml-auto text-[9px] rounded px-2 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#777] hover:text-white"}`}>
-                  {isFocused ? "Unfocus" : "Focus"}
-                </button>
-              </div>
-              <h2 className="text-2xl font-black text-white tracking-tight truncate">{headerBits.title}</h2>
-              {headerBits.subtitle && <p className="mt-0.5 text-[12px] text-[#777]">{headerBits.subtitle}</p>}
+        {/* Header — photo + name row, then centered score */}
+        <div className="flex-shrink-0 px-6 pt-6 pb-5 border-b border-[#1c1c1c]">
+          <div className="flex items-center gap-5">
+            {/* Photo / placeholder */}
+            <div className="flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#111] shadow-lg shadow-black/50">
+              {headerBits.photoUrl ? (
+                <img
+                  src={headerBits.photoUrl}
+                  alt={headerBits.title}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[#333] text-3xl">·</div>
+              )}
             </div>
-            {/* Right: glowing score */}
-            <div className="flex flex-col items-end flex-shrink-0">
-              <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#666] mb-0.5">Case Weight</span>
-              <div
-                className="text-5xl font-black text-red-500 tabular-nums leading-none"
-                style={{
-                  textShadow: "0 0 18px rgba(239,68,68,0.8), 0 0 38px rgba(239,68,68,0.45), 0 0 64px rgba(239,68,68,0.25)",
-                }}
-              >
-                {score}
-              </div>
-              <div className="mt-1 text-[9px] text-[#666] tabular-nums">
-                {relatedConns.length} conn · {totalConnEvidence + ownEvidenceCount} ev
-              </div>
+            {/* Name + subtitle */}
+            <div className="flex-1 min-w-0 pr-10">
+              <h2 className="text-5xl font-black text-white tracking-tight leading-[0.95] break-words">
+                {headerBits.title}
+              </h2>
+              {headerBits.subtitle && (
+                <p className="mt-2 text-[14px] text-[#888]">{headerBits.subtitle}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Centered glowing green score */}
+          <div className="mt-5 flex justify-center">
+            <div
+              className="text-7xl font-black text-green-400 tabular-nums leading-none"
+              style={{
+                textShadow: "0 0 22px rgba(74,222,128,0.85), 0 0 48px rgba(74,222,128,0.5), 0 0 80px rgba(74,222,128,0.25)",
+              }}
+            >
+              {score}
             </div>
           </div>
 
           {/* Action row: connections dropdown + search */}
-          <div className="flex items-center gap-2 mt-4">
+          <div className="flex items-center justify-center gap-3 mt-5">
             <button
               type="button"
               onClick={() => setConnectionsOpen((v) => !v)}
-              className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition ${connectionsOpen ? "border-red-500/60 bg-red-600/10 text-red-300" : "border-[#2a2a2a] bg-[#111] text-[#aaa] hover:text-white hover:border-red-500/40"}`}
+              className={`flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-bold uppercase tracking-wide transition ${connectionsOpen ? "border-red-500/60 bg-red-600/10 text-red-300" : "border-[#2a2a2a] bg-[#111] text-[#bbb] hover:text-white hover:border-red-500/40"}`}
             >
               <span>Connections ({relatedConns.length})</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
                    style={{ transform: connectionsOpen ? "rotate(180deg)" : "none", transition: "transform 120ms" }}>
                 <path d="M6 9l6 6 6-6" />
               </svg>
@@ -4001,9 +4025,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
             <button
               type="button"
               onClick={() => setSearchOpen((v) => !v)}
-              className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition ${searchOpen ? "border-red-500/60 bg-red-600/10 text-red-300" : "border-[#2a2a2a] bg-[#111] text-[#aaa] hover:text-white hover:border-red-500/40"}`}
+              className={`flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-bold uppercase tracking-wide transition ${searchOpen ? "border-red-500/60 bg-red-600/10 text-red-300" : "border-[#2a2a2a] bg-[#111] text-[#bbb] hover:text-white hover:border-red-500/40"}`}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <circle cx="11" cy="11" r="7" />
                 <path d="m20 20-3.5-3.5" />
               </svg>
@@ -4013,13 +4037,13 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {/* Extra metadata rows (description, key people, aliases) */}
           {headerBits.extraRows}
 
           {/* Connections dropdown */}
           {connectionsOpen && relatedConns.length > 0 && (
-            <div className="space-y-1 rounded border border-[#222] bg-[#0a0a0a] p-2">
+            <div className="space-y-1.5 rounded border border-[#222] bg-[#0a0a0a] p-2.5">
               {relatedConns.map((conn) => {
                 const otherId = conn.sourceId === node.id ? conn.targetId : conn.sourceId;
                 const otherNode = nodes.find((n) => n.id === otherId);
@@ -4029,11 +4053,11 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
                   <button
                     key={conn.id}
                     onClick={(e) => { e.stopPropagation(); onSelectNode(otherId); }}
-                    className="w-full flex items-center justify-between rounded border border-[#1e1e1e] bg-[#111] px-3 py-2 hover:border-red-500/40 hover:bg-[#151515] transition"
+                    className="w-full flex items-center justify-between rounded border border-[#1e1e1e] bg-[#111] px-4 py-2.5 hover:border-red-500/40 hover:bg-[#151515] transition"
                   >
-                    <span className="text-[12px] font-semibold text-white/90 truncate">{otherName}</span>
+                    <span className="text-[15px] font-semibold text-white/90 truncate">{otherName}</span>
                     {pinCount > 0 && (
-                      <span className="text-[9px] text-[#666] tabular-nums flex-shrink-0 ml-2">{pinCount} ev</span>
+                      <span className="text-[11px] text-[#777] tabular-nums flex-shrink-0 ml-2">{pinCount} ev</span>
                     )}
                   </button>
                 );
@@ -4041,33 +4065,63 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
             </div>
           )}
           {connectionsOpen && relatedConns.length === 0 && (
-            <div className="text-[10px] text-[#555] italic px-1">No connections yet.</div>
+            <div className="text-[12px] text-[#555] italic px-1">No connections yet.</div>
           )}
 
-          {/* Search input */}
+          {/* Search — queries the whole archive by default, seeded with the node's name */}
           {searchOpen && (
-            <div className="rounded border border-[#2a2a2a] bg-[#0a0a0a] px-3 py-2">
-              <input
-                type="text"
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search all pinned evidence…"
-                className="w-full bg-transparent outline-none text-[13px] text-white placeholder:text-[#555]"
-              />
-              {query && (
-                <div className="mt-1 text-[9px] text-[#666] tabular-nums">
-                  {allPhotos.length + otherCount} match{allPhotos.length + otherCount === 1 ? "" : "es"}
+            <div className="rounded border border-[#2a2a2a] bg-[#0a0a0a]">
+              <div className="px-4 py-3 border-b border-[#1c1c1c]">
+                <input
+                  type="text"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search all evidence…"
+                  className="w-full bg-transparent outline-none text-[15px] text-white placeholder:text-[#555]"
+                />
+                <div className="mt-1 text-[10px] text-[#666] tabular-nums">
+                  {searchLoading ? "Searching…" : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"} across the archive`}
+                  {headerBits.aliasesForSearch.length > 0 && !searchLoading && (
+                    <span className="text-[#444]"> · aliases: {headerBits.aliasesForSearch.slice(0, 3).join(", ")}{headerBits.aliasesForSearch.length > 3 ? "…" : ""}</span>
+                  )}
+                </div>
+              </div>
+              {searchResults.length > 0 && (
+                <div className="max-h-[280px] overflow-y-auto divide-y divide-[#161616]">
+                  {searchResults.map((r) => (
+                    <button
+                      key={`${r.type}-${r.id}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenEvidence({ id: r.id, type: r.type, title: r.title, snippet: r.snippet, date: r.date, sender: r.sender, starCount: r.starCount });
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-[#121212] transition flex items-start gap-2.5"
+                    >
+                      <span className="text-[14px] flex-shrink-0">{EVIDENCE_TYPE_ICON[r.type]}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-bold text-white/90 truncate">{r.title}</p>
+                        {r.snippet && (
+                          <p className="text-[11px] text-[#777] truncate mt-0.5">{r.snippet}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {r.date && <span className="text-[10px] text-[#555] tabular-nums">{r.date}</span>}
+                          {r.sender && <span className="text-[10px] text-[#666] truncate">{r.sender}</span>}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
           )}
 
-          {/* Pinned Photos — bigger grid in this half-screen panel */}
+          {/* Photos attached to this card */}
           {hasPhotos && (
             <div>
-              <h4 className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[#555]">
-                Pinned Photos ({allPhotos.length})
+              <h4 className="mb-2.5 text-[11px] font-bold uppercase tracking-widest text-[#666]">
+                Photos ({allPhotos.length})
               </h4>
               <div className="grid grid-cols-5 gap-2">
                 {allPhotos.map((ev) => (
@@ -4079,27 +4133,24 @@ function NodeDetailCard({ node, connections, nodes, onClose, onFocusNode, onSele
 
           {/* Other Evidence */}
           {hasOther && (
-            <div className="space-y-3">
-              <h4 className="text-[9px] font-bold uppercase tracking-widest text-[#555]">
+            <div className="space-y-4">
+              <h4 className="text-[11px] font-bold uppercase tracking-widest text-[#666]">
                 Other Evidence ({otherCount})
               </h4>
-              {filteredEmails.length > 0 && (
-                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={filteredEmails} onOpen={onOpenEvidence} />
+              {allEmails.length > 0 && (
+                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={allEmails} onOpen={onOpenEvidence} />
               )}
-              {filteredDocs.length > 0 && (
-                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={filteredDocs} onOpen={onOpenEvidence} />
+              {allDocs.length > 0 && (
+                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={allDocs} onOpen={onOpenEvidence} />
               )}
-              {filteredIms.length > 0 && (
-                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={filteredIms} onOpen={onOpenEvidence} />
+              {allIms.length > 0 && (
+                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={allIms} onOpen={onOpenEvidence} />
               )}
             </div>
           )}
 
-          {!hasAnyFiltered && totalRawCount > 0 && q && (
-            <div className="text-[10px] text-[#555] italic">No evidence matches "{query}".</div>
-          )}
           {totalRawCount === 0 && (
-            <div className="text-[10px] text-[#555] italic">No evidence pinned yet.</div>
+            <div className="text-[12px] text-[#555] italic">No evidence attached yet.</div>
           )}
         </div>
       </div>
@@ -4134,23 +4185,23 @@ function DetailEvidenceBucket({ label, icon, accent, items, onOpen }: {
 }) {
   return (
     <div>
-      <div className="mb-1 flex items-center gap-1.5">
-        <span className="text-[11px]">{icon}</span>
-        <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#666]">{label}</span>
-        <span className="text-[8px] text-[#444] tabular-nums">{items.length}</span>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-[14px]">{icon}</span>
+        <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[#777]">{label}</span>
+        <span className="text-[11px] text-[#555] tabular-nums">{items.length}</span>
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {items.map((ev) => (
           <button
             key={ev.id}
             type="button"
-            className={`w-full text-left rounded border border-[#222] border-l-4 ${accent} bg-[#0a0a0a] hover:bg-[#151515] hover:border-red-500/40 transition px-2 py-1.5`}
+            className={`w-full text-left rounded border border-[#222] border-l-4 ${accent} bg-[#0a0a0a] hover:bg-[#151515] hover:border-red-500/40 transition px-3 py-2`}
             onClick={(e) => { e.stopPropagation(); onOpen(ev); }}
           >
-            <p className="text-[10px] font-bold text-white/90 truncate">{ev.title}</p>
+            <p className="text-[13px] font-bold text-white/90 truncate">{ev.title}</p>
             <div className="flex items-center gap-2 mt-0.5">
-              {ev.date && <span className="text-[8px] text-[#666] tabular-nums">{ev.date}</span>}
-              {ev.sender && <span className="text-[8px] text-[#777] truncate flex-1">{ev.sender}</span>}
+              {ev.date && <span className="text-[10px] text-[#666] tabular-nums">{ev.date}</span>}
+              {ev.sender && <span className="text-[10px] text-[#777] truncate flex-1">{ev.sender}</span>}
             </div>
           </button>
         ))}
