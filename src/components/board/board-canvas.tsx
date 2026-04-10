@@ -2858,7 +2858,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
               {/* Pinned evidence distributed along each connection line.
                   Items alternate above/below (perpendicular) with a small
-                  connector line to their anchor point on the line. */}
+                  connector line to their anchor point on the line.
+                  Chip size shrinks when the connected cards are close
+                  together so chips don't pile up or cover the cards. */}
               {connections.filter(c => c.pinnedEvidence && c.pinnedEvidence.length > 0).map((conn) => {
                 const from = getNodeCenter(conn.sourceId);
                 const to = getNodeCenter(conn.targetId);
@@ -2870,8 +2872,21 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 // Perpendicular unit vector
                 const perpX = -dy / len;
                 const perpY = dx / len;
-                const OFFSET = 46; // how far from the line
-                const CHIP = 56; // chip size (square)
+                // Dynamic chip sizing: chips alternate sides, so the
+                // constraint is the along-line spacing between two SAME-side
+                // chips (every other index). Shrink chip down to CHIP_MIN
+                // when that spacing is tight.
+                const srcNode = nodes.find(n => n.id === conn.sourceId);
+                const tgtNode = nodes.find(n => n.id === conn.targetId);
+                const srcRadius = srcNode ? Math.max(getScaledCardSize(srcNode).w, getScaledCardSize(srcNode).h) / 2 : 120;
+                const tgtRadius = tgtNode ? Math.max(getScaledCardSize(tgtNode).w, getScaledCardSize(tgtNode).h) / 2 : 120;
+                const effLen = Math.max(40, len - srcRadius - tgtRadius);
+                const sameSideCount = Math.max(1, Math.ceil(pinned.length / 2));
+                const slotLen = effLen / sameSideCount;
+                const CHIP_MAX = 56;
+                const CHIP_MIN = 26;
+                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen * 0.75));
+                const OFFSET = Math.max(22, CHIP * 0.82);
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
