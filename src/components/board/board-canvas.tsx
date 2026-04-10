@@ -3843,6 +3843,10 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTab, setSearchTab] = useState<"all" | EvidenceType>("all");
   const [hoveredResult, setHoveredResult] = useState<{ r: SearchResult; x: number; y: number } | null>(null);
+  // Split-screen companion viewer docked to the right side of the screen.
+  // Populated by clicking any evidence item inside this panel.
+  const [splitEvidence, setSplitEvidence] = useState<PinnedEvidence | null>(null);
+  const openSplit = useCallback((ev: PinnedEvidence) => setSplitEvidence(ev), []);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   const relatedConns = connections.filter(
@@ -3937,11 +3941,15 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   }, [searchOpen, query, searchTab, headerBits.nameForSearch]);
 
   // Click outside the panel closes it (so you can drag from panel → board freely).
+  // A click anywhere inside a [data-detail-root] element counts as "inside" —
+  // this keeps the split-screen evidence viewer on the right from dismissing
+  // its parent detail panel on the left.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      const panel = panelRef.current;
-      if (!panel) return;
-      if (!panel.contains(e.target as Node)) onClose();
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-detail-root]")) return;
+      onClose();
     };
     const t = setTimeout(() => document.addEventListener("mousedown", handler), 0);
     return () => {
@@ -3969,6 +3977,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
           it stays interactive for drag-and-drop of evidence from search results. */}
       <div
         ref={panelRef}
+        data-detail-root
         className="fixed z-[1001] left-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80"
         style={{ width: "min(50vw, 760px)", minWidth: 480 }}
         onMouseDown={(e) => e.stopPropagation()}
@@ -4132,7 +4141,10 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                       key={`${r.type}-${r.id}`}
                       draggable
                       onDragStart={(e) => {
-                        e.stopPropagation();
+                        // Do NOT stopPropagation — the window-level dragstart
+                        // listener in BoardCanvas needs to see this event to
+                        // set dragKind="evidence" so handleDragOver will
+                        // resolve a drop target and handleDrop will pin.
                         const payload = {
                           id: r.id,
                           kind: "evidence",
@@ -4160,7 +4172,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                       onMouseLeave={() => setHoveredResult(null)}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onOpenEvidence({ id: r.id, type: r.type, title: r.title, snippet: r.snippet, date: r.date, sender: r.sender, starCount: r.starCount });
+                        openSplit({ id: r.id, type: r.type, title: r.title, snippet: r.snippet, date: r.date, sender: r.sender, starCount: r.starCount });
                       }}
                       className="w-full text-left px-4 py-2.5 hover:bg-[#121212] transition flex items-start gap-2.5 cursor-grab active:cursor-grabbing"
                     >
@@ -4190,7 +4202,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
               </h4>
               <div className="grid grid-cols-5 gap-2">
                 {allPhotos.map((ev) => (
-                  <DetailPhotoThumb key={ev.id} evidence={ev} onOpen={onOpenEvidence} />
+                  <DetailPhotoThumb key={ev.id} evidence={ev} onOpen={openSplit} />
                 ))}
               </div>
             </div>
@@ -4203,13 +4215,13 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                 Other Evidence ({otherCount})
               </h4>
               {allEmails.length > 0 && (
-                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={allEmails} onOpen={onOpenEvidence} />
+                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={allEmails} onOpen={openSplit} />
               )}
               {allDocs.length > 0 && (
-                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={allDocs} onOpen={onOpenEvidence} />
+                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={allDocs} onOpen={openSplit} />
               )}
               {allIms.length > 0 && (
-                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={allIms} onOpen={onOpenEvidence} />
+                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={allIms} onOpen={openSplit} />
               )}
             </div>
           )}
@@ -4256,6 +4268,16 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
           </div>
         );
       })()}
+
+      {/* Split-screen evidence viewer docked to the right — opens when the
+          user clicks any evidence row inside the detail panel. */}
+      {splitEvidence && (
+        <FullScreenEvidenceViewer
+          evidence={splitEvidence}
+          onClose={() => setSplitEvidence(null)}
+          variant="side"
+        />
+      )}
     </>,
     document.body
   );
@@ -4661,7 +4683,7 @@ function ConnectionFocusView({ connection, source, target, onClose }: {
 
 /* ─── Full-Screen Evidence Viewer (opens on pinned chip double-click) ────── */
 
-function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvidence; onClose: () => void }) {
+function FullScreenEvidenceViewer({ evidence, onClose, variant = "fullscreen" }: { evidence: PinnedEvidence; onClose: () => void; variant?: "fullscreen" | "side" }) {
   const [full, setFull] = useState<Evidence | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -4684,6 +4706,131 @@ function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvide
     ? `${PHOTO_CDN_URL}/cdn-cgi/image/width=1400,quality=90,format=auto/photos-deboned/${evidence.id}`
     : null;
 
+  const inner = (
+    <>
+      {/* Header */}
+      <div className="flex-shrink-0 border-b border-[#1a1a1a] px-5 py-4 flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[#666]">
+              {EVIDENCE_TYPE_LABEL[evidence.type]}
+            </span>
+            {evidence.date && <span className="text-[10px] text-[#555] tabular-nums">{evidence.date}</span>}
+          </div>
+          <h2 className="text-lg font-black text-white leading-tight truncate">{evidence.title}</h2>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 rounded bg-[#222] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition"
+        >
+          ESC ×
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {isPhoto && photoFullUrl && (
+          <div className="bg-black flex items-center justify-center">
+            <img
+              src={photoFullUrl}
+              alt={evidence.title}
+              className="max-w-full max-h-[70vh] object-contain"
+            />
+          </div>
+        )}
+
+        {loading ? (
+          <div className="p-10 flex items-center justify-center">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse mr-2" />
+            <span className="text-[11px] text-[#555]">Loading…</span>
+          </div>
+        ) : full ? (
+          <div className="p-5">
+            {full.type === "email" && (
+              <div>
+                <div className="space-y-1.5 text-[12px] mb-4">
+                  <div className="flex gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">From</span>
+                    <span className={`font-bold ${full.epsteinIsSender ? "text-red-400" : "text-white"}`}>
+                      {full.sender}
+                      {full.senderName && full.senderName !== full.sender && (
+                        <span className="text-[#555] font-normal ml-1">({full.senderName})</span>
+                      )}
+                    </span>
+                  </div>
+                  {full.recipients.length > 0 && (
+                    <div className="flex gap-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">To</span>
+                      <span className="text-[#aaa] break-all">{full.recipients.join(", ")}</span>
+                    </div>
+                  )}
+                  {full.cc.length > 0 && (
+                    <div className="flex gap-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">CC</span>
+                      <span className="text-[#888] break-all">{full.cc.join(", ")}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                  {full.body || "No content available"}
+                </div>
+              </div>
+            )}
+            {full.type === "document" && (
+              <div>
+                <div className="flex flex-wrap gap-3 text-[11px] mb-4">
+                  {full.volume && (
+                    <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                      <span className="text-[#555]">Volume:</span> <span className="text-white font-bold">{full.volume}</span>
+                    </div>
+                  )}
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Pages:</span> <span className="text-white font-bold">{full.pageCount}</span>
+                  </div>
+                </div>
+                <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                  {full.fulltext || full.snippet || "No content available"}
+                </div>
+              </div>
+            )}
+            {full.type === "imessage" && (
+              <div>
+                <p className="text-[11px] text-[#888] mb-2">From {full.sender}</p>
+                <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                  {full.body || "No content available"}
+                </div>
+              </div>
+            )}
+            {full.type === "photo" && full.imageDescription && (
+              <p className="text-[12px] text-[#aaa] leading-relaxed">{full.imageDescription}</p>
+            )}
+          </div>
+        ) : (
+          <div className="p-5">
+            <p className="text-[12px] text-[#777] leading-relaxed whitespace-pre-wrap">{evidence.snippet}</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  // Side variant: docked to the right as a split-screen companion. No backdrop.
+  if (variant === "side") {
+    return (
+      <div
+        data-detail-root
+        className="fixed z-[1050] right-4 top-[6vh] bottom-[6vh] rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80 flex flex-col overflow-hidden"
+        style={{ width: "min(44vw, 680px)", minWidth: 420 }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {inner}
+      </div>
+    );
+  }
+
+  // Fullscreen variant: full modal overlay.
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-6"
@@ -4693,110 +4840,7 @@ function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvide
         className="relative w-full max-w-4xl max-h-[90vh] rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl shadow-black/70 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-[#1a1a1a] px-5 py-4 flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
-              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[#666]">
-                {EVIDENCE_TYPE_LABEL[evidence.type]}
-              </span>
-              {evidence.date && <span className="text-[10px] text-[#555] tabular-nums">{evidence.date}</span>}
-            </div>
-            <h2 className="text-lg font-black text-white leading-tight truncate">{evidence.title}</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex-shrink-0 rounded bg-[#222] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition"
-          >
-            ESC ×
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {isPhoto && photoFullUrl && (
-            <div className="bg-black flex items-center justify-center">
-              <img
-                src={photoFullUrl}
-                alt={evidence.title}
-                className="max-w-full max-h-[70vh] object-contain"
-              />
-            </div>
-          )}
-
-          {loading ? (
-            <div className="p-10 flex items-center justify-center">
-              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse mr-2" />
-              <span className="text-[11px] text-[#555]">Loading…</span>
-            </div>
-          ) : full ? (
-            <div className="p-5">
-              {full.type === "email" && (
-                <div>
-                  <div className="space-y-1.5 text-[12px] mb-4">
-                    <div className="flex gap-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">From</span>
-                      <span className={`font-bold ${full.epsteinIsSender ? "text-red-400" : "text-white"}`}>
-                        {full.sender}
-                        {full.senderName && full.senderName !== full.sender && (
-                          <span className="text-[#555] font-normal ml-1">({full.senderName})</span>
-                        )}
-                      </span>
-                    </div>
-                    {full.recipients.length > 0 && (
-                      <div className="flex gap-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">To</span>
-                        <span className="text-[#aaa] break-all">{full.recipients.join(", ")}</span>
-                      </div>
-                    )}
-                    {full.cc.length > 0 && (
-                      <div className="flex gap-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">CC</span>
-                        <span className="text-[#888] break-all">{full.cc.join(", ")}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
-                    {full.body || "No content available"}
-                  </div>
-                </div>
-              )}
-              {full.type === "document" && (
-                <div>
-                  <div className="flex flex-wrap gap-3 text-[11px] mb-4">
-                    {full.volume && (
-                      <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
-                        <span className="text-[#555]">Volume:</span> <span className="text-white font-bold">{full.volume}</span>
-                      </div>
-                    )}
-                    <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
-                      <span className="text-[#555]">Pages:</span> <span className="text-white font-bold">{full.pageCount}</span>
-                    </div>
-                  </div>
-                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
-                    {full.fulltext || full.snippet || "No content available"}
-                  </div>
-                </div>
-              )}
-              {full.type === "imessage" && (
-                <div>
-                  <p className="text-[11px] text-[#888] mb-2">From {full.sender}</p>
-                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
-                    {full.body || "No content available"}
-                  </div>
-                </div>
-              )}
-              {full.type === "photo" && full.imageDescription && (
-                <p className="text-[12px] text-[#aaa] leading-relaxed">{full.imageDescription}</p>
-              )}
-            </div>
-          ) : (
-            <div className="p-5">
-              <p className="text-[12px] text-[#777] leading-relaxed whitespace-pre-wrap">{evidence.snippet}</p>
-            </div>
-          )}
-        </div>
+        {inner}
       </div>
     </div>
   );
