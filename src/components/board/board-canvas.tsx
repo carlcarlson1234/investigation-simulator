@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { BoardNode, BoardConnection, FocusState, PinnedEvidence } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
@@ -25,14 +26,16 @@ const BASE_WORLD_W = 4000;
 const BASE_WORLD_H = 3000;
 
 /* ── Node pinned-evidence layout constants ─────────────────────────────── */
-// Photos orbit the card perimeter at ~80px per chip, max 2 per side (8 total).
-// Overflow photos and all non-photo evidence fall into category badges below the card.
+// Photos orbit the card perimeter at ~80px per chip, max 2 per side.
+// The bottom side is reserved for the category stack row so it has room
+// to wrap as more categories are added in the future.
 const ORBITAL_CHIP = 80;
 const ORBITAL_SPACING = 12;
 const ORBITAL_PER_SIDE = 2;
-const ORBITAL_MAX = ORBITAL_PER_SIDE * 4; // 8
-const STACK_BADGE_H = 36;
-const STACK_BADGE_W = 68;
+const ORBITAL_SIDES = 3; // right, left, top only (bottom reserved for stack row)
+const ORBITAL_MAX = ORBITAL_PER_SIDE * ORBITAL_SIDES; // 6
+const STACK_BADGE_H = 32;
+const STACK_BADGE_W = 60;
 const STACK_BADGE_GAP = 6;
 const DETAIL_CARD_MAX_W = 600;
 
@@ -192,6 +195,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [dragState, setDragState] = useState<{
     nodeId: string; offsetX: number; offsetY: number;
   } | null>(null);
+  // Detail panel is separate from node selection — only opens on a pure click
+  // (mousedown → mouseup without drag movement), never during a click-drag.
+  const [detailNodeId, setDetailNodeId] = useState<string | null>(null);
+  const didDragRef = useRef(false);
+  const mouseDownPosRef = useRef({ x: 0, y: 0 });
 
   /* ── Collapsed evidence groups (legacy no-op, evidence is now pinned) ──── */
   const collapsedGroups = useMemo<Record<string, boolean>>(() => ({}), []);
@@ -2016,6 +2024,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         offsetY: worldY - node.position.y,
       });
       onSelectNode(nodeId);
+      // Reset drag-distance tracking so we can tell a click apart from a drag.
+      didDragRef.current = false;
+      mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
       playSound("pickup");
       dragVelocityRef.current = { vx: 0, vy: 0, lastX: e.clientX, lastY: e.clientY };
       dragRotationRef.current = 0;
@@ -2031,6 +2042,16 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const onMove = (e: MouseEvent) => {
       const vp = viewportRef.current;
       if (!vp) return;
+      // Flag the interaction as a drag once the pointer has moved past a small
+      // threshold from the mousedown point. This keeps the detail panel from
+      // opening when the user is actually repositioning a card.
+      if (!didDragRef.current) {
+        const dxStart = e.clientX - mouseDownPosRef.current.x;
+        const dyStart = e.clientY - mouseDownPosRef.current.y;
+        if (dxStart * dxStart + dyStart * dyStart > 16) { // > 4px
+          didDragRef.current = true;
+        }
+      }
       const rect = vp.getBoundingClientRect();
       const worldX = (e.clientX - rect.left + vp.scrollLeft) / zoom;
       const worldY = (e.clientY - rect.top + vp.scrollTop) / zoom;
@@ -2962,11 +2983,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         }
                       }
                       onSelectNode(node.id);
+                      // Only open the detail panel on a pure click, not after a drag.
+                      if (!didDragRef.current) setDetailNodeId(node.id);
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (node.kind === "person") onOpenSubjectView(node.id);
-                      else onFocusNode(node.id);
+                      // entity double-click: no-op (was opening the focus view)
                     }}
                   >
                     {node.kind === "person" ? (
@@ -2991,10 +3014,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       const part = partitionNodeEvidence(node.pinnedEvidence);
                       const orbital = part.orbitalPhotos;
 
-                      // Compute (x, y) for orbital photo at index i (0..7).
-                      // Fill order: right → bottom → left → top, 2 per side, centered on each side.
+                      // Compute (x, y) for orbital photo at index i (0..5).
+                      // Fill order: right → left → top, 2 per side. Bottom is reserved for the stack row.
                       const orbitalPos = (i: number) => {
-                        const side = Math.floor(i / ORBITAL_PER_SIDE); // 0=right, 1=bottom, 2=left, 3=top
+                        const side = Math.floor(i / ORBITAL_PER_SIDE); // 0=right, 1=left, 2=top
                         const idxInSide = i % ORBITAL_PER_SIDE;
                         // How many chips actually on this side (for centering when side underfilled)
                         const remaining = Math.max(0, orbital.length - side * ORBITAL_PER_SIDE);
@@ -3002,15 +3025,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         const runLen = chipsOnSide * ORBITAL_CHIP + (chipsOnSide - 1) * ORBITAL_SPACING;
                         let x = 0, y = 0;
                         if (side === 0) {
+                          // Right
                           x = w + 2;
                           y = (h - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                         } else if (side === 1) {
-                          x = (w - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
-                          y = h + 2;
-                        } else if (side === 2) {
+                          // Left
                           x = -ORBITAL_CHIP - 2;
                           y = (h - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                         } else {
+                          // Top
                           x = (w - runLen) / 2 + idxInSide * (ORBITAL_CHIP + ORBITAL_SPACING);
                           y = -ORBITAL_CHIP - 2;
                         }
@@ -3040,10 +3063,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                             );
                           })}
 
-                          {/* Category stack badges attached below the card */}
+                          {/* Category stack badges attached below the card — wraps to multiple rows if needed */}
                           {badges.length > 0 && (
                             <div
-                              className="absolute flex pointer-events-none"
+                              className="absolute flex flex-wrap pointer-events-none"
                               style={{ left: 0, top: h + 8, width: w, gap: STACK_BADGE_GAP, zIndex: 28 }}
                             >
                               {badges.map((b) => (
@@ -3055,11 +3078,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                                   onMouseDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onSelectNode(node.id);
+                                    setDetailNodeId(node.id);
                                   }}
                                   title={`${b.count} ${b.key}`}
                                 >
-                                  <span className="text-[16px] leading-none">{b.icon}</span>
+                                  <span className="text-[14px] leading-none">{b.icon}</span>
                                   <span className="text-[12px] font-black text-white/90 tabular-nums">{b.count}</span>
                                 </button>
                               ))}
@@ -3092,25 +3115,18 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
               })}
 
 
-              {/* Floating detail card for selected node */}
-              {selectedNodeId && (() => {
-                const selectedNode = nodes.find(n => n.id === selectedNodeId);
-                if (!selectedNode) return null;
-                // Use actual DOM element size for precise positioning
-                const el = viewportRef.current?.querySelector(`[data-node-id="${selectedNodeId}"]`) as HTMLElement | null;
-                const actualW = el ? el.offsetWidth : getScaledCardSize(selectedNode).w;
-                const cardX = selectedNode.position.x + actualW + 4;
-                const cardY = selectedNode.position.y;
+              {/* Large detail panel — only opens on a pure click, not drag */}
+              {detailNodeId && (() => {
+                const detailNode = nodes.find(n => n.id === detailNodeId);
+                if (!detailNode) return null;
                 return (
                   <NodeDetailCard
-                    node={selectedNode}
+                    node={detailNode}
                     connections={connections}
                     nodes={nodes}
-                    x={cardX}
-                    y={cardY}
-                    onClose={() => onSelectNode(null)}
+                    onClose={() => setDetailNodeId(null)}
                     onFocusNode={onFocusNode}
-                    onSelectNode={onSelectNode}
+                    onSelectNode={(id) => { setDetailNodeId(id); onSelectNode(id); }}
                     focusedNodeId={focusedNodeId}
                     onOpenEvidence={setFocusedPinnedEvidence}
                   />
@@ -3801,189 +3817,476 @@ function EntityBoardCard({ data, isSelected, pinnedEvidence, onPinnedEvidenceDou
   );
 }
 
-/* ─── Node Detail Card (floating popup near selected node) ────────────────── */
+/* ─── Node Detail Card (half-screen right panel) ──────────────────────────── */
 
-function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, onSelectNode, focusedNodeId, onOpenEvidence }: {
+function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpenEvidence }: {
   node: BoardNode;
   connections: BoardConnection[];
   nodes: BoardNode[];
-  x: number;
-  y: number;
   onClose: () => void;
   onFocusNode: (id: string | null) => void;
   onSelectNode: (id: string | null) => void;
   focusedNodeId: string | null;
   onOpenEvidence: (ev: PinnedEvidence) => void;
 }) {
-  // Escape key closes
+  // Escape closes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchTab, setSearchTab] = useState<"all" | EvidenceType>("all");
+  const [hoveredResult, setHoveredResult] = useState<{ r: SearchResult; x: number; y: number } | null>(null);
+  // Split-screen companion viewer docked to the right side of the screen.
+  // Populated by clicking any evidence item inside this panel.
+  const [splitEvidence, setSplitEvidence] = useState<PinnedEvidence | null>(null);
+  const openSplit = useCallback((ev: PinnedEvidence) => setSplitEvidence(ev), []);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
   const relatedConns = connections.filter(
     (c) => c.sourceId === node.id || c.targetId === node.id
   );
-  const isFocused = focusedNodeId === node.id;
 
-  // Partition pinned evidence for the detail-view sections
+  // Score — "how implicated is this node": weighted count of connections and
+  // evidence they carry, plus evidence pinned directly to the node.
+  const totalConnEvidence = relatedConns.reduce((sum, c) => sum + (c.pinnedEvidence?.length ?? 0), 0);
+  const ownEvidenceCount = node.pinnedEvidence?.length ?? 0;
+  const score = relatedConns.length * 10 + totalConnEvidence * 5 + ownEvidenceCount * 2;
+
+  // All evidence attached to this card, grouped by category — no "pinned" distinction here.
   const part = partitionNodeEvidence(node.pinnedEvidence);
   const allPhotos = [...part.orbitalPhotos, ...part.overflowPhotos];
+  const allEmails = part.emails;
+  const allDocs = part.documents;
+  const allIms = part.imessages;
   const hasPhotos = allPhotos.length > 0;
-  const otherCount = part.emails.length + part.documents.length + part.imessages.length;
+  const otherCount = allEmails.length + allDocs.length + allIms.length;
   const hasOther = otherCount > 0;
-  const hasAnyPinned = hasPhotos || hasOther;
-  // Dynamic width: grow when there's pinned evidence to display
-  const cardW = hasPhotos
-    ? Math.min(DETAIL_CARD_MAX_W, 280 + Math.min(3, Math.ceil(allPhotos.length / 2)) * 60)
-    : hasOther ? 340 : 280;
+  const totalRawCount = ownEvidenceCount;
 
-  return (
-    <div
-      className="absolute z-[35]"
-      style={{ left: x, top: y }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-    >
+  // Node metadata — photo, display name, optional location/date line for entities.
+  const headerBits = (() => {
+    if (node.kind === "person") {
+      const d = node.data;
+      return {
+        title: d.name,
+        subtitle: null as string | null,
+        photoUrl: d.imageUrl,
+        nameForSearch: d.name,
+        aliasesForSearch: d.aliases,
+        extraRows: (
+          <>
+            {d.aliases.length > 0 && (
+              <div className="rounded border border-[#222] bg-[#111] px-3 py-2">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#555]">Aliases</span>
+                <div className="text-[13px] text-[#ccc] mt-1">{d.aliases.join(", ")}</div>
+              </div>
+            )}
+          </>
+        ),
+      };
+    }
+    const d = node.data;
+    return {
+      title: d.shortName || d.name,
+      subtitle: [d.location, d.dateRange].filter(Boolean).join(" · ") || null,
+      photoUrl: d.image.strategy !== "none" ? `/entity-images/${d.id}.jpg` : null,
+      nameForSearch: d.name,
+      aliasesForSearch: [] as string[],
+      extraRows: (
+        <>
+          {d.description && (
+            <div className="rounded border border-[#222] bg-[#111] px-3 py-2.5">
+              <p className="text-[13px] leading-relaxed text-[#ccc]">{d.description}</p>
+            </div>
+          )}
+          {d.keyPeople.length > 0 && (
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#555]">Key People</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {d.keyPeople.map(name => (
+                  <span key={name} className="rounded bg-[#1a1a1a] border border-[#222] px-2.5 py-1 text-[12px] text-[#aaa]">{name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ),
+    };
+  })();
+
+  // Fetch evidence across the whole archive matching this node's name or aliases.
+  // Runs whenever the search panel is open and the query or active tab changes.
+  useEffect(() => {
+    if (!searchOpen) return;
+    let cancelled = false;
+    const effectiveQuery = query.trim() || headerBits.nameForSearch;
+    if (!effectiveQuery) return;
+    setSearchLoading(true);
+    fetch(`/api/search?q=${encodeURIComponent(effectiveQuery)}&type=${searchTab}&limit=60`)
+      .then((r) => r.json())
+      .then((data: { results?: SearchResult[] }) => {
+        if (cancelled) return;
+        setSearchResults(Array.isArray(data.results) ? data.results : []);
+      })
+      .catch(() => { if (!cancelled) setSearchResults([]); })
+      .finally(() => { if (!cancelled) setSearchLoading(false); });
+    return () => { cancelled = true; };
+  }, [searchOpen, query, searchTab, headerBits.nameForSearch]);
+
+  // Click outside the panel closes it (so you can drag from panel → board freely).
+  // A click anywhere inside a [data-detail-root] element counts as "inside" —
+  // this keeps the split-screen evidence viewer on the right from dismissing
+  // its parent detail panel on the left.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-detail-root]")) return;
+      onClose();
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", handler);
+    };
+  }, [onClose]);
+
+  // Seed the query with the node's name the first time the search panel opens.
+  const didSeedQueryRef = useRef(false);
+  useEffect(() => {
+    if (searchOpen && !didSeedQueryRef.current) {
+      didSeedQueryRef.current = true;
+      setQuery(headerBits.nameForSearch);
+    }
+  }, [searchOpen, headerBits.nameForSearch]);
+
+  // Portal to document.body so `position: fixed` escapes the board viewport's
+  // transform: scale(...) — otherwise fixed coordinates get reinterpreted
+  // relative to the transformed ancestor and the panel lands off-screen.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <>
+      {/* Panel — slides in from the left, no modal backdrop so the board beyond
+          it stays interactive for drag-and-drop of evidence from search results.
+          When the split-screen evidence viewer is open, this panel shrinks to
+          exactly the left half of the viewport so the two panels meet in the
+          middle with no gap. */}
       <div
-        className="max-h-[80vh] overflow-y-auto rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/60"
-        style={{ width: cardW }}
+        ref={panelRef}
+        data-detail-root
+        className="fixed z-[1001] left-4 top-[6vh] bottom-[6vh] flex flex-col rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80"
+        style={
+          splitEvidence
+            ? { right: "50vw" }
+            : { width: "min(50vw, 760px)", minWidth: 480 }
+        }
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-2 right-2 z-10 rounded-full bg-[#1a1a1a] border border-[#333] w-6 h-6 flex items-center justify-center text-[#666] hover:text-white hover:border-red-500/50 transition"
+          className="absolute top-3 right-3 z-10 rounded-full bg-[#1a1a1a] border border-[#333] w-8 h-8 flex items-center justify-center text-[#888] hover:text-white hover:border-red-500/60 transition"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
         </button>
 
-        {node.kind === "person" && (() => {
-          const d = node.data;
-          return (
-            <div className="p-4 space-y-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#666]">Person</span>
-                  <button onClick={() => onFocusNode(isFocused ? null : node.id)}
-                    className={`ml-auto text-[8px] rounded px-1.5 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#666] hover:text-white"}`}>
-                    {isFocused ? "Unfocus" : "Focus"}
-                  </button>
-                </div>
-                <h3 className="text-sm font-bold text-white">{d.name}</h3>
-                {d.source && <p className="mt-0.5 text-[10px] text-[#777]">{d.source}</p>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5 text-[9px]">
-                {d.photoCount > 0 && (
-                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
-                    <span className="text-[#555]">Photos</span>
-                    <div className="font-semibold text-white">{d.photoCount}</div>
-                  </div>
-                )}
-                {d.aliases.length > 0 && (
-                  <div className="col-span-2 rounded border border-[#222] bg-[#111] px-2 py-1">
-                    <span className="text-[#555]">Aliases</span>
-                    <div className="font-semibold text-[#ccc]">{d.aliases.join(", ")}</div>
-                  </div>
-                )}
-              </div>
-
-              {relatedConns.length > 0 && (
-                <DetailConnections connections={relatedConns} currentNodeId={node.id} nodes={nodes} onSelectNode={onSelectNode} />
+        {/* Header — bigger photo + name row, then centered "SCORE 1234" */}
+        <div className="flex-shrink-0 px-6 pt-6 pb-5 border-b border-[#1c1c1c]">
+          <div className="flex items-center gap-6">
+            {/* Photo / placeholder — bigger */}
+            <div className="flex-shrink-0 w-36 h-36 rounded-xl overflow-hidden border border-[#2a2a2a] bg-[#111] shadow-lg shadow-black/50">
+              {headerBits.photoUrl ? (
+                <img
+                  src={headerBits.photoUrl}
+                  alt={headerBits.title}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[#333] text-4xl">·</div>
               )}
             </div>
-          );
-        })()}
-
-        {node.kind === "entity" && (() => {
-          const d = node.data;
-          const typeIcon = d.type === "place" ? "📍" : d.type === "organization" ? "🏢" : "📅";
-          const typeLabel = d.type === "place" ? "Place" : d.type === "organization" ? "Organization" : "Event";
-          const accentColor = d.type === "place" ? "teal" : d.type === "organization" ? "amber" : "purple";
-          return (
-            <div className="p-4 space-y-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px]">{typeIcon}</span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#666]">{typeLabel}</span>
-                  <button onClick={() => onFocusNode(isFocused ? null : node.id)}
-                    className={`ml-auto text-[8px] rounded px-1.5 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#666] hover:text-white"}`}>
-                    {isFocused ? "Unfocus" : "Focus"}
-                  </button>
-                </div>
-                <h3 className="text-sm font-bold text-white">{d.shortName || d.name}</h3>
-                {d.location && <p className="mt-0.5 text-[10px] text-[#777]">{d.location}</p>}
-                {d.dateRange && <p className="text-[10px] text-[#555] tabular-nums">{d.dateRange}</p>}
-              </div>
-
-              <div className="rounded border border-[#222] bg-[#111] p-2.5">
-                <p className="text-[10px] leading-relaxed text-[#999]">{d.description}</p>
-              </div>
-
-              {d.keyPeople.length > 0 && (
-                <div>
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-[#555]">Key People</span>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {d.keyPeople.map(name => (
-                      <span key={name} className="rounded bg-[#1a1a1a] border border-[#222] px-1.5 py-0.5 text-[8px] text-[#aaa]">{name}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {relatedConns.length > 0 && (
-                <DetailConnections connections={relatedConns} currentNodeId={node.id} nodes={nodes} onSelectNode={onSelectNode} />
+            {/* Name + subtitle */}
+            <div className="flex-1 min-w-0 pr-10">
+              <h2 className="text-5xl font-black text-white tracking-tight leading-[0.95] break-words">
+                {headerBits.title}
+              </h2>
+              {headerBits.subtitle && (
+                <p className="mt-2 text-[14px] text-[#888]">{headerBits.subtitle}</p>
               )}
             </div>
-          );
-        })()}
+          </div>
 
-        {/* Pinned Photos — every photo pinned to this node, larger than on the orbit */}
-        {hasPhotos && (
-          <div className="px-4 pb-3">
-            <div className="border-t border-[#222] pt-3">
-              <h4 className="mb-2 text-[8px] font-bold uppercase tracking-widest text-[#555]">
-                Pinned Photos ({allPhotos.length})
+          {/* Centered glowing green "SCORE 1234" */}
+          <div
+            className="mt-5 flex items-center justify-center gap-4 text-green-400 tabular-nums"
+            style={{
+              textShadow: "0 0 22px rgba(74,222,128,0.9), 0 0 48px rgba(74,222,128,0.55), 0 0 84px rgba(74,222,128,0.28)",
+            }}
+          >
+            <span className="text-3xl font-black uppercase tracking-[0.2em]">Score</span>
+            <span className="text-7xl font-black leading-none">{score}</span>
+          </div>
+
+          {/* Action row: connections dropdown + search */}
+          <div className="flex items-center justify-center gap-3 mt-5">
+            <button
+              type="button"
+              onClick={() => setConnectionsOpen((v) => !v)}
+              className={`flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-bold uppercase tracking-wide transition ${connectionsOpen ? "border-red-500/60 bg-red-600/10 text-red-300" : "border-[#2a2a2a] bg-[#111] text-[#bbb] hover:text-white hover:border-red-500/40"}`}
+            >
+              <span>Connections ({relatedConns.length})</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+                   style={{ transform: connectionsOpen ? "rotate(180deg)" : "none", transition: "transform 120ms" }}>
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              className={`flex items-center gap-2 rounded-md border px-4 py-2 text-[13px] font-bold uppercase tracking-wide transition ${searchOpen ? "border-red-500/60 bg-red-600/10 text-red-300" : "border-[#2a2a2a] bg-[#111] text-[#bbb] hover:text-white hover:border-red-500/40"}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <span>Search Evidence</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Extra metadata rows (description, key people, aliases) */}
+          {headerBits.extraRows}
+
+          {/* Connections dropdown */}
+          {connectionsOpen && relatedConns.length > 0 && (
+            <div className="space-y-1.5 rounded border border-[#222] bg-[#0a0a0a] p-2.5">
+              {relatedConns.map((conn) => {
+                const otherId = conn.sourceId === node.id ? conn.targetId : conn.sourceId;
+                const otherNode = nodes.find((n) => n.id === otherId);
+                const otherName = otherNode ? otherNode.data.name : "Unknown";
+                const pinCount = conn.pinnedEvidence?.length ?? 0;
+                return (
+                  <button
+                    key={conn.id}
+                    onClick={(e) => { e.stopPropagation(); onSelectNode(otherId); }}
+                    className="w-full flex items-center justify-between rounded border border-[#1e1e1e] bg-[#111] px-4 py-2.5 hover:border-red-500/40 hover:bg-[#151515] transition"
+                  >
+                    <span className="text-[15px] font-semibold text-white/90 truncate">{otherName}</span>
+                    {pinCount > 0 && (
+                      <span className="text-[11px] text-[#777] tabular-nums flex-shrink-0 ml-2">{pinCount} ev</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {connectionsOpen && relatedConns.length === 0 && (
+            <div className="text-[12px] text-[#555] italic px-1">No connections yet.</div>
+          )}
+
+          {/* Search — queries the whole archive, seeded with the node's name.
+              Tabs switch the type filter. Results are draggable onto the board
+              and show a large hover preview. */}
+          {searchOpen && (
+            <div className="rounded border border-[#2a2a2a] bg-[#0a0a0a]">
+              <div className="px-4 py-3 border-b border-[#1c1c1c]">
+                <input
+                  type="text"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search all evidence…"
+                  className="w-full bg-transparent outline-none text-[15px] text-white placeholder:text-[#555]"
+                />
+                <div className="mt-1 text-[10px] text-[#666] tabular-nums">
+                  {searchLoading ? "Searching…" : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`}
+                  {headerBits.aliasesForSearch.length > 0 && !searchLoading && (
+                    <span className="text-[#444]"> · aliases: {headerBits.aliasesForSearch.slice(0, 3).join(", ")}{headerBits.aliasesForSearch.length > 3 ? "…" : ""}</span>
+                  )}
+                </div>
+              </div>
+              {/* Type tabs */}
+              <div className="flex items-center gap-1 px-3 py-2 border-b border-[#1c1c1c]">
+                {([
+                  { key: "all" as const, label: "All" },
+                  { key: "photo" as const, label: "Photos", icon: "📸" },
+                  { key: "email" as const, label: "Emails", icon: "✉️" },
+                  { key: "document" as const, label: "Docs", icon: "📄" },
+                  { key: "imessage" as const, label: "iMessages", icon: "💬" },
+                ]).map((t) => {
+                  const active = searchTab === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setSearchTab(t.key)}
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide transition ${active ? "bg-red-600/20 text-red-300 border border-red-500/50" : "border border-transparent text-[#888] hover:text-white hover:bg-[#151515]"}`}
+                    >
+                      {"icon" in t && <span className="text-[12px]">{t.icon}</span>}
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {searchResults.length > 0 && (
+                <div className="max-h-[320px] overflow-y-auto divide-y divide-[#161616]">
+                  {searchResults.map((r) => (
+                    <div
+                      key={`${r.type}-${r.id}`}
+                      draggable
+                      onDragStart={(e) => {
+                        // Do NOT stopPropagation — the window-level dragstart
+                        // listener in BoardCanvas needs to see this event to
+                        // set dragKind="evidence" so handleDragOver will
+                        // resolve a drop target and handleDrop will pin.
+                        const payload = {
+                          id: r.id,
+                          kind: "evidence",
+                          data: {
+                            id: r.id,
+                            type: r.type,
+                            title: r.title,
+                            snippet: r.snippet,
+                            date: r.date,
+                            sender: r.sender,
+                            score: (r as SearchResult).score ?? 0,
+                            starCount: r.starCount,
+                          },
+                        };
+                        e.dataTransfer.setData("application/board-item", JSON.stringify(payload));
+                        e.dataTransfer.effectAllowed = "move";
+                        (e.currentTarget as HTMLElement).classList.add("dragging-source");
+                        setHoveredResult(null);
+                      }}
+                      onDragEnd={(e) => (e.currentTarget as HTMLElement).classList.remove("dragging-source")}
+                      onMouseEnter={(e) => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setHoveredResult({ r, x: rect.right + 12, y: rect.top });
+                      }}
+                      onMouseLeave={() => setHoveredResult(null)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openSplit({ id: r.id, type: r.type, title: r.title, snippet: r.snippet, date: r.date, sender: r.sender, starCount: r.starCount });
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-[#121212] transition flex items-start gap-2.5 cursor-grab active:cursor-grabbing"
+                    >
+                      <span className="text-[16px] flex-shrink-0">{EVIDENCE_TYPE_ICON[r.type]}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-bold text-white/90 truncate">{r.title}</p>
+                        {r.snippet && (
+                          <p className="text-[11px] text-[#777] truncate mt-0.5">{r.snippet}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {r.date && <span className="text-[10px] text-[#555] tabular-nums">{r.date}</span>}
+                          {r.sender && <span className="text-[10px] text-[#666] truncate">{r.sender}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Photos attached to this card */}
+          {hasPhotos && (
+            <div>
+              <h4 className="mb-2.5 text-[11px] font-bold uppercase tracking-widest text-[#666]">
+                Photos ({allPhotos.length})
               </h4>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-5 gap-2">
                 {allPhotos.map((ev) => (
-                  <DetailPhotoThumb key={ev.id} evidence={ev} onOpen={onOpenEvidence} />
+                  <DetailPhotoThumb key={ev.id} evidence={ev} onOpen={openSplit} />
                 ))}
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Other Evidence — grouped per category, each row opens FullScreenEvidenceViewer on click */}
-        {hasOther && (
-          <div className="px-4 pb-4">
-            <div className={`border-t border-[#222] pt-3 space-y-3 ${hasPhotos ? "mt-0" : ""}`}>
-              <h4 className="text-[8px] font-bold uppercase tracking-widest text-[#555]">
+          {/* Other Evidence */}
+          {hasOther && (
+            <div className="space-y-4">
+              <h4 className="text-[11px] font-bold uppercase tracking-widest text-[#666]">
                 Other Evidence ({otherCount})
               </h4>
-              {part.emails.length > 0 && (
-                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={part.emails} onOpen={onOpenEvidence} />
+              {allEmails.length > 0 && (
+                <DetailEvidenceBucket label="Emails" icon="✉️" accent="border-l-[#4A6D8C]" items={allEmails} onOpen={openSplit} />
               )}
-              {part.documents.length > 0 && (
-                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={part.documents} onOpen={onOpenEvidence} />
+              {allDocs.length > 0 && (
+                <DetailEvidenceBucket label="Documents" icon="📄" accent="border-l-[#888]" items={allDocs} onOpen={openSplit} />
               )}
-              {part.imessages.length > 0 && (
-                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={part.imessages} onOpen={onOpenEvidence} />
+              {allIms.length > 0 && (
+                <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={allIms} onOpen={openSplit} />
+              )}
+            </div>
+          )}
+
+          {totalRawCount === 0 && (
+            <div className="text-[12px] text-[#555] italic">No evidence attached yet.</div>
+          )}
+        </div>
+      </div>
+
+      {/* Hover preview for search results — large thumbnail for photos,
+          expanded metadata card for other evidence types. */}
+      {hoveredResult && (() => {
+        const r = hoveredResult.r;
+        const isPhoto = r.type === "photo";
+        const thumbUrl = isPhoto
+          ? `https://assets.getkino.com/cdn-cgi/image/width=500,quality=85,format=auto/photos-deboned/${r.id}`
+          : null;
+        // Clamp so the preview stays on-screen
+        const top = Math.min(hoveredResult.y, window.innerHeight - 340);
+        const left = Math.min(hoveredResult.x, window.innerWidth - 360);
+        return (
+          <div
+            className="fixed z-[1100] pointer-events-none rounded-xl border border-[#333] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80 overflow-hidden"
+            style={{ left, top, width: 340 }}
+          >
+            {isPhoto && thumbUrl && (
+              <img src={thumbUrl} alt={r.title} className="w-full object-cover" style={{ maxHeight: 320 }} />
+            )}
+            <div className="p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[13px]">{EVIDENCE_TYPE_ICON[r.type]}</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#666]">
+                  {EVIDENCE_TYPE_LABEL[r.type]}
+                </span>
+              </div>
+              <p className="text-[13px] font-bold text-white leading-tight">{r.title}</p>
+              {r.date && <p className="text-[10px] text-[#666] tabular-nums mt-0.5">{r.date}</p>}
+              {r.sender && <p className="text-[10px] text-[#777] mt-0.5 truncate">{r.sender}</p>}
+              {r.snippet && !isPhoto && (
+                <p className="text-[11px] text-[#999] mt-2 leading-relaxed line-clamp-6">{r.snippet}</p>
               )}
             </div>
           </div>
-        )}
+        );
+      })()}
 
-        {!hasAnyPinned && (
-          <div className="px-4 pb-4 text-[9px] text-[#555] italic">No evidence pinned yet.</div>
-        )}
-
-      </div>
-    </div>
+      {/* Split-screen evidence viewer docked to the right — opens when the
+          user clicks any evidence row inside the detail panel. */}
+      {splitEvidence && (
+        <FullScreenEvidenceViewer
+          evidence={splitEvidence}
+          onClose={() => setSplitEvidence(null)}
+          variant="side"
+        />
+      )}
+    </>,
+    document.body
   );
 }
 
@@ -4013,23 +4316,23 @@ function DetailEvidenceBucket({ label, icon, accent, items, onOpen }: {
 }) {
   return (
     <div>
-      <div className="mb-1 flex items-center gap-1.5">
-        <span className="text-[11px]">{icon}</span>
-        <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#666]">{label}</span>
-        <span className="text-[8px] text-[#444] tabular-nums">{items.length}</span>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-[14px]">{icon}</span>
+        <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[#777]">{label}</span>
+        <span className="text-[11px] text-[#555] tabular-nums">{items.length}</span>
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {items.map((ev) => (
           <button
             key={ev.id}
             type="button"
-            className={`w-full text-left rounded border border-[#222] border-l-4 ${accent} bg-[#0a0a0a] hover:bg-[#151515] hover:border-red-500/40 transition px-2 py-1.5`}
+            className={`w-full text-left rounded border border-[#222] border-l-4 ${accent} bg-[#0a0a0a] hover:bg-[#151515] hover:border-red-500/40 transition px-3 py-2`}
             onClick={(e) => { e.stopPropagation(); onOpen(ev); }}
           >
-            <p className="text-[10px] font-bold text-white/90 truncate">{ev.title}</p>
+            <p className="text-[13px] font-bold text-white/90 truncate">{ev.title}</p>
             <div className="flex items-center gap-2 mt-0.5">
-              {ev.date && <span className="text-[8px] text-[#666] tabular-nums">{ev.date}</span>}
-              {ev.sender && <span className="text-[8px] text-[#777] truncate flex-1">{ev.sender}</span>}
+              {ev.date && <span className="text-[10px] text-[#666] tabular-nums">{ev.date}</span>}
+              {ev.sender && <span className="text-[10px] text-[#777] truncate flex-1">{ev.sender}</span>}
             </div>
           </button>
         ))}
@@ -4387,7 +4690,7 @@ function ConnectionFocusView({ connection, source, target, onClose }: {
 
 /* ─── Full-Screen Evidence Viewer (opens on pinned chip double-click) ────── */
 
-function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvidence; onClose: () => void }) {
+function FullScreenEvidenceViewer({ evidence, onClose, variant = "fullscreen" }: { evidence: PinnedEvidence; onClose: () => void; variant?: "fullscreen" | "side" }) {
   const [full, setFull] = useState<Evidence | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -4410,6 +4713,133 @@ function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvide
     ? `${PHOTO_CDN_URL}/cdn-cgi/image/width=1400,quality=90,format=auto/photos-deboned/${evidence.id}`
     : null;
 
+  const inner = (
+    <>
+      {/* Header */}
+      <div className="flex-shrink-0 border-b border-[#1a1a1a] px-5 py-4 flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[#666]">
+              {EVIDENCE_TYPE_LABEL[evidence.type]}
+            </span>
+            {evidence.date && <span className="text-[10px] text-[#555] tabular-nums">{evidence.date}</span>}
+          </div>
+          <h2 className="text-lg font-black text-white leading-tight truncate">{evidence.title}</h2>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 rounded bg-[#222] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition"
+        >
+          ESC ×
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {isPhoto && photoFullUrl && (
+          <div className="bg-black flex items-center justify-center">
+            <img
+              src={photoFullUrl}
+              alt={evidence.title}
+              className="max-w-full max-h-[70vh] object-contain"
+            />
+          </div>
+        )}
+
+        {loading ? (
+          <div className="p-10 flex items-center justify-center">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse mr-2" />
+            <span className="text-[11px] text-[#555]">Loading…</span>
+          </div>
+        ) : full ? (
+          <div className="p-5">
+            {full.type === "email" && (
+              <div>
+                <div className="space-y-1.5 text-[12px] mb-4">
+                  <div className="flex gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">From</span>
+                    <span className={`font-bold ${full.epsteinIsSender ? "text-red-400" : "text-white"}`}>
+                      {full.sender}
+                      {full.senderName && full.senderName !== full.sender && (
+                        <span className="text-[#555] font-normal ml-1">({full.senderName})</span>
+                      )}
+                    </span>
+                  </div>
+                  {full.recipients.length > 0 && (
+                    <div className="flex gap-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">To</span>
+                      <span className="text-[#aaa] break-all">{full.recipients.join(", ")}</span>
+                    </div>
+                  )}
+                  {full.cc.length > 0 && (
+                    <div className="flex gap-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">CC</span>
+                      <span className="text-[#888] break-all">{full.cc.join(", ")}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                  {full.body || "No content available"}
+                </div>
+              </div>
+            )}
+            {full.type === "document" && (
+              <div>
+                <div className="flex flex-wrap gap-3 text-[11px] mb-4">
+                  {full.volume && (
+                    <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                      <span className="text-[#555]">Volume:</span> <span className="text-white font-bold">{full.volume}</span>
+                    </div>
+                  )}
+                  <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                    <span className="text-[#555]">Pages:</span> <span className="text-white font-bold">{full.pageCount}</span>
+                  </div>
+                </div>
+                <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                  {full.fulltext || full.snippet || "No content available"}
+                </div>
+              </div>
+            )}
+            {full.type === "imessage" && (
+              <div>
+                <p className="text-[11px] text-[#888] mb-2">From {full.sender}</p>
+                <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                  {full.body || "No content available"}
+                </div>
+              </div>
+            )}
+            {full.type === "photo" && full.imageDescription && (
+              <p className="text-[12px] text-[#aaa] leading-relaxed">{full.imageDescription}</p>
+            )}
+          </div>
+        ) : (
+          <div className="p-5">
+            <p className="text-[12px] text-[#777] leading-relaxed whitespace-pre-wrap">{evidence.snippet}</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  // Side variant: docked to the right as a split-screen companion. No backdrop.
+  // Spans the full right half of the viewport so it sits flush with the
+  // NodeDetailCard on the left — no middle gap.
+  if (variant === "side") {
+    return (
+      <div
+        data-detail-root
+        className="fixed z-[1050] right-4 top-[6vh] bottom-[6vh] rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80 flex flex-col overflow-hidden"
+        style={{ left: "50vw" }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {inner}
+      </div>
+    );
+  }
+
+  // Fullscreen variant: full modal overlay.
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-6"
@@ -4419,110 +4849,7 @@ function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvide
         className="relative w-full max-w-4xl max-h-[90vh] rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl shadow-black/70 flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-[#1a1a1a] px-5 py-4 flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
-              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[#666]">
-                {EVIDENCE_TYPE_LABEL[evidence.type]}
-              </span>
-              {evidence.date && <span className="text-[10px] text-[#555] tabular-nums">{evidence.date}</span>}
-            </div>
-            <h2 className="text-lg font-black text-white leading-tight truncate">{evidence.title}</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex-shrink-0 rounded bg-[#222] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition"
-          >
-            ESC ×
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {isPhoto && photoFullUrl && (
-            <div className="bg-black flex items-center justify-center">
-              <img
-                src={photoFullUrl}
-                alt={evidence.title}
-                className="max-w-full max-h-[70vh] object-contain"
-              />
-            </div>
-          )}
-
-          {loading ? (
-            <div className="p-10 flex items-center justify-center">
-              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse mr-2" />
-              <span className="text-[11px] text-[#555]">Loading…</span>
-            </div>
-          ) : full ? (
-            <div className="p-5">
-              {full.type === "email" && (
-                <div>
-                  <div className="space-y-1.5 text-[12px] mb-4">
-                    <div className="flex gap-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">From</span>
-                      <span className={`font-bold ${full.epsteinIsSender ? "text-red-400" : "text-white"}`}>
-                        {full.sender}
-                        {full.senderName && full.senderName !== full.sender && (
-                          <span className="text-[#555] font-normal ml-1">({full.senderName})</span>
-                        )}
-                      </span>
-                    </div>
-                    {full.recipients.length > 0 && (
-                      <div className="flex gap-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">To</span>
-                        <span className="text-[#aaa] break-all">{full.recipients.join(", ")}</span>
-                      </div>
-                    )}
-                    {full.cc.length > 0 && (
-                      <div className="flex gap-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">CC</span>
-                        <span className="text-[#888] break-all">{full.cc.join(", ")}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
-                    {full.body || "No content available"}
-                  </div>
-                </div>
-              )}
-              {full.type === "document" && (
-                <div>
-                  <div className="flex flex-wrap gap-3 text-[11px] mb-4">
-                    {full.volume && (
-                      <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
-                        <span className="text-[#555]">Volume:</span> <span className="text-white font-bold">{full.volume}</span>
-                      </div>
-                    )}
-                    <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
-                      <span className="text-[#555]">Pages:</span> <span className="text-white font-bold">{full.pageCount}</span>
-                    </div>
-                  </div>
-                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
-                    {full.fulltext || full.snippet || "No content available"}
-                  </div>
-                </div>
-              )}
-              {full.type === "imessage" && (
-                <div>
-                  <p className="text-[11px] text-[#888] mb-2">From {full.sender}</p>
-                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
-                    {full.body || "No content available"}
-                  </div>
-                </div>
-              )}
-              {full.type === "photo" && full.imageDescription && (
-                <p className="text-[12px] text-[#aaa] leading-relaxed">{full.imageDescription}</p>
-              )}
-            </div>
-          ) : (
-            <div className="p-5">
-              <p className="text-[12px] text-[#777] leading-relaxed whitespace-pre-wrap">{evidence.snippet}</p>
-            </div>
-          )}
-        </div>
+        {inner}
       </div>
     </div>
   );
