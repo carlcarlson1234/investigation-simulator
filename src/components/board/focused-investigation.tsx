@@ -1,13 +1,24 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { Person, SearchResult, ArchiveStats, Evidence } from "@/lib/types";
+import type { Person, SearchResult, ArchiveStats, Evidence, EvidenceType } from "@/lib/types";
 import type {
   BoardNode,
   BoardConnection,
-  BoardEvidenceNode,
   FocusState,
 } from "@/lib/board-types";
+
+// Legacy local type: focused-investigation still tracks "evidence sub-nodes" internally.
+// These no longer go on the real board; they're only used in this modal's working state.
+// TODO: rework to pin evidence to connections when user links them.
+type BoardEvidenceNode = {
+  kind: "evidence";
+  id: string;
+  evidenceType: EvidenceType;
+  data: SearchResult;
+  position: { x: number; y: number };
+};
+type FocusNode = BoardNode | BoardEvidenceNode;
 import type { FocusEvidenceItem } from "@/app/api/focus-evidence/route";
 import { BoardCanvas } from "./board-canvas";
 import type { BoardCanvasHandle } from "./board-canvas";
@@ -64,7 +75,7 @@ export function FocusedInvestigation({
   const [completedResult, setCompletedResult] = useState<InvestigationResult | null>(null);
 
   // ─── Local board state ────────────────────────────────────────────────
-  const [focusNodes, setFocusNodes] = useState<BoardNode[]>(() => {
+  const [focusNodes, setFocusNodes] = useState<FocusNode[]>(() => {
     const nodes: BoardNode[] = [
       { kind: "person" as const, id: person.id, data: person, position: { x: PERSON_X, y: PERSON_Y } },
     ];
@@ -186,7 +197,7 @@ export function FocusedInvestigation({
         items.forEach((item, i) => {
           revealTimers.push(setTimeout(() => {
             const angle = -Math.PI / 2 + (i / items.length) * Math.PI * 2;
-            const node: BoardNode = {
+            const node: BoardEvidenceNode = {
               kind: "evidence" as const, id: item.id, evidenceType: item.type, data: item as SearchResult,
               position: { x: PERSON_X + Math.cos(angle) * OUTER_RADIUS, y: PERSON_Y + Math.sin(angle) * OUTER_RADIUS },
             };
@@ -590,10 +601,10 @@ export function FocusedInvestigation({
           )}
           {(phase === "investigating" || phase === "summary") && (
             <BoardCanvas ref={canvasRef} archiveTitle={`Investigating ${person.name}`}
-              nodes={focusNodes} connections={focusConnections}
+              nodes={focusNodes.filter((n): n is BoardNode => n.kind !== "evidence")} connections={focusConnections}
               selectedNodeId={selectedNodeId} focusedNodeId={focusedNodeId} focusState={focusState} connectingFrom={connectingFrom}
               onSelectNode={handleSelectNode} onFocusNode={handleFocusNode} onMoveNode={handleMoveNode} onBatchMoveNodes={handleBatchMoveNodes}
-              onAddEvidence={noopResult} onAddPerson={noopStr}
+              onAddPerson={noopStr}
               onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} onDirectConnection={handleDirectConnection}
               onOpenSubjectView={noopStr} onOpenPhotoView={handleOpenPhotoView} initialHideOrphans={false} stats={stats} score={score} />
           )}

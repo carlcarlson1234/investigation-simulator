@@ -333,6 +333,64 @@ body {
   transition: box-shadow 0.15s ease-out !important;
 }
 
+/* Evidence drop-target glow — pulses on all cards/connections while evidence is being dragged */
+.board-node--evidence-drop-target {
+  animation: evidence-target-pulse 1.2s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+.board-node--evidence-drop-active {
+  animation: evidence-target-active 0.6s ease-in-out infinite !important;
+  border-radius: 0.75rem;
+}
+@keyframes evidence-target-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px 4px rgba(251, 191, 36, 0.35), 0 0 40px 10px rgba(251, 191, 36, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 32px 8px rgba(251, 191, 36, 0.55), 0 0 60px 16px rgba(251, 191, 36, 0.22);
+  }
+}
+@keyframes evidence-target-active {
+  0%, 100% {
+    box-shadow: 0 0 30px 8px rgba(251, 191, 36, 0.9), 0 0 60px 20px rgba(251, 191, 36, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 50px 14px rgba(251, 191, 36, 1), 0 0 90px 30px rgba(251, 191, 36, 0.55);
+  }
+}
+
+.board-connection--evidence-drop-target {
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.9)) drop-shadow(0 0 16px rgba(34, 211, 238, 0.45));
+  animation: evidence-line-pulse 1.2s ease-in-out infinite;
+}
+@keyframes evidence-line-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Power-up animation — plays when evidence is pinned to a connection */
+.board-connection--powered-up {
+  filter: drop-shadow(0 0 14px rgba(251, 191, 36, 1)) drop-shadow(0 0 32px rgba(251, 191, 36, 0.8));
+  transform-origin: center;
+  animation: connection-power-up 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes connection-power-up {
+  0% {
+    opacity: 0;
+    stroke-width: 0;
+  }
+  25% {
+    opacity: 1;
+    stroke-width: inherit;
+  }
+  60% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Card repelling during drag */
 .board-node--repelling {
   transition: transform 0.15s ease-out !important;

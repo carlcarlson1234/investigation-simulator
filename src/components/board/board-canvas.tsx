@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
-import type { BoardNode, BoardEvidenceNode, BoardConnection, FocusState } from "@/lib/board-types";
+import type { BoardNode, BoardConnection, FocusState, PinnedEvidence } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
 import type { SeedEntity } from "@/lib/entity-seed-data";
@@ -44,9 +44,10 @@ interface BoardCanvasProps {
   onFocusNode: (id: string | null) => void;
   onMoveNode: (id: string, x: number, y: number) => void;
   onBatchMoveNodes?: (moves: Record<string, { x: number; y: number }>) => void;
-  onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   onAddPerson: (personId: string, x?: number, y?: number) => void;
   onAddEntity?: (entity: SeedEntity, x?: number, y?: number) => void;
+  onPinEvidenceToCard?: (cardId: string, result: SearchResult) => void;
+  onPinEvidenceToConnection?: (connId: string, result: SearchResult) => void;
   onStartConnection: (fromId: string) => void;
   onCompleteConnection: (toId: string) => void;
   onDirectConnection?: (fromId: string, toId: string) => void;
@@ -78,9 +79,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onFocusNode,
     onMoveNode,
     onBatchMoveNodes,
-    onAddEvidence,
     onAddPerson,
     onAddEntity,
+    onPinEvidenceToCard,
+    onPinEvidenceToConnection,
     onStartConnection,
     onCompleteConnection,
     onDirectConnection,
@@ -151,12 +153,45 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     nodeId: string; offsetX: number; offsetY: number;
   } | null>(null);
 
-  /* ── Collapsed evidence groups ─────────────────────────────────────────── */
-  // Key = "personId:evidenceType", value = whether collapsed
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  /* ── Collapsed evidence groups (legacy no-op, evidence is now pinned) ──── */
+  const collapsedGroups = useMemo<Record<string, boolean>>(() => ({}), []);
 
   /* ── Selected connection ────────────────────────────────────────────────── */
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
+  const [focusedPinnedEvidence, setFocusedPinnedEvidence] = useState<PinnedEvidence | null>(null);
+  const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
+  // Track connections that just gained evidence (power-up animation)
+  const [poweredUpConnectionIds, setPoweredUpConnectionIds] = useState<Set<string>>(new Set());
+  const prevPinnedCountsRef = useRef<Map<string, number>>(new Map());
+
+  // Detect when a connection gains pinned evidence → trigger power-up animation
+  useEffect(() => {
+    const next = new Set<string>();
+    for (const c of connections) {
+      const count = c.pinnedEvidence?.length ?? 0;
+      const prev = prevPinnedCountsRef.current.get(c.id) ?? 0;
+      if (count > prev) next.add(c.id);
+      prevPinnedCountsRef.current.set(c.id, count);
+    }
+    // Drop entries for deleted connections
+    for (const id of Array.from(prevPinnedCountsRef.current.keys())) {
+      if (!connections.find((c) => c.id === id)) {
+        prevPinnedCountsRef.current.delete(id);
+      }
+    }
+    if (next.size > 0) {
+      setPoweredUpConnectionIds((curr) => new Set([...curr, ...next]));
+      const t = setTimeout(() => {
+        setPoweredUpConnectionIds((curr) => {
+          const updated = new Set(curr);
+          for (const id of next) updated.delete(id);
+          return updated;
+        });
+      }, 900);
+      return () => clearTimeout(t);
+    }
+  }, [connections]);
   const selectedConnection = connections.find(c => c.id === selectedConnectionId) || null;
 
   /* ── Connect-drag state (handle-based) ──────────────────────────────────── */
@@ -176,86 +211,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
 
-  const toggleCollapse = useCallback((personId: string, evType: EvidenceType) => {
-    const key = `${personId}:${evType}`;
-    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
-  }, []);
+  const toggleCollapse = useCallback((_personId: string, _evType: EvidenceType) => {}, []);
+  const expandAll = useCallback(() => {}, []);
+  const hasCollapsed = false;
+  const expandAllGroups = useCallback(() => {}, []);
 
-  const expandAll = useCallback(() => {
-    setCollapsedGroups(prev => {
-      const next: Record<string, boolean> = {};
-      for (const key of Object.keys(prev)) next[key] = false;
-      return next;
-    });
-  }, []);
-
-  const hasCollapsed = Object.values(collapsedGroups).some(Boolean);
-  const expandAllGroups = useCallback(() => {
-    setCollapsedGroups((prev) => {
-      const next: Record<string, boolean> = {};
-      for (const key of Object.keys(prev)) next[key] = false;
-      return next;
-    });
-  }, []);
-
-  /* ── Compute evidence grouping per person ───────────────────────────────── */
-  type EvidenceGroup = { type: EvidenceType; nodes: BoardEvidenceNode[] };
-  const personEvidenceGroups = useMemo((): Record<string, EvidenceGroup[]> => {
-    const groups: Record<string, EvidenceGroup[]> = {};
-    // For each person node, find connected evidence nodes grouped by type
-    const personNodes = nodes.filter(n => n.kind === "person");
-    for (const pn of personNodes) {
-      const connectedEvidenceIds = new Set(
-        connections
-          .filter(c => c.sourceId === pn.id || c.targetId === pn.id)
-          .map(c => c.sourceId === pn.id ? c.targetId : c.sourceId)
-      );
-      const evidenceNodes = nodes.filter(
-        (n): n is BoardEvidenceNode => n.kind === "evidence" && connectedEvidenceIds.has(n.id)
-      );
-      // Group by type
-      const byType: Record<string, BoardEvidenceNode[]> = {};
-      for (const en of evidenceNodes) {
-        if (!byType[en.evidenceType]) byType[en.evidenceType] = [];
-        byType[en.evidenceType].push(en);
-      }
-      groups[pn.id] = Object.entries(byType).map(([type, nodes]) => ({
-        type: type as EvidenceType,
-        nodes,
-      }));
-    }
-    return groups;
-  }, [nodes, connections]);
-
-  // Which evidence node IDs are currently hidden (collapsed into their group)
-  // Auto-collapse evidence groups with 3+ items
-  useEffect(() => {
-    const updates: Record<string, boolean> = {};
-    for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
-      for (const group of groups) {
-        const key = `${personId}:${group.type}`;
-        if (group.nodes.length >= 3 && collapsedGroups[key] === undefined) {
-          updates[key] = true;
-        }
-      }
-    }
-    if (Object.keys(updates).length > 0) {
-      setCollapsedGroups(prev => ({ ...prev, ...updates }));
-    }
-  }, [personEvidenceGroups]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const hiddenNodeIds = useMemo(() => {
-    const hidden = new Set<string>();
-    for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
-      for (const group of groups) {
-        const key = `${personId}:${group.type}`;
-        if (collapsedGroups[key] && group.nodes.length >= 2) {
-          for (const n of group.nodes) hidden.add(n.id);
-        }
-      }
-    }
-    return hidden;
-  }, [personEvidenceGroups, collapsedGroups]);
+  // No evidence nodes anymore — hiddenNodeIds stays for API compatibility.
+  const hiddenNodeIds = useMemo(() => new Set<string>(), []);
 
   // Orphan nodes — no connections at all
   const orphanNodeIds = useMemo(() => {
@@ -271,21 +233,21 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     return orphans;
   }, [nodes, connections]);
 
-  // Connected evidence counts per person (for display on card)
+  // Pinned evidence counts per node (from pinnedEvidence arrays on nodes)
   const personEvidenceCounts = useMemo(() => {
     const counts: Record<string, { emails: number; documents: number; photos: number; total: number }> = {};
-    for (const [personId, groups] of Object.entries(personEvidenceGroups)) {
-      const c = { emails: 0, documents: 0, photos: 0, total: 0 };
-      for (const g of groups) {
-        if (g.type === "email") c.emails = g.nodes.length;
-        else if (g.type === "document") c.documents = g.nodes.length;
-        else if (g.type === "photo") c.photos = g.nodes.length;
-        c.total += g.nodes.length;
+    for (const n of nodes) {
+      const pinned = n.pinnedEvidence || [];
+      const c = { emails: 0, documents: 0, photos: 0, total: pinned.length };
+      for (const e of pinned) {
+        if (e.type === "email") c.emails += 1;
+        else if (e.type === "document") c.documents += 1;
+        else if (e.type === "photo") c.photos += 1;
       }
-      counts[personId] = c;
+      counts[n.id] = c;
     }
     return counts;
-  }, [personEvidenceGroups]);
+  }, [nodes]);
 
   // Connection count per person (for node scaling)
   const personConnectionCounts = useMemo(() => {
@@ -2246,16 +2208,110 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   // ─── Drop ─────────────────────────────────────────────────────────────
 
+  // Hit-test helper: find a connection line near a point in world coordinates.
+  const hitTestConnection = useCallback((px: number, py: number, conns: BoardConnection[], nds: BoardNode[], getSize: (n: BoardNode) => { w: number; h: number }): BoardConnection | null => {
+    const TOLERANCE = 80; // generous: connection drop zones should be forgiving
+    let best: { conn: BoardConnection; dist: number } | null = null;
+    for (const conn of conns) {
+      const a = nds.find((n) => n.id === conn.sourceId);
+      const b = nds.find((n) => n.id === conn.targetId);
+      if (!a || !b) continue;
+      const sa = getSize(a), sb = getSize(b);
+      const ax = a.position.x + sa.w / 2;
+      const ay = a.position.y + sa.h / 2;
+      const bx = b.position.x + sb.w / 2;
+      const by = b.position.y + sb.h / 2;
+      const dx = bx - ax, dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) continue;
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+      const cx = ax + t * dx, cy = ay + t * dy;
+      const dist = Math.hypot(px - cx, py - cy);
+      if (dist < TOLERANCE && (!best || dist < best.dist)) {
+        best = { conn, dist };
+      }
+    }
+    return best?.conn ?? null;
+  }, []);
+
+  // During drag: is the user dragging evidence (pinnable) or a person/entity (placeable)?
+  const [dragKind, setDragKind] = useState<"evidence" | "placeable" | null>(null);
+  // Live active drop target while dragging evidence
+  const [activeDropTarget, setActiveDropTarget] = useState<
+    | { kind: "card"; id: string }
+    | { kind: "connection"; id: string }
+    | null
+  >(null);
+
+  // Global drag listeners to detect what's being dragged (we can't read data in dragover)
+  useEffect(() => {
+    const onDragStart = (e: DragEvent) => {
+      try {
+        const raw = e.dataTransfer?.getData("application/board-item");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setDragKind(parsed.kind === "evidence" ? "evidence" : "placeable");
+        }
+      } catch { /* ignore */ }
+    };
+    const onDragEnd = () => setDragKind(null);
+    window.addEventListener("dragstart", onDragStart);
+    window.addEventListener("dragend", onDragEnd);
+    return () => {
+      window.removeEventListener("dragstart", onDragStart);
+      window.removeEventListener("dragend", onDragEnd);
+    };
+  }, []);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDropHighlight(true);
+
+    // Only do target resolution for evidence drags
+    if (dragKind !== "evidence") return;
+
+    // Check if the drag target is over a card element
+    let cardEl: HTMLElement | null = e.target as HTMLElement | null;
+    while (cardEl && !cardEl.dataset?.nodeId) cardEl = cardEl.parentElement;
+    if (cardEl?.dataset?.nodeId) {
+      setActiveDropTarget({ kind: "card", id: cardEl.dataset.nodeId });
+      return;
+    }
+
+    // Otherwise hit-test connections at world coordinates
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const rect = vp.getBoundingClientRect();
+    const wx = (e.clientX - rect.left + vp.scrollLeft) / zoom;
+    const wy = (e.clientY - rect.top + vp.scrollTop) / zoom;
+    const hitConn = hitTestConnection(wx, wy, connections, nodes, getScaledCardSize);
+    if (hitConn) {
+      setActiveDropTarget({ kind: "connection", id: hitConn.id });
+    } else {
+      setActiveDropTarget(null);
+    }
+  }, [dragKind, zoom, connections, nodes, hitTestConnection, getScaledCardSize]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if we actually leave the viewport (not just a child)
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const r = vp.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+      setDropHighlight(false);
+      setDragKind(null);
+      setActiveDropTarget(null);
+    }
   }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDropHighlight(false);
+      setDragKind(null);
+      const currentTarget = activeDropTarget;
+      setActiveDropTarget(null);
       const raw = e.dataTransfer.getData("application/board-item");
       if (!raw) return;
       try {
@@ -2266,26 +2322,34 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         let x = Math.max(0, (e.clientX - rect.left + vp.scrollLeft) / zoom - 90);
         let y = Math.max(0, (e.clientY - rect.top + vp.scrollTop) / zoom - 45);
 
-        // First-placement: place where the user dropped, no forced snap
-
         let droppedId: string | null = null;
+
         if (parsed.kind === "person") {
           onAddPerson(parsed.id, x, y);
           droppedId = parsed.id;
           if (firstPlacementMode && onFirstPlacement) {
             onFirstPlacement(parsed.id);
           }
-        } else if (parsed.kind === "evidence" && parsed.data) {
-          onAddEvidence(parsed.data as SearchResult, x, y);
-          droppedId = parsed.data.id ?? parsed.id;
         } else if (parsed.kind === "entity" && onAddEntity) {
           const entity = SEED_ENTITIES.find((e: SeedEntity) => e.id === parsed.id);
           if (entity) {
             onAddEntity(entity, x, y);
             droppedId = entity.id;
           }
+        } else if (parsed.kind === "evidence" && parsed.data) {
+          // Evidence pins to the currently-highlighted drop target.
+          // We trust the live hit-test from handleDragOver for a clean delineation.
+          const evidence = parsed.data as SearchResult;
+          if (currentTarget?.kind === "card" && onPinEvidenceToCard) {
+            onPinEvidenceToCard(currentTarget.id, evidence);
+            droppedId = evidence.id;
+          } else if (currentTarget?.kind === "connection" && onPinEvidenceToConnection) {
+            onPinEvidenceToConnection(currentTarget.id, evidence);
+            droppedId = evidence.id;
+          }
         }
-        // Bounce + ripple + sound for intake drops
+
+        // Bounce + ripple + sound for successful drops
         if (droppedId) {
           playSound("drop");
           setJustDroppedNodeId(droppedId);
@@ -2295,7 +2359,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       } catch { /* ignore */ }
     },
-    [zoom, onAddEvidence, onAddPerson, onAddEntity, firstPlacementMode, onFirstPlacement, playSound]
+    [zoom, onAddPerson, onAddEntity, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
   );
 
   // Returns the bottom-edge center of the card (where the handle is)
@@ -2375,7 +2439,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             Focused: {(() => {
               const n = nodes.find((n) => n.id === focusedNodeId);
               if (!n) return "Unknown";
-              return n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title;
+              return n.data.name;
             })()}
           </span>
           <button onClick={() => onFocusNode(null)} className="ml-auto text-xs font-bold text-red-500/60 hover:text-red-400 transition uppercase tracking-wider">
@@ -2450,7 +2514,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             });
           }}
           onDragOver={handleDragOver}
-          onDragLeave={() => setDropHighlight(false)}
+          onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
           {/*
@@ -2576,19 +2640,66 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
                     return (
                       <g key={bundleKey}>
-                        {/* Invisible fat hit area for clicking */}
+                        {/* Invisible fat hit area for clicking / hovering */}
                         <path
                           d={curvePath}
                           stroke="transparent"
-                          strokeWidth={20}
+                          strokeWidth={28}
                           fill="none"
                           style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                          onMouseEnter={() => setHoveredConnectionId(primary.id)}
+                          onMouseLeave={() => setHoveredConnectionId((curr) => curr === primary.id ? null : curr)}
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedConnectionId(primary.id === selectedConnectionId ? null : primary.id);
                             onSelectNode(null);
                           }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setFocusedConnectionId(primary.id);
+                            setSelectedConnectionId(null);
+                          }}
                         />
+                        {/* Hover glow — makes it obvious the line is clickable */}
+                        {hoveredConnectionId && bundleConns.some(c => c.id === hoveredConnectionId) && (
+                          <path
+                            d={curvePath}
+                            stroke="#f87171"
+                            strokeWidth={Math.max(bundledWidth + 10, 16)}
+                            strokeOpacity={0.4}
+                            fill="none"
+                            strokeLinecap="round"
+                            filter="url(#string-glow-strong)"
+                            className="pointer-events-none"
+                          />
+                        )}
+                        {/* Power-up halo — plays briefly when new evidence is pinned */}
+                        {bundleConns.some(c => poweredUpConnectionIds.has(c.id)) && (
+                          <path
+                            d={curvePath}
+                            stroke="#fbbf24"
+                            strokeWidth={Math.max(bundledWidth + 20, 24)}
+                            strokeOpacity={0.85}
+                            fill="none"
+                            strokeLinecap="round"
+                            className="board-connection--powered-up pointer-events-none"
+                          />
+                        )}
+                        {/* Evidence-drop halo — glows cyan while dragging evidence over connections */}
+                        {dragKind === "evidence" && (() => {
+                          const isActive = bundleConns.some(c => activeDropTarget?.kind === "connection" && activeDropTarget.id === c.id);
+                          return (
+                            <path
+                              d={curvePath}
+                              stroke="#22d3ee"
+                              strokeWidth={isActive ? Math.max(bundledWidth + 18, 24) : Math.max(bundledWidth + 8, 14)}
+                              strokeOpacity={isActive ? 0.8 : 0.4}
+                              fill="none"
+                              strokeLinecap="round"
+                              className="board-connection--evidence-drop-target pointer-events-none"
+                            />
+                          );
+                        })()}
                         {/* Visible line */}
                         <path
                           id={`conn-path-${primary.id}`}
@@ -2661,6 +2772,75 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 })()}
               </svg>
 
+              {/* Pinned evidence distributed along each connection line.
+                  Items alternate above/below (perpendicular) with a small
+                  connector line to their anchor point on the line. */}
+              {connections.filter(c => c.pinnedEvidence && c.pinnedEvidence.length > 0).map((conn) => {
+                const from = getNodeCenter(conn.sourceId);
+                const to = getNodeCenter(conn.targetId);
+                if (!from || !to) return null;
+                const pinned = conn.pinnedEvidence!;
+                const dx = to.cx - from.cx;
+                const dy = to.cy - from.cy;
+                const len = Math.hypot(dx, dy) || 1;
+                // Perpendicular unit vector
+                const perpX = -dy / len;
+                const perpY = dx / len;
+                const OFFSET = 46; // how far from the line
+                const CHIP = 56; // chip size (square)
+                return (
+                  <div key={`pinned-${conn.id}`} className="contents">
+                    {pinned.map((ev, i) => {
+                      // Distribute along the line: t = (i+1)/(n+1)
+                      const t = (i + 1) / (pinned.length + 1);
+                      const ax = from.cx + dx * t;
+                      const ay = from.cy + dy * t;
+                      const side = i % 2 === 0 ? 1 : -1;
+                      const px = ax + perpX * OFFSET * side;
+                      const py = ay + perpY * OFFSET * side;
+                      return (
+                        <div key={`${conn.id}-${ev.id}`} className="contents">
+                          {/* Connector line from anchor on the main line to the chip */}
+                          <svg
+                            className="absolute pointer-events-none z-[14]"
+                            style={{
+                              left: Math.min(ax, px) - 2,
+                              top: Math.min(ay, py) - 2,
+                              width: Math.abs(px - ax) + 4,
+                              height: Math.abs(py - ay) + 4,
+                              overflow: "visible",
+                            }}
+                          >
+                            <line
+                              x1={ax - Math.min(ax, px) + 2}
+                              y1={ay - Math.min(ay, py) + 2}
+                              x2={px - Math.min(ax, px) + 2}
+                              y2={py - Math.min(ay, py) + 2}
+                              stroke="#ef4444"
+                              strokeWidth={1.5}
+                              strokeOpacity={0.6}
+                            />
+                            <circle
+                              cx={ax - Math.min(ax, px) + 2}
+                              cy={ay - Math.min(ay, py) + 2}
+                              r={2.5}
+                              fill="#ef4444"
+                            />
+                          </svg>
+                          {/* Square chip */}
+                          <div
+                            className="absolute z-[15]"
+                            style={{ left: px - CHIP / 2, top: py - CHIP / 2, width: CHIP, height: CHIP }}
+                          >
+                            <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
               {/* Connection editor popup */}
               {selectedConnection && (() => {
                 const from = getNodeCenter(selectedConnection.sourceId);
@@ -2674,7 +2854,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     x={mx}
                     y={my}
                     nodes={nodes}
-                    onUpdate={(updates) => onUpdateConnection?.(selectedConnection.id, updates)}
+                    onViewDetails={() => setFocusedConnectionId(selectedConnection.id)}
                     onDelete={() => {
                       onDeleteConnection?.(selectedConnection.id);
                       setSelectedConnectionId(null);
@@ -2727,6 +2907,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     } ${isConnectTarget ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-400 hover:shadow-lg hover:shadow-red-500/20 rounded-xl" : ""
                     } ${connectingFrom && connectingFrom !== node.id ? "ring-1 ring-dashed ring-red-500/30 hover:ring-red-500/60 rounded-xl" : ""
                     } ${reintegratingIds?.has(node.id) ? "reintegrated-node rounded-xl" : ""
+                    } ${dragKind === "evidence" ? "board-node--evidence-drop-target" : ""
+                    } ${activeDropTarget?.kind === "card" && activeDropTarget.id === node.id ? "board-node--evidence-drop-active" : ""
                     }`}
                     style={{
                       left: node.position.x, top: node.position.y,
@@ -2785,58 +2967,21 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (node.kind === "person") onOpenSubjectView(node.id);
-                      else if (node.kind === "evidence" && node.evidenceType === "photo") onOpenPhotoView(node.id);
                       else onFocusNode(node.id);
                     }}
                   >
-                    {/* Evidence collapse tabs — top of person cards */}
-                    {node.kind === "person" && zoom >= 0.6 && (() => {
-                      const groups = personEvidenceGroups[node.id] || [];
-                      const tabs = groups.filter(g => g.nodes.length >= 2);
-                      if (tabs.length === 0) return null;
-                      const icons: Record<string, string> = { email: "✉️", document: "📄", photo: "📸", imessage: "💬" };
-                      return (
-                        <div className="absolute -top-5 left-0 right-0 flex items-center justify-center gap-1 z-30 pointer-events-none">
-                          {tabs.map(g => {
-                            const key = `${node.id}:${g.type}`;
-                            const isCollapsed = collapsedGroups[key];
-                            return (
-                              <button
-                                key={g.type}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleCollapse(node.id, g.type); }}
-                                style={{ pointerEvents: "auto" }}
-                                className={`flex items-center gap-0.5 rounded-t px-1.5 py-0.5 text-[8px] font-bold transition ${
-                                  isCollapsed
-                                    ? "bg-red-600/20 text-red-400 border border-b-0 border-red-500/30"
-                                    : "bg-[#1a1a1a] text-[#555] border border-b-0 border-[#333] hover:text-[#888]"
-                                }`}
-                                title={isCollapsed ? `Show ${g.nodes.length} ${g.type}s` : `Hide ${g.nodes.length} ${g.type}s`}
-                              >
-                                <span className="text-[9px]">{icons[g.type] || "📄"}</span>
-                                <span>{g.nodes.length}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
                     {node.kind === "person" ? (
                       <PersonCard data={node.data} isSelected={selectedNodeId === node.id}
                         connectedEvidence={personEvidenceCounts[node.id]}
-                        evidenceGroups={
-                          (personEvidenceGroups[node.id] || []).map(g => ({ type: g.type, count: g.nodes.length }))
-                        }
+                        evidenceGroups={[]}
                         collapsedGroups={collapsedGroups}
                         onToggleCollapse={(evType) => toggleCollapse(node.id, evType)}
                         onFocus={() => onFocusNode(node.id)}
+                        pinnedEvidence={node.pinnedEvidence}
+                        onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence}
                         zoom={zoom} />
-                    ) : node.kind === "entity" ? (
-                      <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
                     ) : (
-                      <EvidenceCard data={node.data} evidenceType={node.evidenceType} isSelected={selectedNodeId === node.id}
-                        onFocus={() => onFocusNode(node.id)}
-                        zoom={zoom} />
+                      <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
                     {/* Glowing connection handle at bottom center — hidden at low zoom */}
                     <div
@@ -3119,18 +3264,14 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 {(() => {
                   const people = nodes.filter(n => n.kind === "person");
                   const entities = nodes.filter(n => n.kind === "entity");
-                  const photos = nodes.filter(n => n.kind === "evidence" && (n as BoardEvidenceNode).evidenceType === "photo");
-                  const other = nodes.filter(n => n.kind === "evidence" && (n as BoardEvidenceNode).evidenceType !== "photo");
                   const groups = [
                     { label: "People", items: people },
                     { label: "Entities", items: entities },
-                    { label: "Photos", items: photos },
-                    { label: "Evidence", items: other },
                   ].filter(g => g.items.length > 0);
 
                   const renderItem = (n: BoardNode) => {
                     const picked = pathPicker.selected.includes(n.id);
-                    const label = n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title;
+                    const label = n.data.name;
                     return (
                       <button
                         key={n.id}
@@ -3262,18 +3403,45 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         </div>
 
       </div>
+
+      {/* Connection focus view — opens on connection double-click */}
+      {focusedConnectionId && (() => {
+        const conn = connections.find(c => c.id === focusedConnectionId);
+        if (!conn) return null;
+        const source = nodes.find(n => n.id === conn.sourceId);
+        const target = nodes.find(n => n.id === conn.targetId);
+        if (!source || !target) return null;
+        return (
+          <ConnectionFocusView
+            connection={conn}
+            source={source}
+            target={target}
+            onClose={() => setFocusedConnectionId(null)}
+          />
+        );
+      })()}
+
+      {/* Full-screen evidence viewer — opens on pinned chip double-click */}
+      {focusedPinnedEvidence && (
+        <FullScreenEvidenceViewer
+          evidence={focusedPinnedEvidence}
+          onClose={() => setFocusedPinnedEvidence(null)}
+        />
+      )}
     </div>
   );
 });
 
 // ─── Person Card (large suspect dossier card) ──────────────────────────────
 
-function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse, zoom = 1 }: {
+function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGroups, collapsedGroups, onToggleCollapse, pinnedEvidence, onPinnedEvidenceDoubleClick, zoom = 1 }: {
   data: Person; isSelected: boolean; onFocus: () => void;
   connectedEvidence?: { emails: number; documents: number; photos: number; total: number };
   evidenceGroups?: { type: EvidenceType; count: number }[];
   collapsedGroups?: Record<string, boolean>;
   onToggleCollapse?: (evType: EvidenceType) => void;
+  pinnedEvidence?: PinnedEvidence[];
+  onPinnedEvidenceDoubleClick?: (ev: PinnedEvidence) => void;
   zoom?: number;
 }) {
   // Mini card at low zoom — keep full photo + name, drop metadata
@@ -3338,7 +3506,11 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
       {/* Info area */}
       <div className="px-2.5 py-1.5">
         <h4 className="font-[family-name:var(--font-display)] text-xl leading-none text-white tracking-wide">{data.name}</h4>
-
+        {pinnedEvidence && pinnedEvidence.length > 0 && (
+          <div className="mt-1.5">
+            <PinnedEvidenceStack pinned={pinnedEvidence} onDoubleClick={onPinnedEvidenceDoubleClick} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3348,185 +3520,121 @@ function PersonCard({ data, isSelected, onFocus, connectedEvidence, evidenceGrou
 
 const PHOTO_CDN = "https://assets.getkino.com";
 
-function EvidenceCard({ data, evidenceType, isSelected, onFocus, zoom = 1 }: {
-  data: SearchResult; evidenceType: EvidenceType; isSelected: boolean; onFocus: () => void; zoom?: number;
+/* ─── Pinned Evidence Stack (mini thumbnails along card edge) ─ */
+
+function PinnedEvidenceStack({ pinned, direction = "row", onDoubleClick }: {
+  pinned: PinnedEvidence[];
+  direction?: "row" | "col";
+  onDoubleClick?: (ev: PinnedEvidence) => void;
 }) {
-  const [imgError, setImgError] = useState(false);
-
-  // Mini card at low zoom
-  if (zoom < 0.6) {
-    const typeAccent = evidenceType === "email" ? "border-l-[#4A6D8C]"
-      : evidenceType === "imessage" ? "border-l-[#6B5B95]"
-      : evidenceType === "document" ? "border-l-[#555]"
-      : "border-l-transparent";
-    if (evidenceType === "photo") {
-      const thumbUrl = `${PHOTO_CDN}/cdn-cgi/image/width=500,quality=80,format=auto/photos-deboned/${data.id}`;
-      return (
-        <div className={`board-evidence-card w-[220px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
-          isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
-        }`}>
-          <div className="relative bg-[#0a0a0a]" style={{ minHeight: imgError ? 80 : 200 }}>
-            {!imgError ? (
-              <img src={thumbUrl} alt={data.snippet || data.title} loading="lazy" className="w-full object-cover" style={{ maxHeight: 320 }}
-                onError={() => setImgError(true)} />
-            ) : (
-              <div className="flex items-center justify-center h-20">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-[#333]">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                </svg>
-              </div>
-            )}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-red-500 bg-[#141414] z-10" />
-          </div>
-          <div className="px-2.5 py-1.5">
-            <h4 className="text-[11px] font-bold leading-tight text-[#888] truncate">{data.title}</h4>
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className={`board-evidence-card flex items-center gap-1 rounded bg-[#141414] border border-[#2a2a2a] border-l-2 ${typeAccent} px-1.5 py-1 cursor-grab active:cursor-grabbing`}
-        style={{ width: 110 }}>
-        <span className="text-[10px] shrink-0">{EVIDENCE_TYPE_ICON[evidenceType]}</span>
-        <span className="text-[9px] text-white truncate">{data.title}</span>
-      </div>
-    );
-  }
-
-  // Photo evidence gets a big image card
-  if (evidenceType === "photo") {
-    const thumbnailUrl = `${PHOTO_CDN}/cdn-cgi/image/width=500,quality=80,format=auto/photos-deboned/${data.id}`;
-    return (
-      <div className={`board-evidence-card w-[220px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
-        isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
-      }`}>
-        {/* Photo image */}
-        <div className="relative bg-[#0a0a0a]" style={{ minHeight: imgError ? 80 : 200 }}>
-          {!imgError ? (
-            <img
-              src={thumbnailUrl}
-              alt={data.snippet || data.title}
-              loading="lazy"
-              className="w-full object-cover"
-              style={{ maxHeight: 320 }}
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-20">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-[#333]">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-            </div>
-          )}
-
-          {/* Type badge */}
-          <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-[#0a0a0a]/80 border border-[#333]/50 px-2 py-0.5 backdrop-blur-sm">
-            <span className="text-sm">📸</span>
-            <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#999]">
-              Photo
-            </span>
-          </div>
-
-          {/* Connection pin */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3 w-3 rounded-full border-2 border-red-500 bg-[#141414] z-10" />
-
-          {/* Face badges from sender field (person names) */}
-          {data.sender && (
-            <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
-              {data.sender.split(", ").slice(0, 3).map((name, i) => (
-                <span
-                  key={i}
-                  className="rounded bg-black/70 backdrop-blur-sm px-1.5 py-0.5 text-[9px] font-bold text-white"
-                >
-                  👤 {name}
-                </span>
-              ))}
-              {data.sender.split(", ").length > 3 && (
-                <span className="rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-white/60">
-                  +{data.sender.split(", ").length - 3}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Caption area — compact */}
-        <div className="px-2.5 py-1.5">
-          <h4 className="text-[11px] font-bold leading-tight text-[#888] truncate">{data.title}</h4>
-        </div>
-      </div>
-    );
-  }
-
-  // Non-photo evidence (email, document, imessage) — type-specific left accent
-  const typeAccent = evidenceType === "email" ? "border-l-2 border-l-[#4A6D8C]"
-    : evidenceType === "imessage" ? "border-l-2 border-l-[#6B5B95]"
-    : evidenceType === "document" ? "border-l-2 border-l-[#555]"
-    : "";
+  if (!pinned || pinned.length === 0) return null;
+  const MAX_VISIBLE = 6;
+  const visible = pinned.slice(0, MAX_VISIBLE);
+  const overflow = pinned.length - visible.length;
   return (
-    <div className={`board-evidence-card w-[170px] rounded-lg bg-[#141414] border border-[#2a2a2a] ${typeAccent} p-2.5 pt-3 cursor-grab active:cursor-grabbing ${
-      isSelected ? "shadow-xl shadow-red-600/15 border-red-500/30" : "shadow-lg shadow-black/50"
-    }`}>
-      <div className="flex items-center gap-1 mb-0.5">
-        <span className="text-sm">{EVIDENCE_TYPE_ICON[evidenceType]}</span>
-        <span className="text-[9px] font-black uppercase tracking-[0.12em] text-[#666]">
-          {EVIDENCE_TYPE_LABEL[evidenceType]}
-        </span>
-      </div>
-      <h4 className="text-[12px] font-bold leading-tight text-white line-clamp-2">{data.title}</h4>
-      {data.date && <p className="mt-0.5 text-[10px] font-bold text-[#555] tabular-nums">{data.date}</p>}
-      {data.sender && <p className="mt-0.5 text-[10px] text-[#555] truncate">{data.sender}</p>}
+    <div className={`flex gap-1 ${direction === "col" ? "flex-col" : "flex-row flex-wrap"}`}>
+      {visible.map((p) => (
+        <div key={p.id} className="w-9 h-9 flex-shrink-0">
+          <PinnedEvidenceChip evidence={p} square onDoubleClick={onDoubleClick} />
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div className="w-9 h-9 flex items-center justify-center rounded-md bg-black/60 border border-[#333] text-[10px] font-bold text-[#888]">
+          +{overflow}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Evidence Group Card (collapsed evidence stack) ─────────────────────────
+/* ─── Pinned Evidence Chip (single thumbnail, expands on hover) ───────── */
 
-function EvidenceGroupCard({ 
-  evidenceType, 
-  count, 
-  isSelected, 
-  onExpand,
-}: {
-  evidenceType: EvidenceType;
-  count: number;
-  isSelected: boolean;
-  onExpand: () => void;
-}) {
+const PHOTO_CDN_URL = "https://assets.getkino.com";
+
+function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubleClick }: { evidence: PinnedEvidence; compact?: boolean; square?: boolean; onDoubleClick?: (ev: PinnedEvidence) => void }) {
+  const [hovered, setHovered] = useState(false);
+  const isPhoto = evidence.type === "photo";
+  const thumbUrl = isPhoto
+    ? `${PHOTO_CDN_URL}/cdn-cgi/image/width=240,quality=80,format=auto/photos-deboned/${evidence.id}`
+    : null;
+  const typeBg = evidence.type === "email" ? "bg-[#1a2530]"
+    : evidence.type === "imessage" ? "bg-[#1f1b30]"
+    : evidence.type === "document" ? "bg-[#1a1a1a]"
+    : "bg-[#0a0a0a]";
+  const typeBorder = evidence.type === "email" ? "border-[#4A6D8C]"
+    : evidence.type === "imessage" ? "border-[#6B5B95]"
+    : evidence.type === "document" ? "border-[#888]"
+    : "border-[#c86464]";
+  const accentLeft = evidence.type === "email" ? "border-l-[#4A6D8C]"
+    : evidence.type === "imessage" ? "border-l-[#6B5B95]"
+    : evidence.type === "document" ? "border-l-[#888]"
+    : "border-l-[#c86464]";
+
   return (
-    <div className={`board-evidence-group w-[140px] rounded-lg cursor-grab active:cursor-grabbing relative ${
-      isSelected ? "shadow-xl shadow-red-600/15" : "shadow-lg shadow-black/50"
-    }`}>
-      {/* Stacked card effect */}
-      <div className="absolute -top-1 left-1 right-1 h-2 rounded-t-lg bg-[#181818] border border-[#2a2a2a] border-b-0" />
-      <div className="absolute -top-2 left-2 right-2 h-2 rounded-t-lg bg-[#1c1c1c] border border-[#2a2a2a] border-b-0" />
-
-      {/* Main card */}
-      <div className={`relative bg-[#141414] border p-3 rounded-lg ${
-        isSelected ? "border-red-500/30" : "border-[#2a2a2a]"
-      }`}>
-        <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#1a1a1a] border border-[#333] text-xl flex-shrink-0">
-            {EVIDENCE_TYPE_ICON[evidenceType]}
+    <div
+      className="relative w-full h-full cursor-pointer"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onDoubleClick?.(evidence);
+      }}
+    >
+      {/* Square chip (standardized layout for connection pins) */}
+      {square ? (
+        isPhoto && thumbUrl ? (
+          <div className="w-full h-full rounded-md overflow-hidden border-2 border-[#1a1a1a] shadow-lg shadow-black/70 bg-[#0a0a0a]">
+            <img src={thumbUrl} alt={evidence.title} className="h-full w-full object-cover" />
           </div>
-          <div>
-            <p className="text-[15px] font-black text-white tabular-nums">{count}</p>
-            <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">
-              {EVIDENCE_TYPE_LABEL[evidenceType]}{count !== 1 ? "s" : ""}
-            </p>
+        ) : (
+          <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex flex-col items-center justify-center p-1 backdrop-blur-sm`}>
+            <span className="text-[18px] leading-none mb-0.5">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+            <span className="text-[8px] font-bold text-white/80 text-center leading-tight line-clamp-2 px-0.5">
+              {evidence.title}
+            </span>
+          </div>
+        )
+      ) : isPhoto && thumbUrl ? (
+        <div className={`rounded overflow-hidden border-2 border-[#1a1a1a] shadow-lg shadow-black/60 bg-[#0a0a0a] ${compact ? "w-10 h-10" : "w-14 h-14"}`}>
+          <img src={thumbUrl} alt={evidence.title} className="h-full w-full object-cover" />
+        </div>
+      ) : (
+        <div className={`flex items-center gap-1 rounded border-2 border-l-4 ${accentLeft} bg-[#0a0a0a]/95 border-[#1a1a1a] shadow-lg shadow-black/60 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 py-1.5"}`}>
+          <span className={compact ? "text-[11px]" : "text-[13px]"}>{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+          <span className={`font-bold text-white truncate ${compact ? "text-[9px] max-w-[80px]" : "text-[11px] max-w-[100px]"}`}>
+            {evidence.title}
+          </span>
+        </div>
+      )}
+
+      {/* Expanded preview on hover */}
+      {hovered && (
+        <div
+          className="absolute z-[60] left-1/2 -translate-x-1/2 -top-2 -translate-y-full pointer-events-none"
+          style={{ width: 240 }}
+        >
+          <div className="rounded-xl border border-[#333] bg-[#0a0a0a]/98 backdrop-blur-md shadow-2xl shadow-black/80 overflow-hidden">
+            {isPhoto && thumbUrl && (
+              <img src={thumbUrl.replace("width=240", "width=500")} alt={evidence.title} className="w-full object-cover" style={{ maxHeight: 260 }} />
+            )}
+            <div className={`p-3 ${isPhoto ? "" : `border-l-4 ${accentLeft}`}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[11px]">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+                <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#666]">
+                  {EVIDENCE_TYPE_LABEL[evidence.type]}
+                </span>
+              </div>
+              <p className="text-[12px] font-bold text-white leading-tight line-clamp-2">{evidence.title}</p>
+              {evidence.date && <p className="text-[10px] text-[#666] tabular-nums mt-0.5">{evidence.date}</p>}
+              {evidence.sender && <p className="text-[10px] text-[#777] mt-0.5 truncate">{evidence.sender}</p>}
+              {evidence.snippet && !isPhoto && (
+                <p className="text-[10px] text-[#888] mt-1.5 leading-relaxed line-clamp-3">{evidence.snippet}</p>
+              )}
+            </div>
           </div>
         </div>
-
-        <div className="mt-2.5 flex gap-1 opacity-0 [.board-node:hover_&]:opacity-100 transition">
-          <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); onExpand(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="flex-1 rounded bg-[#1a1a1a] border border-[#333] px-2 py-1 text-[8px] font-black uppercase tracking-wider text-[#888] hover:text-white hover:bg-[#222] transition">
-            Expand
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -3534,8 +3642,8 @@ function EvidenceGroupCard({
 
 /* ─── Entity Board Card ──────────────────────────────────────────────────── */
 
-function EntityBoardCard({ data, isSelected, zoom = 1 }: {
-  data: SeedEntity; isSelected: boolean; zoom?: number;
+function EntityBoardCard({ data, isSelected, pinnedEvidence, onPinnedEvidenceDoubleClick, zoom = 1 }: {
+  data: SeedEntity; isSelected: boolean; pinnedEvidence?: PinnedEvidence[]; onPinnedEvidenceDoubleClick?: (ev: PinnedEvidence) => void; zoom?: number;
 }) {
   const [imgError, setImgError] = useState(false);
   const hasImage = data.image.strategy !== "none" && !imgError;
@@ -3604,6 +3712,11 @@ function EntityBoardCard({ data, isSelected, zoom = 1 }: {
             )}
           </div>
         )}
+        {pinnedEvidence && pinnedEvidence.length > 0 && (
+          <div className="mt-1.5">
+            <PinnedEvidenceStack pinned={pinnedEvidence} onDoubleClick={onPinnedEvidenceDoubleClick} />
+          </div>
+        )}
       </div>
 
       {/* Pin at top center */}
@@ -3625,22 +3738,6 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
   onSelectNode: (id: string | null) => void;
   focusedNodeId: string | null;
 }) {
-  const [fullEvidence, setFullEvidence] = useState<Evidence | null>(null);
-  const [loadingFull, setLoadingFull] = useState(false);
-
-  // Load full evidence data when an evidence node is selected
-  useEffect(() => {
-    if (node.kind !== "evidence") {
-      setFullEvidence(null);
-      return;
-    }
-    setLoadingFull(true);
-    fetch(`/api/evidence/${encodeURIComponent(node.id)}?type=${node.evidenceType}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { setFullEvidence(data); setLoadingFull(false); })
-      .catch(() => { setFullEvidence(null); setLoadingFull(false); });
-  }, [node.id, node.kind]);
-
   // Escape key closes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -3652,15 +3749,6 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
     (c) => c.sourceId === node.id || c.targetId === node.id
   );
   const isFocused = focusedNodeId === node.id;
-
-  function getFullContent(ev: Evidence): string {
-    switch (ev.type) {
-      case "email": return ev.body || ev.snippet;
-      case "document": return ev.fulltext || ev.snippet;
-      case "photo": return ev.imageDescription || ev.snippet;
-      case "imessage": return ev.body || ev.snippet;
-    }
-  }
 
   return (
     <div
@@ -3762,53 +3850,6 @@ function NodeDetailCard({ node, connections, nodes, x, y, onClose, onFocusNode, 
           );
         })()}
 
-        {node.kind === "evidence" && (() => {
-          const d = node.data;
-          return (
-            <div className="p-4 space-y-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px]">{EVIDENCE_TYPE_ICON[node.evidenceType]}</span>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#666]">
-                    {EVIDENCE_TYPE_LABEL[node.evidenceType]}
-                  </span>
-                  <button onClick={() => onFocusNode(isFocused ? null : node.id)}
-                    className={`ml-auto text-[8px] rounded px-1.5 py-0.5 transition ${isFocused ? "bg-red-600/20 text-red-400" : "bg-[#1a1a1a] text-[#666] hover:text-white"}`}>
-                    {isFocused ? "Unfocus" : "Focus"}
-                  </button>
-                </div>
-                <h3 className="text-xs font-bold text-white">{d.title}</h3>
-                {d.date && <p className="mt-0.5 text-[10px] text-[#555] tabular-nums">{d.date}</p>}
-                {d.sender && <p className="text-[10px] text-[#555]">{d.sender}</p>}
-              </div>
-
-              {d.starCount > 0 && (
-                <div className="text-[9px] text-amber-400/60">★ {d.starCount.toLocaleString()} stars</div>
-              )}
-
-              {loadingFull ? (
-                <div className="rounded border border-[#222] bg-[#111] p-2.5 text-[10px] text-[#555] flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                  Loading…
-                </div>
-              ) : fullEvidence ? (
-                <div className="rounded border border-[#222] bg-[#111] p-2.5 max-h-40 overflow-y-auto">
-                  <p className="text-[10px] leading-relaxed text-[#999] whitespace-pre-wrap">
-                    {getFullContent(fullEvidence)}
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded border border-[#222] bg-[#111] p-2.5">
-                  <p className="text-[10px] leading-relaxed text-[#777]">{d.snippet}</p>
-                </div>
-              )}
-
-              {relatedConns.length > 0 && (
-                <DetailConnections connections={relatedConns} currentNodeId={node.id} nodes={nodes} onSelectNode={onSelectNode} />
-              )}
-            </div>
-          );
-        })()}
       </div>
     </div>
   );
@@ -3827,9 +3868,7 @@ function DetailConnections({ connections, currentNodeId, nodes, onSelectNode }: 
         {connections.map((conn) => {
           const otherId = conn.sourceId === currentNodeId ? conn.targetId : conn.sourceId;
           const otherNode = nodes.find((n) => n.id === otherId);
-          const otherName = otherNode
-            ? otherNode.kind === "person" ? otherNode.data.name : otherNode.kind === "entity" ? otherNode.data.name : otherNode.data.title
-            : "Unknown";
+          const otherName = otherNode ? otherNode.data.name : "Unknown";
           return (
             <button key={conn.id} onClick={(e) => { e.stopPropagation(); onSelectNode(otherId); }}
               className="w-full text-left rounded border border-[#222] bg-[#111] p-1.5 text-[9px] hover:border-red-500/30 transition">
@@ -3843,6 +3882,469 @@ function DetailConnections({ connections, currentNodeId, nodes, onSelectNode }: 
   );
 }
 
+/* ─── Connection Focus View (full-screen split view for a connection) ───── */
+
+function ConnectionFocusView({ connection, source, target, onClose }: {
+  connection: BoardConnection;
+  source: BoardNode;
+  target: BoardNode;
+  onClose: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const leftCardRef = useRef<HTMLDivElement>(null);
+  const rightCardRef = useRef<HTMLDivElement>(null);
+  const evidenceRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [hoveredEv, setHoveredEv] = useState<string | null>(null);
+  const [focusedEv, setFocusedEv] = useState<PinnedEvidence | null>(null);
+  const [positions, setPositions] = useState<{
+    leftAnchor: { x: number; y: number };
+    rightAnchor: { x: number; y: number };
+    bbox: { x: number; y: number; w: number; h: number } | null;
+  } | null>(null);
+
+  const pinned = connection.pinnedEvidence || [];
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // Measure anchor positions + evidence group bounding box after layout
+  useEffect(() => {
+    function measure() {
+      const cont = containerRef.current;
+      const left = leftCardRef.current;
+      const right = rightCardRef.current;
+      if (!cont || !left || !right) return;
+      const cRect = cont.getBoundingClientRect();
+      const lRect = left.getBoundingClientRect();
+      const rRect = right.getBoundingClientRect();
+      // Compute bbox of all evidence elements
+      let bbox: { x: number; y: number; w: number; h: number } | null = null;
+      const evEls = Array.from(evidenceRefs.current.values());
+      if (evEls.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const el of evEls) {
+          const r = el.getBoundingClientRect();
+          if (r.left < minX) minX = r.left;
+          if (r.top < minY) minY = r.top;
+          if (r.right > maxX) maxX = r.right;
+          if (r.bottom > maxY) maxY = r.bottom;
+        }
+        const PAD = 18;
+        bbox = {
+          x: minX - cRect.left - PAD,
+          y: minY - cRect.top - PAD,
+          w: maxX - minX + PAD * 2,
+          h: maxY - minY + PAD * 2,
+        };
+      }
+      setPositions({
+        leftAnchor: {
+          x: lRect.right - cRect.left,
+          y: lRect.top + lRect.height / 2 - cRect.top,
+        },
+        rightAnchor: {
+          x: rRect.left - cRect.left,
+          y: rRect.top + rRect.height / 2 - cRect.top,
+        },
+        bbox,
+      });
+    }
+    // Measure after paint + after fonts/images settle
+    const raf = requestAnimationFrame(() => {
+      measure();
+      setTimeout(measure, 80);
+    });
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+    };
+  }, [pinned.length]);
+
+  // Enlarged evidence card
+  function EnlargedEvidence({ ev, onOpen }: { ev: PinnedEvidence; onOpen: () => void }) {
+    const isPhoto = ev.type === "photo";
+    const imgUrl = isPhoto
+      ? `${PHOTO_CDN_URL}/cdn-cgi/image/width=600,quality=85,format=auto/photos-deboned/${ev.id}`
+      : null;
+    const accent = ev.type === "email" ? "border-l-[#4A6D8C]"
+      : ev.type === "imessage" ? "border-l-[#6B5B95]"
+      : ev.type === "document" ? "border-l-[#888]"
+      : "border-l-[#c86464]";
+    const isHovered = hoveredEv === ev.id;
+    if (isPhoto && imgUrl) {
+      return (
+        <div
+          className={`rounded-xl border-2 overflow-hidden bg-[#0a0a0a] cursor-pointer transition-all ${
+            isHovered ? "border-red-500/60 shadow-2xl shadow-red-600/30 scale-[1.02]" : "border-[#2a2a2a] shadow-lg shadow-black/60"
+          }`}
+          onClick={onOpen}
+        >
+          <img src={imgUrl} alt={ev.title} className="w-full object-cover" style={{ maxHeight: 220 }} />
+          <div className="p-2.5">
+            <p className="text-[12px] font-bold text-white leading-tight line-clamp-2">{ev.title}</p>
+            {ev.sender && <p className="text-[9px] text-[#666] mt-1 truncate">{ev.sender}</p>}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div
+        className={`rounded-xl border-2 border-l-[6px] ${accent} bg-[#0a0a0a] p-4 cursor-pointer transition-all ${
+          isHovered ? "border-red-500/60 shadow-2xl shadow-red-600/30 scale-[1.02]" : "border-[#2a2a2a] shadow-lg shadow-black/60"
+        }`}
+        onClick={onOpen}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[16px]">{EVIDENCE_TYPE_ICON[ev.type]}</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#666]">
+            {EVIDENCE_TYPE_LABEL[ev.type]}
+          </span>
+          {ev.date && <span className="ml-auto text-[10px] text-[#555] tabular-nums">{ev.date}</span>}
+        </div>
+        <h3 className="text-[13px] font-bold text-white leading-tight mb-2 line-clamp-2">{ev.title}</h3>
+        {ev.sender && <p className="text-[10px] text-[#888] mb-2 truncate">{ev.sender}</p>}
+        {ev.snippet && <p className="text-[10px] text-[#aaa] leading-relaxed line-clamp-4">{ev.snippet}</p>}
+      </div>
+    );
+  }
+
+  // Centered entity card for the left/right
+  function EntitySide({ node }: { node: BoardNode }) {
+    if (node.kind === "person") {
+      return (
+        <div className="w-[240px] rounded-xl border-2 border-l-[6px] border-l-red-500/60 border-[#222] bg-[#111] overflow-hidden shadow-2xl shadow-black/80">
+          {node.data.imageUrl && (
+            <div className="relative h-56 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] overflow-hidden">
+              <img src={node.data.imageUrl} alt={node.data.name} className="w-full h-full object-cover" />
+              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111] to-transparent" />
+            </div>
+          )}
+          <div className="p-4">
+            <h2 className="font-[family-name:var(--font-display)] text-2xl text-white tracking-wide leading-tight">{node.data.name}</h2>
+            {node.data.source && <p className="text-[10px] text-[#777] mt-1">{node.data.source}</p>}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="w-[240px] rounded-xl border-2 border-[#222] bg-[#111] overflow-hidden p-4 shadow-2xl shadow-black/80">
+        <h2 className="font-[family-name:var(--font-display)] text-2xl text-white tracking-wide">{node.data.name}</h2>
+      </div>
+    );
+  }
+
+  // Build a rounded-rectangle SVG path around the bbox
+  function roundedRectPath(bbox: { x: number; y: number; w: number; h: number }, r = 16) {
+    const { x, y, w, h } = bbox;
+    const rr = Math.min(r, w / 2, h / 2);
+    return `M ${x + rr} ${y}`
+      + ` L ${x + w - rr} ${y}`
+      + ` Q ${x + w} ${y} ${x + w} ${y + rr}`
+      + ` L ${x + w} ${y + h - rr}`
+      + ` Q ${x + w} ${y + h} ${x + w - rr} ${y + h}`
+      + ` L ${x + rr} ${y + h}`
+      + ` Q ${x} ${y + h} ${x} ${y + h - rr}`
+      + ` L ${x} ${y + rr}`
+      + ` Q ${x} ${y} ${x + rr} ${y}`
+      + ` Z`;
+  }
+
+  const anyHovered = hoveredEv !== null;
+
+  return (
+    <div ref={containerRef} className="fixed inset-0 z-[100] bg-[#030303]/98 backdrop-blur-sm overflow-hidden">
+      {/* Top bar */}
+      <div className="absolute inset-x-0 top-0 z-[10] flex items-center justify-between px-6 py-4 border-b border-[#1a1a1a] bg-[#030303]/80 backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Connection</span>
+          <span className="text-[12px] font-bold text-white">{source.data.name} ↔ {target.data.name}</span>
+          <span className="text-[10px] text-[#666] font-[family-name:var(--font-mono)] uppercase">{connection.type}</span>
+          <span className="text-[10px] text-[#666]">· {pinned.length} pinned</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded border border-[#333] bg-[#141414] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#888] hover:text-white hover:border-[#555] transition"
+        >
+          ESC ×
+        </button>
+      </div>
+
+      {/* SVG string overlay — straight lines from entities to a single enclosing loop */}
+      <svg className="absolute inset-0 pointer-events-none z-[5]" width="100%" height="100%">
+        <defs>
+          <filter id="cfv-string-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur1" />
+            <feMerge>
+              <feMergeNode in="blur1" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="cfv-string-hot" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="7" result="blur2" />
+            <feMerge>
+              <feMergeNode in="blur2" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        {positions && positions.bbox && (() => {
+          const bbox = positions.bbox;
+          // Anchor points on the loop: left-middle and right-middle
+          const loopLeft = { x: bbox.x, y: bbox.y + bbox.h / 2 };
+          const loopRight = { x: bbox.x + bbox.w, y: bbox.y + bbox.h / 2 };
+          const strokeColor = anyHovered ? "#ff4444" : "#ef4444";
+          const strokeWidth = anyHovered ? 3.5 : 1.8;
+          const strokeOpacity = anyHovered ? 1 : 0.5;
+          const filter = anyHovered ? "url(#cfv-string-hot)" : "url(#cfv-string-glow)";
+          return (
+            <g className="transition-all duration-200">
+              {/* Left entity → loop (straight line) */}
+              <line
+                x1={positions.leftAnchor.x}
+                y1={positions.leftAnchor.y}
+                x2={loopLeft.x}
+                y2={loopLeft.y}
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeOpacity={strokeOpacity}
+                strokeLinecap="round"
+                filter={filter}
+              />
+              {/* Enclosing loop around all evidence */}
+              <path
+                d={roundedRectPath(bbox, 20)}
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeOpacity={strokeOpacity}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                filter={filter}
+              />
+              {/* Loop → right entity (straight line) */}
+              <line
+                x1={loopRight.x}
+                y1={loopRight.y}
+                x2={positions.rightAnchor.x}
+                y2={positions.rightAnchor.y}
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeOpacity={strokeOpacity}
+                strokeLinecap="round"
+                filter={filter}
+              />
+              {/* Pin dots at entity endpoints */}
+              <circle
+                cx={positions.leftAnchor.x}
+                cy={positions.leftAnchor.y}
+                r={anyHovered ? 5 : 3.5}
+                fill={strokeColor}
+                fillOpacity={anyHovered ? 1 : 0.7}
+              />
+              <circle
+                cx={positions.rightAnchor.x}
+                cy={positions.rightAnchor.y}
+                r={anyHovered ? 5 : 3.5}
+                fill={strokeColor}
+                fillOpacity={anyHovered ? 1 : 0.7}
+              />
+            </g>
+          );
+        })()}
+      </svg>
+
+      {/* Layout: absolute positioning for precise centering */}
+      {/* Left card — vertically centered */}
+      <div ref={leftCardRef} className="absolute left-10 top-1/2 -translate-y-1/2 z-[8]">
+        <EntitySide node={source} />
+      </div>
+
+      {/* Right card — vertically centered */}
+      <div ref={rightCardRef} className="absolute right-10 top-1/2 -translate-y-1/2 z-[8]">
+        <EntitySide node={target} />
+      </div>
+
+      {/* Evidence grid in center */}
+      <div className="absolute inset-y-0 left-[280px] right-[280px] top-16 bottom-6 overflow-y-auto z-[7] flex items-center justify-center">
+        {pinned.length === 0 ? (
+          <div className="text-[#555] text-sm text-center max-w-md">
+            No evidence pinned to this connection yet.<br />
+            Drag evidence onto the connection line to add it.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-6 p-6 max-w-[720px] w-full">
+            {pinned.map((ev) => (
+              <div
+                key={ev.id}
+                ref={(el) => { if (el) evidenceRefs.current.set(ev.id, el); else evidenceRefs.current.delete(ev.id); }}
+                onMouseEnter={() => setHoveredEv(ev.id)}
+                onMouseLeave={() => setHoveredEv(null)}
+              >
+                <EnlargedEvidence ev={ev} onOpen={() => setFocusedEv(ev)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Full-screen evidence viewer when an item is double-clicked */}
+      {focusedEv && (
+        <FullScreenEvidenceViewer
+          evidence={focusedEv}
+          onClose={() => setFocusedEv(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Full-Screen Evidence Viewer (opens on pinned chip double-click) ────── */
+
+function FullScreenEvidenceViewer({ evidence, onClose }: { evidence: PinnedEvidence; onClose: () => void }) {
+  const [full, setFull] = useState<Evidence | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/evidence/${encodeURIComponent(evidence.id)}?type=${evidence.type}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { setFull(data); setLoading(false); })
+      .catch(() => { setFull(null); setLoading(false); });
+  }, [evidence.id, evidence.type]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const isPhoto = evidence.type === "photo";
+  const photoFullUrl = isPhoto
+    ? `${PHOTO_CDN_URL}/cdn-cgi/image/width=1400,quality=90,format=auto/photos-deboned/${evidence.id}`
+    : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-6"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-4xl max-h-[90vh] rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl shadow-black/70 flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex-shrink-0 border-b border-[#1a1a1a] px-5 py-4 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[#666]">
+                {EVIDENCE_TYPE_LABEL[evidence.type]}
+              </span>
+              {evidence.date && <span className="text-[10px] text-[#555] tabular-nums">{evidence.date}</span>}
+            </div>
+            <h2 className="text-lg font-black text-white leading-tight truncate">{evidence.title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 rounded bg-[#222] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition"
+          >
+            ESC ×
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          {isPhoto && photoFullUrl && (
+            <div className="bg-black flex items-center justify-center">
+              <img
+                src={photoFullUrl}
+                alt={evidence.title}
+                className="max-w-full max-h-[70vh] object-contain"
+              />
+            </div>
+          )}
+
+          {loading ? (
+            <div className="p-10 flex items-center justify-center">
+              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse mr-2" />
+              <span className="text-[11px] text-[#555]">Loading…</span>
+            </div>
+          ) : full ? (
+            <div className="p-5">
+              {full.type === "email" && (
+                <div>
+                  <div className="space-y-1.5 text-[12px] mb-4">
+                    <div className="flex gap-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">From</span>
+                      <span className={`font-bold ${full.epsteinIsSender ? "text-red-400" : "text-white"}`}>
+                        {full.sender}
+                        {full.senderName && full.senderName !== full.sender && (
+                          <span className="text-[#555] font-normal ml-1">({full.senderName})</span>
+                        )}
+                      </span>
+                    </div>
+                    {full.recipients.length > 0 && (
+                      <div className="flex gap-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">To</span>
+                        <span className="text-[#aaa] break-all">{full.recipients.join(", ")}</span>
+                      </div>
+                    )}
+                    {full.cc.length > 0 && (
+                      <div className="flex gap-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555] w-12 flex-shrink-0 pt-0.5">CC</span>
+                        <span className="text-[#888] break-all">{full.cc.join(", ")}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                    {full.body || "No content available"}
+                  </div>
+                </div>
+              )}
+              {full.type === "document" && (
+                <div>
+                  <div className="flex flex-wrap gap-3 text-[11px] mb-4">
+                    {full.volume && (
+                      <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                        <span className="text-[#555]">Volume:</span> <span className="text-white font-bold">{full.volume}</span>
+                      </div>
+                    )}
+                    <div className="rounded border border-[#222] bg-[#111] px-2 py-1">
+                      <span className="text-[#555]">Pages:</span> <span className="text-white font-bold">{full.pageCount}</span>
+                    </div>
+                  </div>
+                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                    {full.fulltext || full.snippet || "No content available"}
+                  </div>
+                </div>
+              )}
+              {full.type === "imessage" && (
+                <div>
+                  <p className="text-[11px] text-[#888] mb-2">From {full.sender}</p>
+                  <div className="text-[13px] leading-relaxed text-[#ccc] whitespace-pre-wrap font-mono">
+                    {full.body || "No content available"}
+                  </div>
+                </div>
+              )}
+              {full.type === "photo" && full.imageDescription && (
+                <p className="text-[12px] text-[#aaa] leading-relaxed">{full.imageDescription}</p>
+              )}
+            </div>
+          ) : (
+            <div className="p-5">
+              <p className="text-[12px] text-[#777] leading-relaxed whitespace-pre-wrap">{evidence.snippet}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Connection Editor Popup ─────────────────────────────────────────────── */
 
 function ConnectionEditor({
@@ -3850,7 +4352,7 @@ function ConnectionEditor({
   x,
   y,
   nodes,
-  onUpdate,
+  onViewDetails,
   onDelete,
   onClose,
 }: {
@@ -3858,30 +4360,29 @@ function ConnectionEditor({
   x: number;
   y: number;
   nodes: BoardNode[];
-  onUpdate: (updates: Partial<BoardConnection>) => void;
+  onViewDetails: () => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
-  const [noteText, setNoteText] = useState(connection.note || "");
-  const [strength, setStrength] = useState(connection.strength);
-
   const sourceNode = nodes.find(n => n.id === connection.sourceId);
   const targetNode = nodes.find(n => n.id === connection.targetId);
-  const sourceName = sourceNode ? (sourceNode.kind === "person" ? sourceNode.data.name : sourceNode.kind === "entity" ? sourceNode.data.name : sourceNode.data.title) : connection.sourceId;
-  const targetName = targetNode ? (targetNode.kind === "person" ? targetNode.data.name : targetNode.kind === "entity" ? targetNode.data.name : targetNode.data.title) : connection.targetId;
+  const sourceName = sourceNode ? sourceNode.data.name : connection.sourceId;
+  const targetName = targetNode ? targetNode.data.name : connection.targetId;
+  const pinnedCount = connection.pinnedEvidence?.length ?? 0;
 
   return (
     <div
       className="absolute z-40"
       style={{
-        left: x - 160,
-        top: y - 200,
+        left: x - 140,
+        top: y - 150,
         pointerEvents: "auto",
       }}
+      onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="w-[320px] rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md p-4 shadow-2xl shadow-black/60">
+      <div className="w-[280px] rounded-xl border border-[#2a2a2a] bg-[#0a0a0a]/98 backdrop-blur-md p-4 shadow-2xl shadow-black/60">
         {/* Header */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2">
           <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.2em] text-red-500/70">
             Connection
           </span>
@@ -3893,70 +4394,27 @@ function ConnectionEditor({
           </button>
         </div>
 
-        {/* Connection endpoints */}
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs font-bold text-white truncate max-w-[120px]">{sourceName}</span>
-          <span className="text-red-500/40">—</span>
-          <span className="text-xs font-bold text-white truncate max-w-[120px]">{targetName}</span>
+        {/* Endpoints */}
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[13px] font-bold text-white truncate max-w-[100px]">{sourceName}</span>
+          <span className="text-red-500/40">↔</span>
+          <span className="text-[13px] font-bold text-white truncate max-w-[100px]">{targetName}</span>
         </div>
-
-        {/* Note input */}
-        <div className="mb-3">
-          <label className="block font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.15em] text-[#555] mb-1.5">
-            Note
-          </label>
-          <textarea
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="e.g. Frequently photographed together"
-            className="w-full rounded-lg border border-[#2a2a2a] bg-[#141414] px-3 py-2 text-sm text-white placeholder:text-[#444] focus:border-red-600/40 focus:outline-none transition resize-none"
-            rows={2}
-          />
-        </div>
-
-        {/* Strength rating */}
-        <div className="mb-4">
-          <label className="block font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.15em] text-[#555] mb-1.5">
-            Strength
-          </label>
-          <div className="flex gap-1">
-            {[1, 2, 3, 4, 5].map(s => (
-              <button
-                key={s}
-                onClick={() => setStrength(s)}
-                className={`w-9 h-9 rounded-lg border text-sm font-bold transition ${
-                  s <= strength
-                    ? "border-red-500/40 bg-red-600/20 text-red-400"
-                    : "border-[#2a2a2a] bg-[#141414] text-[#444] hover:border-[#444] hover:text-[#888]"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-          <div className="flex justify-between mt-1 font-[family-name:var(--font-mono)] text-[8px] text-[#333]">
-            <span>WEAK</span>
-            <span>STRONG</span>
-          </div>
-        </div>
+        <p className="text-[10px] text-[#666] mb-3">{pinnedCount} evidence pinned</p>
 
         {/* Action buttons */}
-        <div className="flex gap-2">
+        <div className="space-y-2">
           <button
-            onClick={() => {
-              onUpdate({ note: noteText || undefined, strength });
-              onClose();
-            }}
-            className="flex-1 rounded-lg bg-red-600/20 border border-red-600/30 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-red-400 hover:bg-red-600/30 hover:text-red-300 transition"
+            onClick={() => { onViewDetails(); onClose(); }}
+            className="w-full rounded-lg bg-red-600/15 border border-red-500/40 py-3 font-bold text-[12px] uppercase tracking-[0.1em] text-red-300 hover:bg-red-600/25 hover:border-red-500/60 hover:text-red-200 transition"
           >
-            Save
+            View Details
           </button>
           <button
-            onClick={onDelete}
-            className="rounded-lg bg-[#1a1a1a] border border-[#333] px-4 py-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#666] hover:border-red-600/40 hover:bg-red-600/10 hover:text-red-400 transition"
-            title="Cut this connection"
+            onClick={() => { onDelete(); onClose(); }}
+            className="w-full rounded-lg bg-[#1a1a1a] border border-[#333] py-3 font-bold text-[12px] uppercase tracking-[0.1em] text-[#888] hover:border-red-500/40 hover:bg-red-950/20 hover:text-red-400 transition"
           >
-            ✂ Cut
+            ✂ Cut Connection
           </button>
         </div>
       </div>

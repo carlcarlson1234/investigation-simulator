@@ -105,7 +105,9 @@ export function useInvestigation(
       case "place-epstein":
         return boardNodes.some(n => n.id === STARTER_PACKET.firstPerson.personId);
       case "place-evidence":
-        return boardNodes.some(n => n.kind === "evidence");
+        // Evidence is now pinned to cards/connections; count any pinned evidence
+        return boardNodes.some(n => (n.pinnedEvidence?.length ?? 0) > 0)
+          || boardConnections.some(c => (c.pinnedEvidence?.length ?? 0) > 0);
       case "pick-person": {
         const optionIds = STARTER_PACKET.secondPersonOptions.map(p => p.personId);
         return boardNodes.some(n => optionIds.includes(n.id));
@@ -153,19 +155,7 @@ export function useInvestigation(
 
     const result: Nudge[] = [];
 
-    const evidenceNodes = boardNodes.filter(n => n.kind === "evidence");
-    const unlinked = evidenceNodes.filter(en =>
-      !boardConnections.some(c => c.sourceId === en.id || c.targetId === en.id)
-    );
-    if (unlinked.length > 0) {
-      result.push({
-        id: "unlinked-evidence",
-        message: `${unlinked.length} evidence item${unlinked.length > 1 ? "s" : ""} not linked to any person`,
-        icon: "⚠️",
-        actionLabel: "Review",
-        actionType: "link",
-      });
-    }
+    // Evidence nodes no longer exist — nudges about unlinked evidence removed.
 
     const personNodes = boardNodes.filter(n => n.kind === "person");
     const isolated = personNodes.filter(pn =>

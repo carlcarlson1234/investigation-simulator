@@ -7,6 +7,7 @@ import type {
   BoardConnection,
   RightPanelTab,
   FocusState,
+  PinnedEvidence,
 } from "@/lib/board-types";
 import { IntakePanel } from "./intake-panel";
 import { BoardCanvas } from "./board-canvas";
@@ -195,8 +196,17 @@ export function BoardWorkspace({
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   const isOnBoard = useCallback(
-    (id: string) => boardNodes.some((n) => n.id === id),
-    [boardNodes]
+    (id: string) => {
+      if (boardNodes.some((n) => n.id === id)) return true;
+      for (const n of boardNodes) {
+        if (n.pinnedEvidence?.some((e) => e.id === id)) return true;
+      }
+      for (const c of boardConnections) {
+        if (c.pinnedEvidence?.some((e) => e.id === id)) return true;
+      }
+      return false;
+    },
+    [boardNodes, boardConnections]
   );
 
   // Keep a ref to current nodes for overlap checks (avoids stale closure)
@@ -245,25 +255,59 @@ export function BoardWorkspace({
     [people, isOnBoard, findClearPosition]
   );
 
-  const addEvidenceToBoard = useCallback(
-    (result: SearchResult, dropX?: number, dropY?: number) => {
-      if (isOnBoard(result.id)) return;
+  // Legacy "+ Add to Board" buttons — no-op in the new pin model.
+  // Evidence must be dragged onto a specific card or connection.
+  const noopAddEvidence = useCallback((_result: SearchResult, _x?: number, _y?: number) => {
+    // TODO: toast "Drag evidence onto a card or connection to pin it"
+  }, []);
 
-      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
-      const { x, y } = findClearPosition(raw.x, raw.y, 190, 160);
-
-      setBoardNodes((prev) => [
-        ...prev,
-        {
-          kind: "evidence",
-          id: result.id,
-          evidenceType: result.type,
-          data: result,
-          position: { x, y },
-        },
-      ]);
+  // Pin evidence to an entity card
+  const pinEvidenceToCard = useCallback(
+    (cardId: string, result: SearchResult) => {
+      setBoardNodes((prev) =>
+        prev.map((n) => {
+          if (n.id !== cardId) return n;
+          const existing = n.pinnedEvidence || [];
+          if (existing.some((e) => e.id === result.id)) return n;
+          const pinned: PinnedEvidence = {
+            id: result.id,
+            type: result.type,
+            title: result.title,
+            snippet: result.snippet,
+            date: result.date,
+            sender: result.sender,
+            starCount: result.starCount,
+          };
+          return { ...n, pinnedEvidence: [...existing, pinned] };
+        })
+      );
     },
-    [isOnBoard, findClearPosition]
+    []
+  );
+
+  // Pin evidence to a connection — strength = pinnedEvidence.length
+  const pinEvidenceToConnection = useCallback(
+    (connId: string, result: SearchResult) => {
+      setBoardConnections((prev) =>
+        prev.map((c) => {
+          if (c.id !== connId) return c;
+          const existing = c.pinnedEvidence || [];
+          if (existing.some((e) => e.id === result.id)) return c;
+          const pinned: PinnedEvidence = {
+            id: result.id,
+            type: result.type,
+            title: result.title,
+            snippet: result.snippet,
+            date: result.date,
+            sender: result.sender,
+            starCount: result.starCount,
+          };
+          const next = [...existing, pinned];
+          return { ...c, pinnedEvidence: next, strength: next.length };
+        })
+      );
+    },
+    []
   );
 
   const addEntityToBoard = useCallback(
@@ -353,29 +397,10 @@ export function BoardWorkspace({
         return next;
       });
 
-      // Stagger evidence nodes onto board
+      // TODO: re-implement focused-investigation reintegration for pinned evidence.
+      // For now, we only add new connections (no evidence nodes).
       const allNewIds = new Set<string>();
-      result.connectedEvidence.forEach((ev, i) => {
-        allNewIds.add(ev.id);
-        setTimeout(() => {
-          const pos = findClearPosition(
-            Math.random() * 800 + 200,
-            Math.random() * 400 + 200,
-            190,
-            160,
-          );
-          setBoardNodes((prev) => {
-            if (prev.some((n) => n.id === ev.id)) return prev;
-            return [
-              ...prev,
-              { kind: "evidence" as const, id: ev.id, evidenceType: ev.type, data: ev, position: { x: pos.x, y: pos.y } },
-            ];
-          });
-        }, i * 300);
-      });
-
-      // Stagger connections after evidence is placed
-      const connectionDelay = result.connectedEvidence.length * 300 + 200;
+      const connectionDelay = 200;
       result.newConnections.forEach((nc, i) => {
         allNewIds.add(nc.id);
         setTimeout(() => {
@@ -479,12 +504,34 @@ export function BoardWorkspace({
     []
   );
 
+  // Undo state for recently-cut connections
+  const [recentlyCut, setRecentlyCut] = useState<BoardConnection | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const deleteConnection = useCallback(
     (connId: string) => {
-      setBoardConnections((prev) => prev.filter((c) => c.id !== connId));
+      setBoardConnections((prev) => {
+        const target = prev.find((c) => c.id === connId);
+        if (target) {
+          setRecentlyCut(target);
+          if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+          undoTimerRef.current = setTimeout(() => setRecentlyCut(null), 6000);
+        }
+        return prev.filter((c) => c.id !== connId);
+      });
     },
     []
   );
+
+  const undoCut = useCallback(() => {
+    if (!recentlyCut) return;
+    setBoardConnections((prev) => {
+      if (prev.some((c) => c.id === recentlyCut.id)) return prev;
+      return [...prev, recentlyCut];
+    });
+    setRecentlyCut(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  }, [recentlyCut]);
 
   // ─── Evidence Folder ─────────────────────────────────────────────────────
 
@@ -528,14 +575,14 @@ export function BoardWorkspace({
 
   const addFolderItemToBoard = useCallback(
     (item: EvidenceFolderItem) => {
-      addEvidenceToBoard(item);
+      // TODO: rework evidence folder to pin to entities/connections instead of creating nodes
       setFolderItems((prev) => {
         const next = prev.filter((i) => i.id !== item.id);
         if (next.length === 0) setTimeout(() => setFolderOpen(false), 300);
         return next;
       });
     },
-    [addEvidenceToBoard]
+    []
   );
 
   const dismissFolderItem = useCallback((itemId: string) => {
@@ -732,7 +779,7 @@ export function BoardWorkspace({
         {showLeftPanel && !leftCollapsed && (
           <IntakePanel
             isOnBoard={isOnBoard}
-            onAddEvidence={addEvidenceToBoard}
+            onAddEvidence={noopAddEvidence}
             onSelectEmail={handleSelectEmail}
             selectedEmailId={selectedEmailId}
             starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
@@ -873,9 +920,10 @@ export function BoardWorkspace({
             onFocusNode={focusNode}
             onMoveNode={moveNode}
             onBatchMoveNodes={batchMoveNodes}
-            onAddEvidence={addEvidenceToBoard}
             onAddPerson={addPersonToBoard}
             onAddEntity={addEntityToBoard}
+            onPinEvidenceToCard={pinEvidenceToCard}
+            onPinEvidenceToConnection={pinEvidenceToConnection}
             onStartConnection={startConnection}
             onCompleteConnection={completeConnection}
             onDirectConnection={directConnection}
@@ -901,6 +949,34 @@ export function BoardWorkspace({
               <span className="font-[family-name:var(--font-mono)] text-[11px] text-[#22c55e]">
                 Investigation integrated into main board
               </span>
+            </div>
+          </div>
+        )}
+
+        {/* Undo cut connection toast */}
+        {recentlyCut && (
+          <div className="absolute bottom-20 left-1/2 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex items-center gap-3 rounded-lg border border-[#E24B4A]/30 bg-[#111]/98 px-5 py-3 shadow-2xl shadow-black/60 backdrop-blur-sm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-wider text-[#ccc]">
+                Connection cut
+              </span>
+              <button
+                onClick={undoCut}
+                className="rounded bg-[#E24B4A] px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white hover:bg-[#d43c3b] transition"
+              >
+                Undo
+              </button>
+              <button
+                onClick={() => setRecentlyCut(null)}
+                className="text-[#666] hover:text-white transition text-sm leading-none"
+                title="Dismiss"
+              >
+                ×
+              </button>
             </div>
           </div>
         )}
@@ -968,7 +1044,7 @@ export function BoardWorkspace({
             boardNodes={boardNodes}
             boardConnections={boardConnections}
             onClose={closeSubjectView}
-            onAddEvidence={addEvidenceToBoard}
+            onAddEvidence={noopAddEvidence}
             onFocusNode={focusNode}
             onCreateConnection={(targetId: string) => {
               // Create a connection between this person and the target
@@ -1011,7 +1087,7 @@ export function BoardWorkspace({
           people={people}
           isOnBoard={isOnBoard}
           onClose={closePhotoView}
-          onAddEvidence={addEvidenceToBoard}
+          onAddEvidence={noopAddEvidence}
           onAddPerson={addPersonToBoard}
           onFocusNode={focusNode}
         />

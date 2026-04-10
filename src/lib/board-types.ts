@@ -1,6 +1,6 @@
 // Board workspace types — client-side state for the investigation board
 
-import type { Person, Evidence, EvidenceType, ConnectionType, SearchResult } from "./types";
+import type { Person, EvidenceType, ConnectionType, SearchResult } from "./types";
 import type { SeedEntity, EntityType } from "./entity-seed-data";
 
 // ─── Evidence Categories ────────────────────────────────────────────────────
@@ -31,20 +31,23 @@ export interface BoardPosition {
   y: number;
 }
 
+// Evidence pinned to a card or connection — a lightweight reference
+export interface PinnedEvidence {
+  id: string;
+  type: EvidenceType;
+  title: string;
+  snippet: string;
+  date: string | null;
+  sender: string | null;
+  starCount: number;
+}
+
 export interface BoardPersonNode {
   kind: "person";
   id: string;
   data: Person;
   position: BoardPosition;
-}
-
-export interface BoardEvidenceNode {
-  kind: "evidence";
-  id: string;
-  evidenceType: EvidenceType;
-  data: SearchResult;
-  fullData?: Evidence;
-  position: BoardPosition;
+  pinnedEvidence?: PinnedEvidence[];
 }
 
 export interface BoardEntityNode {
@@ -53,9 +56,10 @@ export interface BoardEntityNode {
   entityType: EntityType;
   data: SeedEntity;
   position: BoardPosition;
+  pinnedEvidence?: PinnedEvidence[];
 }
 
-export type BoardNode = BoardPersonNode | BoardEvidenceNode | BoardEntityNode;
+export type BoardNode = BoardPersonNode | BoardEntityNode;
 
 export interface BoardConnection {
   id: string;
@@ -66,6 +70,7 @@ export interface BoardConnection {
   strength: number;
   verified: boolean;
   note?: string;
+  pinnedEvidence?: PinnedEvidence[];
 }
 
 // ─── Right Panel ────────────────────────────────────────────────────────────
@@ -79,7 +84,7 @@ export interface TimelineEvent {
   title: string;
   description: string;
   itemId: string;
-  kind: "person" | "evidence";
+  kind: "person" | "entity";
   isRelatedToFocus?: boolean;
 }
 

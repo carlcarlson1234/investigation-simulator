@@ -932,9 +932,7 @@ function LinksPanel({
     if (!linkSearch) return linkableItems;
     const q = linkSearch.toLowerCase();
     return linkableItems.filter((n) => {
-      const name =
-        n.kind === "person" ? n.data.name : n.kind === "entity" ? n.data.name : n.data.title;
-      return name.toLowerCase().includes(q);
+      return n.data.name.toLowerCase().includes(q);
     });
   }, [linkableItems, linkSearch]);
 
@@ -985,20 +983,12 @@ function LinksPanel({
                         <circle cx="12" cy="7" r="4" />
                       </svg>
                     ) : (
-                      <span className="text-xs">
-                        {EVIDENCE_TYPE_ICON[
-                          node.kind === "evidence"
-                            ? node.evidenceType
-                            : "email"
-                        ]}
-                      </span>
+                      <span className="text-xs">📍</span>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] font-bold text-white truncate">
-                      {node.kind === "person"
-                        ? node.data.name
-                        : node.kind === "entity" ? node.data.name : node.data.title}
+                      {node.data.name}
                     </p>
                     <p className="text-[9px] text-[#555]">
                       {conn?.type || "manual"}
@@ -1060,18 +1050,10 @@ function LinksPanel({
                     className="w-full flex items-center gap-2 rounded border border-[#1a1a1a] bg-[#0a0a0a] p-2 text-left text-[11px] hover:border-red-600/20 transition"
                   >
                     <span className="text-xs">
-                      {node.kind === "person"
-                        ? "👤"
-                        : EVIDENCE_TYPE_ICON[
-                            node.kind === "evidence"
-                              ? node.evidenceType
-                              : "email"
-                          ]}
+                      {node.kind === "person" ? "👤" : "📍"}
                     </span>
                     <span className="text-white font-bold truncate">
-                      {node.kind === "person"
-                        ? node.data.name
-                        : node.kind === "entity" ? node.data.name : node.data.title}
+                      {node.data.name}
                     </span>
                     <span className="ml-auto text-[9px] text-red-500/60">
                       + Link

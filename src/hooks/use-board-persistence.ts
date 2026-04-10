@@ -19,9 +19,22 @@ export function loadBoardState(): PersistedBoardState | null {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedBoardState;
-    // Basic validation
     if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.connections)) return null;
-    return parsed;
+    // Migration: drop legacy evidence nodes (from before evidence became pinned).
+    // Their kind is "evidence" which no longer exists on BoardNode.
+    const filtered: BoardNode[] = [];
+    for (const n of parsed.nodes as unknown[]) {
+      const node = n as { kind?: string };
+      if (node.kind === "person" || node.kind === "entity") {
+        filtered.push(n as BoardNode);
+      }
+    }
+    // Also drop connections that reference dropped evidence nodes.
+    const validIds = new Set(filtered.map((n) => n.id));
+    const validConns = parsed.connections.filter(
+      (c) => validIds.has(c.sourceId) && validIds.has(c.targetId)
+    );
+    return { ...parsed, nodes: filtered, connections: validConns };
   } catch {
     return null;
   }
