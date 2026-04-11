@@ -8,7 +8,7 @@ import {
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
 
-type PanelTab = "photos" | "emails" | "files";
+type PanelTab = "photos" | "emails" | "files" | "flights";
 
 interface IntakePanelProps {
   isOnBoard: (id: string) => boolean;
@@ -35,6 +35,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
     if (activeTab === "photos") return lead.type === "photo";
     if (activeTab === "emails") return lead.type === "email";
     if (activeTab === "files") return lead.type === "document" || lead.type === "imessage";
+    if (activeTab === "flights") return lead.type === "flight_log";
     return false;
   });
 
@@ -51,6 +52,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
             { key: "photos" as const, label: "📷 Photos" },
             { key: "emails" as const, label: "✉️ Emails" },
             { key: "files" as const, label: "📄 Files" },
+            { key: "flights" as const, label: "✈️ Flight Logs" },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -206,6 +208,8 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                 selectedEmailId={selectedEmailId}
                 isWideMode={isWideMode}
               />
+            ) : activeTab === "flights" ? (
+              <FlightsTab onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             ) : (
               <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             )}
@@ -1165,6 +1169,177 @@ function FilesTab({
   );
 }
 
+// ─── FLIGHTS TAB ────────────────────────────────────────────────────────────
+
+interface FlightListItem {
+  id: string;
+  date: string | null;
+  title: string;
+  snippet: string;
+  departureCode: string | null;
+  arrivalCode: string | null;
+  departureCity: string | null;
+  arrivalCity: string | null;
+  passengerCount: number;
+  passengers: string[];
+  aircraft: string | null;
+  pilot: string | null;
+}
+
+function FlightsTab({
+  onAddEvidence,
+  isWideMode,
+}: {
+  // Flight logs in the left panel are always draggable — no isOnBoard gating
+  // because they can be pinned as evidence to multiple cards/connections.
+  onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+  isWideMode?: boolean;
+}) {
+  const [flights, setFlights] = useState<FlightListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const initialLoad = useRef(false);
+
+  const fetchFlights = useCallback(async (off: number, append: boolean) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "30", offset: String(off) });
+      const res = await fetch(`/api/flights?${params}`);
+      if (!res.ok) throw new Error("Failed");
+      const data: { flights: FlightListItem[]; total: number; hasMore: boolean } = await res.json();
+      if (append) setFlights((prev) => [...prev, ...data.flights]);
+      else setFlights(data.flights);
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setOffset(off);
+    } catch (err) {
+      console.error("Flights fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoad.current) {
+      initialLoad.current = true;
+      fetchFlights(0, false);
+    }
+  }, [fetchFlights]);
+
+  const loadMore = () => {
+    if (hasMore && !loading) fetchFlights(offset + 30, true);
+  };
+
+  function flightToSearchResult(f: FlightListItem): SearchResult {
+    return {
+      id: f.id,
+      type: "flight_log",
+      title: f.title,
+      snippet: f.snippet,
+      date: f.date,
+      sender: f.aircraft ?? f.pilot ?? null,
+      score: 0,
+      starCount: 0,
+    };
+  }
+
+  return (
+    <>
+      {/* Status bar */}
+      <div className="flex-shrink-0 px-3 py-1.5 text-[10px] font-bold text-[#555] border-b border-[#1a1a1a] flex items-center justify-between">
+        {loading && flights.length === 0 ? (
+          <span className="flex items-center gap-1.5 text-red-400">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            Loading…
+          </span>
+        ) : (
+          <span>{total.toLocaleString()} flights</span>
+        )}
+        <span className="text-[#444] tabular-nums">{flights.length} loaded</span>
+      </div>
+
+      {/* Flight list — flight logs are always re-draggable (can be pinned
+          as evidence to multiple cards/connections). We intentionally do NOT
+          gate on isOnBoard here, because flight_log ids collide with the
+          parallel Flight entity ids, and because the user wants to pin the
+          same log more than once. */}
+      <div className="flex-1 overflow-y-auto">
+        {flights.map((f) => {
+          return (
+            <div
+              key={f.id}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(
+                  "application/board-item",
+                  JSON.stringify({ id: f.id, kind: "evidence", data: flightToSearchResult(f) })
+                );
+                e.dataTransfer.effectAllowed = "move";
+                e.currentTarget.classList.add("dragging-source");
+              }}
+              onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
+              className={`group border-b border-[#1a1a1a] cursor-grab active:cursor-grabbing transition hover:bg-[#161616] ${
+                isWideMode ? "px-5 py-4" : "px-3 py-2.5"
+              }`}
+            >
+              {/* Row 1: icon + route + date */}
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className={isWideMode ? "text-lg" : "text-sm"}>✈️</span>
+                <span className={`flex-1 font-bold text-white ${isWideMode ? "text-[14px]" : "text-xs truncate"}`}>
+                  {f.departureCode ?? f.departureCity ?? "?"} → {f.arrivalCode ?? f.arrivalCity ?? "?"}
+                </span>
+                {f.date && (
+                  <span className={`text-[#555] tabular-nums flex-shrink-0 ${isWideMode ? "text-[12px]" : "text-[10px]"}`}>{f.date}</span>
+                )}
+              </div>
+
+              {/* Row 2: passengers / notes */}
+              <p className={`text-[#777] pl-6 ${
+                isWideMode ? "text-[13px] leading-relaxed line-clamp-4 mt-1" : "text-[11px] truncate"
+              }`}>{f.snippet || "(no passengers recorded)"}</p>
+
+              {/* Row 3: aircraft / pilot / passenger count / action */}
+              <div className="flex items-center gap-2 mt-1 pl-6">
+                {f.aircraft && (
+                  <span className="text-[9px] text-[#555] font-[family-name:var(--font-mono)] uppercase tracking-wider">
+                    {f.aircraft}
+                  </span>
+                )}
+                {f.pilot && (
+                  <span className="text-[9px] text-[#555] truncate max-w-[100px]">pilot: {f.pilot}</span>
+                )}
+                {f.passengerCount > 0 && (
+                  <span className="text-[9px] text-[#555]">{f.passengerCount} pax</span>
+                )}
+                <div className="flex-1" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAddEvidence(flightToSearchResult(f)); }}
+                  className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition opacity-0 group-hover:opacity-100"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Load more */}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loading}
+            className="w-full py-3 text-center font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:bg-[#161616] transition border-b border-[#1a1a1a]"
+          >
+            {loading ? "Loading…" : "Load More ↓"}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── SEARCH ALL TAB (existing functionality) ────────────────────────────────
 
 function EvidenceSearch({
@@ -1234,7 +1409,7 @@ function EvidenceSearch({
         )}
 
         <div className="flex gap-1 flex-wrap">
-          {(["all", "email", "document", "photo", "imessage"] as const).map((t) => (
+          {(["all", "email", "document", "photo", "imessage", "flight_log"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTypeFilter(t)}

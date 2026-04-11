@@ -10,6 +10,7 @@ import type {
   PhotoEvidence,
   PhotoListItem,
   IMessageEvidence,
+  FlightLogEvidence,
   Evidence,
   ArchiveStats,
   ReleaseBatch,
@@ -443,6 +444,42 @@ export async function searchEvidence(
     }
   }
 
+  // Search flight logs
+  if (type === "all" || type === "flight_log") {
+    const flightRows = await jmail`
+      SELECT id, date::text AS date, departure_code, arrival_code,
+             departure_city, arrival_city, departure_name, arrival_name,
+             aircraft, pilot, notes, passengers, passenger_count,
+             ts_rank(search_vector, to_tsquery('english', ${tsQuery})) as score
+      FROM flights
+      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+      ORDER BY score DESC
+      LIMIT ${type === "all" ? Math.ceil(limit / 5) : limit}
+      OFFSET ${type === "flight_log" ? offset : 0}
+    `;
+    for (const r of flightRows) {
+      const depLabel = (r.departure_code as string) || (r.departure_city as string) || "?";
+      const arrLabel = (r.arrival_code as string) || (r.arrival_city as string) || "?";
+      const date = r.date as string | null;
+      const title = `${date ?? "unknown"} · ${depLabel} → ${arrLabel}`;
+      const pax = Array.isArray(r.passengers) ? (r.passengers as string[]) : [];
+      const snippet =
+        pax.length > 0
+          ? pax.slice(0, 3).join(", ") + (pax.length > 3 ? `, +${pax.length - 3}` : "")
+          : ((r.notes as string) ?? "");
+      results.push({
+        id: r.id as string,
+        type: "flight_log",
+        title,
+        snippet,
+        date,
+        sender: (r.aircraft as string) ?? (r.pilot as string) ?? null,
+        score: Number(r.score),
+        starCount: 0,
+      });
+    }
+  }
+
   // Sort all results by score
   results.sort((a, b) => b.score - a.score);
   total = results.length;
@@ -462,6 +499,8 @@ export async function getEvidenceById(id: string, type: EvidenceType): Promise<E
       return getPhotoById(id);
     case "imessage":
       return getIMessageById(id);
+    case "flight_log":
+      return getFlightById(id);
     default:
       return null;
   }
@@ -590,6 +629,157 @@ async function getIMessageById(id: string): Promise<IMessageEvidence | null> {
     conversationSlug: (rj.conversation_slug as string) ?? "",
     timestamp: (rj.timestamp as string) ?? null,
   };
+}
+
+async function getFlightById(id: string): Promise<FlightLogEvidence | null> {
+  const rows = await jmail`
+    SELECT id, date::text AS date, source_doc,
+           departure, arrival,
+           departure_code, departure_name, departure_city, departure_country,
+           departure_lat, departure_lon,
+           arrival_code, arrival_name, arrival_city, arrival_country,
+           arrival_lat, arrival_lon,
+           passengers, passenger_count, aircraft, pilot, flight_number, notes,
+           distance_nm, duration_minutes
+    FROM flights WHERE id = ${id} LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const pax = Array.isArray(r.passengers) ? (r.passengers as string[]) : [];
+  const depLabel = (r.departure_code as string) || (r.departure_city as string) || "?";
+  const arrLabel = (r.arrival_code as string) || (r.arrival_city as string) || "?";
+  return {
+    id: r.id as string,
+    type: "flight_log",
+    title: `${(r.date as string) ?? "unknown"} · ${depLabel} → ${arrLabel}`,
+    snippet:
+      pax.length > 0
+        ? pax.slice(0, 3).join(", ") + (pax.length > 3 ? `, +${pax.length - 3}` : "")
+        : ((r.notes as string) ?? ""),
+    date: (r.date as string) ?? null,
+    source: (r.source_doc as string) ?? null,
+    releaseBatch: null,
+    starCount: 0,
+    departure: (r.departure as string) ?? null,
+    arrival: (r.arrival as string) ?? null,
+    departureCode: (r.departure_code as string) ?? null,
+    departureName: (r.departure_name as string) ?? null,
+    departureCity: (r.departure_city as string) ?? null,
+    departureCountry: (r.departure_country as string) ?? null,
+    departureLat: (r.departure_lat as number) ?? null,
+    departureLon: (r.departure_lon as number) ?? null,
+    arrivalCode: (r.arrival_code as string) ?? null,
+    arrivalName: (r.arrival_name as string) ?? null,
+    arrivalCity: (r.arrival_city as string) ?? null,
+    arrivalCountry: (r.arrival_country as string) ?? null,
+    arrivalLat: (r.arrival_lat as number) ?? null,
+    arrivalLon: (r.arrival_lon as number) ?? null,
+    passengers: pax,
+    passengerCount: Number(r.passenger_count ?? 0),
+    aircraft: (r.aircraft as string) ?? null,
+    pilot: (r.pilot as string) ?? null,
+    flightNumber: (r.flight_number as string) ?? null,
+    notes: (r.notes as string) ?? null,
+    distanceNm: (r.distance_nm as number) ?? null,
+    durationMinutes: (r.duration_minutes as number) ?? null,
+    sourceDoc: (r.source_doc as string) ?? null,
+  };
+}
+
+// ─── Flight Listing ─────────────────────────────────────────────────────────
+
+export interface FlightListItem {
+  id: string;
+  date: string | null;
+  title: string;          // pre-formatted route/date label
+  snippet: string;        // passengers or notes
+  departureCode: string | null;
+  arrivalCode: string | null;
+  departureCity: string | null;
+  arrivalCity: string | null;
+  passengerCount: number;
+  passengers: string[];   // first few names
+  aircraft: string | null;
+  pilot: string | null;
+}
+
+export async function listFlights(opts: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  sort?: "newest" | "oldest";
+}): Promise<{ flights: FlightListItem[]; total: number; hasMore: boolean }> {
+  const limit = Math.min(opts.limit ?? 30, 100);
+  const offset = opts.offset ?? 0;
+  const sort = opts.sort ?? "newest";
+  const q = (opts.q ?? "").trim();
+
+  // Build tsquery if a query is provided
+  const tsQuery = q
+    ? q
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w.replace(/[^a-zA-Z0-9]/g, ""))
+        .filter(Boolean)
+        .join(" & ")
+    : "";
+
+  let rows: Record<string, unknown>[];
+  let totalRows: Record<string, unknown>[];
+  if (tsQuery) {
+    rows = await jmail`
+      SELECT id, date::text AS date, departure_code, arrival_code,
+             departure_city, arrival_city, aircraft, pilot,
+             passengers, passenger_count, notes,
+             ts_rank(search_vector, to_tsquery('english', ${tsQuery})) AS score
+      FROM flights
+      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+      ORDER BY score DESC, date ${sort === "newest" ? jmail`DESC` : jmail`ASC`} NULLS LAST
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    totalRows = await jmail`
+      SELECT COUNT(*)::int AS n FROM flights
+      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+    `;
+  } else {
+    rows = await jmail`
+      SELECT id, date::text AS date, departure_code, arrival_code,
+             departure_city, arrival_city, aircraft, pilot,
+             passengers, passenger_count, notes
+      FROM flights
+      ORDER BY date ${sort === "newest" ? jmail`DESC` : jmail`ASC`} NULLS LAST, id
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    totalRows = await jmail`SELECT COUNT(*)::int AS n FROM flights`;
+  }
+
+  const total = Number((totalRows[0] as { n?: number } | undefined)?.n ?? 0);
+
+  const flights: FlightListItem[] = rows.map((r) => {
+    const pax = Array.isArray(r.passengers) ? (r.passengers as string[]) : [];
+    const depLabel = (r.departure_code as string) || (r.departure_city as string) || "?";
+    const arrLabel = (r.arrival_code as string) || (r.arrival_city as string) || "?";
+    const date = (r.date as string) ?? null;
+    return {
+      id: r.id as string,
+      date,
+      title: `${date ?? "unknown"} · ${depLabel} → ${arrLabel}`,
+      snippet:
+        pax.length > 0
+          ? pax.slice(0, 3).join(", ") + (pax.length > 3 ? `, +${pax.length - 3}` : "")
+          : ((r.notes as string) ?? ""),
+      departureCode: (r.departure_code as string) ?? null,
+      arrivalCode: (r.arrival_code as string) ?? null,
+      departureCity: (r.departure_city as string) ?? null,
+      arrivalCity: (r.arrival_city as string) ?? null,
+      passengerCount: Number(r.passenger_count ?? 0),
+      passengers: pax.slice(0, 5),
+      aircraft: (r.aircraft as string) ?? null,
+      pilot: (r.pilot as string) ?? null,
+    };
+  });
+
+  return { flights, total, hasMore: offset + flights.length < total };
 }
 
 // ─── Files & Messages Browsing ──────────────────────────────────────────────

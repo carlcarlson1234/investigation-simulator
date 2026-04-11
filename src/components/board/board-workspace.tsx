@@ -5,6 +5,7 @@ import type { Person, SearchResult, ArchiveStats, EmailEvidence, EvidenceFolderI
 import type {
   BoardNode,
   BoardConnection,
+  BoardFlightNodeData,
   RightPanelTab,
   FocusState,
   PinnedEvidence,
@@ -329,6 +330,37 @@ export function BoardWorkspace({
       ]);
     },
     [isOnBoard, findClearPosition]
+  );
+
+  const addFlightToBoard = useCallback(
+    (
+      data: BoardFlightNodeData,
+      autoPinnedEvidence: PinnedEvidence,
+      dropX?: number,
+      dropY?: number,
+    ) => {
+      // Flight entity ids are shared with the flight_log evidence ids (1:1),
+      // so we cannot use the generic isOnBoard() here — it would treat a
+      // flight_log already pinned as evidence as "the flight entity is on
+      // the board." Scope the check to flight nodes only.
+      if (boardNodes.some((n) => n.kind === "flight" && n.id === autoPinnedEvidence.id)) return;
+
+      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
+      const { x, y } = findClearPosition(raw.x, raw.y, 210, 160);
+
+      setBoardNodes((prev) => [
+        ...prev,
+        {
+          kind: "flight",
+          id: autoPinnedEvidence.id,
+          data,
+          position: { x, y },
+          // Auto-pin the flight log as the flight entity's starting evidence.
+          pinnedEvidence: [autoPinnedEvidence],
+        },
+      ]);
+    },
+    [boardNodes, findClearPosition]
   );
 
   const moveNode = useCallback((id: string, x: number, y: number) => {
@@ -922,6 +954,7 @@ export function BoardWorkspace({
             onBatchMoveNodes={batchMoveNodes}
             onAddPerson={addPersonToBoard}
             onAddEntity={addEntityToBoard}
+            onAddFlight={addFlightToBoard}
             onPinEvidenceToCard={pinEvidenceToCard}
             onPinEvidenceToConnection={pinEvidenceToConnection}
             onStartConnection={startConnection}

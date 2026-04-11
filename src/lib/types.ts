@@ -2,7 +2,7 @@
 
 // ─── Evidence Types ─────────────────────────────────────────────────────────
 
-export type EvidenceType = "email" | "document" | "photo" | "imessage";
+export type EvidenceType = "email" | "document" | "photo" | "imessage" | "flight_log";
 
 export type ConnectionType = "manual" | "email_thread" | "photo_coappearance";
 
@@ -76,7 +76,36 @@ export interface IMessageEvidence extends EvidenceBase {
   timestamp: string | null;  // from raw_json
 }
 
-export type Evidence = EmailEvidence | DocumentEvidence | PhotoEvidence | IMessageEvidence;
+export interface FlightLogEvidence extends EvidenceBase {
+  type: "flight_log";
+  // Route
+  departure: string | null;
+  arrival: string | null;
+  departureCode: string | null;
+  departureName: string | null;
+  departureCity: string | null;
+  departureCountry: string | null;
+  departureLat: number | null;
+  departureLon: number | null;
+  arrivalCode: string | null;
+  arrivalName: string | null;
+  arrivalCity: string | null;
+  arrivalCountry: string | null;
+  arrivalLat: number | null;
+  arrivalLon: number | null;
+  // Cargo
+  passengers: string[];
+  passengerCount: number;
+  aircraft: string | null;
+  pilot: string | null;
+  flightNumber: string | null;
+  notes: string | null;
+  distanceNm: number | null;
+  durationMinutes: number | null;
+  sourceDoc: string | null;
+}
+
+export type Evidence = EmailEvidence | DocumentEvidence | PhotoEvidence | IMessageEvidence | FlightLogEvidence;
 
 // ─── Search Result (lightweight, for listing) ───────────────────────────────
 
