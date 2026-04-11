@@ -108,14 +108,14 @@ export function ContextPanel({
     <aside className={`context-panel flex h-full w-full flex-shrink-0 flex-col border-l border-[#1a1a1a] overflow-hidden ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
-      {/* Tab bar — muted during onboarding */}
-      <div className={`flex flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
+      {/* Tab bar — 3-column grid so 5 tabs wrap onto two rows (3 + 2). */}
+      <div className={`grid grid-cols-3 flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""
       }`}>
         {TABS.map((tab) => (
           <button key={tab.key} onClick={() => onTabChange(tab.key)}
-            className={`flex-1 font-[family-name:var(--font-mono)] uppercase transition min-w-0 ${
-              isWideMode ? "py-3 text-[11px] tracking-[0.12em] px-2" : "py-2 text-[9px] tracking-[0.08em] px-0.5"
+            className={`font-[family-name:var(--font-mono)] uppercase transition min-w-0 ${
+              isWideMode ? "py-2.5 text-[11px] tracking-[0.12em] px-2" : "py-2 text-[9px] tracking-[0.08em] px-0.5"
             } ${
               activeTab === tab.key ? "text-red-500 border-b-2 border-red-500 bg-red-600/5" : "text-[#666] hover:text-white hover:border-b-2 hover:border-[#555]"
             }`}>
@@ -151,7 +151,14 @@ export function ContextPanel({
             spotlightPersonIds={spotlightPersonIds} people={people} isWideMode={isWideMode} />
         )}
         {activeTab === "flights" && (
-          <FlightsTab isOnBoard={isOnBoard} isWideMode={isWideMode} />
+          <FlightsTab
+            // Scope the on-board check to flight entities only. The id is
+            // shared with the flight_log evidence record (1:1), so we must
+            // not count "flight_log pinned as evidence" as "flight entity on
+            // board" — they are distinct representations.
+            isFlightOnBoard={(id: string) => boardNodes.some((n) => n.kind === "flight" && n.id === id)}
+            isWideMode={isWideMode}
+          />
         )}
       </div>
     </aside>
@@ -849,10 +856,10 @@ interface FlightListItem {
 }
 
 function FlightsTab({
-  isOnBoard,
+  isFlightOnBoard,
   isWideMode,
 }: {
-  isOnBoard: (id: string) => boolean;
+  isFlightOnBoard: (id: string) => boolean;
   isWideMode?: boolean;
 }) {
   const [flights, setFlights] = useState<FlightListItem[]>([]);
@@ -943,7 +950,7 @@ function FlightsTab({
       {/* Flight list */}
       <div className="space-y-1">
         {flights.map((f) => {
-          const onBoard = isOnBoard(f.id);
+          const onBoard = isFlightOnBoard(f.id);
           return (
             <div
               key={f.id}

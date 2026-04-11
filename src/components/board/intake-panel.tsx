@@ -209,7 +209,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
                 isWideMode={isWideMode}
               />
             ) : activeTab === "flights" ? (
-              <FlightsTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
+              <FlightsTab onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             ) : (
               <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             )}
@@ -1187,11 +1187,11 @@ interface FlightListItem {
 }
 
 function FlightsTab({
-  isOnBoard,
   onAddEvidence,
   isWideMode,
 }: {
-  isOnBoard: (id: string) => boolean;
+  // Flight logs in the left panel are always draggable — no isOnBoard gating
+  // because they can be pinned as evidence to multiple cards/connections.
   onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   isWideMode?: boolean;
 }) {
@@ -1260,14 +1260,17 @@ function FlightsTab({
         <span className="text-[#444] tabular-nums">{flights.length} loaded</span>
       </div>
 
-      {/* Flight list */}
+      {/* Flight list — flight logs are always re-draggable (can be pinned
+          as evidence to multiple cards/connections). We intentionally do NOT
+          gate on isOnBoard here, because flight_log ids collide with the
+          parallel Flight entity ids, and because the user wants to pin the
+          same log more than once. */}
       <div className="flex-1 overflow-y-auto">
         {flights.map((f) => {
-          const onBoard = isOnBoard(f.id);
           return (
             <div
               key={f.id}
-              draggable={!onBoard}
+              draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData(
                   "application/board-item",
@@ -1277,9 +1280,9 @@ function FlightsTab({
                 e.currentTarget.classList.add("dragging-source");
               }}
               onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
-              className={`group border-b border-[#1a1a1a] cursor-grab active:cursor-grabbing transition ${
+              className={`group border-b border-[#1a1a1a] cursor-grab active:cursor-grabbing transition hover:bg-[#161616] ${
                 isWideMode ? "px-5 py-4" : "px-3 py-2.5"
-              } ${onBoard ? "bg-[#0f0f0f] opacity-50" : "hover:bg-[#161616]"}`}
+              }`}
             >
               {/* Row 1: icon + route + date */}
               <div className="flex items-center gap-2 mb-0.5">
@@ -1311,16 +1314,12 @@ function FlightsTab({
                   <span className="text-[9px] text-[#555]">{f.passengerCount} pax</span>
                 )}
                 <div className="flex-1" />
-                {onBoard ? (
-                  <span className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-green-500/60 uppercase tracking-wider">✓ On Board</span>
-                ) : (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onAddEvidence(flightToSearchResult(f)); }}
-                    className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition opacity-0 group-hover:opacity-100"
-                  >
-                    + Add
-                  </button>
-                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAddEvidence(flightToSearchResult(f)); }}
+                  className="font-[family-name:var(--font-mono)] text-[9px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition opacity-0 group-hover:opacity-100"
+                >
+                  + Add
+                </button>
               </div>
             </div>
           );
