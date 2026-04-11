@@ -339,8 +339,11 @@ export function BoardWorkspace({
       dropX?: number,
       dropY?: number,
     ) => {
-      // The flight entity id is the same as its source flight_log id (1:1).
-      if (isOnBoard(autoPinnedEvidence.id)) return;
+      // Flight entity ids are shared with the flight_log evidence ids (1:1),
+      // so we cannot use the generic isOnBoard() here — it would treat a
+      // flight_log already pinned as evidence as "the flight entity is on
+      // the board." Scope the check to flight nodes only.
+      if (boardNodes.some((n) => n.kind === "flight" && n.id === autoPinnedEvidence.id)) return;
 
       const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
       const { x, y } = findClearPosition(raw.x, raw.y, 210, 160);
@@ -357,7 +360,7 @@ export function BoardWorkspace({
         },
       ]);
     },
-    [isOnBoard, findClearPosition]
+    [boardNodes, findClearPosition]
   );
 
   const moveNode = useCallback((id: string, x: number, y: number) => {
