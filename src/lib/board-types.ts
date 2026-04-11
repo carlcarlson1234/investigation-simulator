@@ -61,7 +61,45 @@ export interface BoardEntityNode {
   pinnedEvidence?: PinnedEvidence[];
 }
 
-export type BoardNode = BoardPersonNode | BoardEntityNode;
+// Flights are entities sourced from the jmail flights table (4,292 rows),
+// with a 1:1 relationship to a flight_log evidence record (auto-pinned on drop).
+export interface BoardFlightNodeData {
+  title: string;             // "2014-08-24 · TEB → LHR"
+  date: string | null;
+  departure: string | null;
+  arrival: string | null;
+  departureCode: string | null;
+  arrivalCode: string | null;
+  departureCity: string | null;
+  arrivalCity: string | null;
+  departureCountry: string | null;
+  arrivalCountry: string | null;
+  departureLat: number | null;
+  departureLon: number | null;
+  arrivalLat: number | null;
+  arrivalLon: number | null;
+  aircraft: string | null;
+  pilot: string | null;
+  flightNumber: string | null;
+  passengers: string[];      // full passenger list as recorded in the flight log
+  passengerCount: number;
+  notes: string | null;
+  distanceNm: number | null;
+  durationMinutes: number | null;
+  sourceDoc: string | null;
+  // Display name fallback — some datasets use this
+  name: string;              // same as title, for generic .data.name access
+}
+
+export interface BoardFlightNode {
+  kind: "flight";
+  id: string;                // same as the underlying flight_log id (1:1)
+  data: BoardFlightNodeData;
+  position: BoardPosition;
+  pinnedEvidence?: PinnedEvidence[];  // seeded with the flight_log on drop
+}
+
+export type BoardNode = BoardPersonNode | BoardEntityNode | BoardFlightNode;
 
 export interface BoardConnection {
   id: string;
@@ -77,7 +115,7 @@ export interface BoardConnection {
 
 // ─── Right Panel ────────────────────────────────────────────────────────────
 
-export type RightPanelTab = "persons" | "places" | "orgs" | "events";
+export type RightPanelTab = "persons" | "places" | "orgs" | "events" | "flights";
 
 // ─── Timeline ───────────────────────────────────────────────────────────────
 

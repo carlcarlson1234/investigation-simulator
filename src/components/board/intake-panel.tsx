@@ -52,7 +52,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
             { key: "photos" as const, label: "📷 Photos" },
             { key: "emails" as const, label: "✉️ Emails" },
             { key: "files" as const, label: "📄 Files" },
-            { key: "flights" as const, label: "✈️ Flights" },
+            { key: "flights" as const, label: "✈️ Flight Logs" },
           ]).map(tab => (
             <button
               key={tab.key}

@@ -2,7 +2,7 @@
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
 import { createPortal } from "react-dom";
-import type { BoardNode, BoardConnection, FocusState, PinnedEvidence } from "@/lib/board-types";
+import type { BoardNode, BoardConnection, BoardFlightNodeData, FocusState, PinnedEvidence } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
 import type { SeedEntity } from "@/lib/entity-seed-data";
@@ -130,6 +130,12 @@ interface BoardCanvasProps {
   onBatchMoveNodes?: (moves: Record<string, { x: number; y: number }>) => void;
   onAddPerson: (personId: string, x?: number, y?: number) => void;
   onAddEntity?: (entity: SeedEntity, x?: number, y?: number) => void;
+  onAddFlight?: (
+    data: BoardFlightNodeData,
+    autoPinnedEvidence: PinnedEvidence,
+    x?: number,
+    y?: number,
+  ) => void;
   onPinEvidenceToCard?: (cardId: string, result: SearchResult) => void;
   onPinEvidenceToConnection?: (connId: string, result: SearchResult) => void;
   onStartConnection: (fromId: string) => void;
@@ -165,6 +171,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onBatchMoveNodes,
     onAddPerson,
     onAddEntity,
+    onAddFlight,
     onPinEvidenceToCard,
     onPinEvidenceToConnection,
     onStartConnection,
@@ -326,8 +333,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   // Card dimensions accounting for importance scaling
   const getScaledCardSize = useCallback((node: BoardNode): { w: number; h: number } => {
-    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : 190;
-    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : 160;
+    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
+    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : 160;
     const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
     return { w: baseW * scale, h: baseH * scale };
   }, [getNodeScale]);
@@ -371,8 +378,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const vp = viewportRef.current;
     if (!node || !vp) return;
 
-    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : 190;
-    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : 140;
+    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
+    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : 140;
 
     // The centre of the card in world-space, then scaled
     const scaledX = (node.position.x + cardW / 2) * zoom;
@@ -480,8 +487,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const node = nodesRef.current.find(n => n.id === nodeId);
     if (node) {
       const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
-      const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : 190;
-      const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : 160;
+      const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
+      const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : 160;
       return { w: baseW * scale, h: baseH * scale };
     }
     return { w: 260, h: 300 };
@@ -2434,6 +2441,65 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             onAddEntity(entity, x, y);
             droppedId = entity.id;
           }
+        } else if (parsed.kind === "flight" && onAddFlight) {
+          // Flight entities come from the right-panel Flights tab. They carry a
+          // FlightListItem payload with everything needed to hydrate the card.
+          // The flight_log is auto-pinned as the entity's sole starting evidence.
+          const f = parsed.data as {
+            id: string;
+            date: string | null;
+            title: string;
+            snippet: string;
+            departureCode: string | null;
+            arrivalCode: string | null;
+            departureCity: string | null;
+            arrivalCity: string | null;
+            passengerCount: number;
+            passengers: string[];
+            aircraft: string | null;
+            pilot: string | null;
+          };
+          onAddFlight(
+            {
+              title: f.title,
+              date: f.date,
+              departure: null,
+              arrival: null,
+              departureCode: f.departureCode,
+              arrivalCode: f.arrivalCode,
+              departureCity: f.departureCity,
+              arrivalCity: f.arrivalCity,
+              departureCountry: null,
+              arrivalCountry: null,
+              departureLat: null,
+              departureLon: null,
+              arrivalLat: null,
+              arrivalLon: null,
+              aircraft: f.aircraft,
+              pilot: f.pilot,
+              flightNumber: null,
+              passengers: f.passengers,
+              passengerCount: f.passengerCount,
+              notes: null,
+              distanceNm: null,
+              durationMinutes: null,
+              sourceDoc: null,
+              name: f.title,
+            },
+            // Auto-pin the flight_log as a PinnedEvidence record on the entity
+            {
+              id: f.id,
+              type: "flight_log",
+              title: f.title,
+              snippet: f.snippet,
+              date: f.date,
+              sender: f.aircraft ?? f.pilot ?? null,
+              starCount: 0,
+            },
+            x,
+            y,
+          );
+          droppedId = f.id;
         } else if (parsed.kind === "evidence" && parsed.data) {
           // Evidence pins to the currently-highlighted drop target.
           // We trust the live hit-test from handleDragOver for a clean delineation.
@@ -2457,7 +2523,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       } catch { /* ignore */ }
     },
-    [zoom, onAddPerson, onAddEntity, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
+    [zoom, onAddPerson, onAddEntity, onAddFlight, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
   );
 
   // Returns the bottom-edge center of the card (where the handle is)
@@ -3112,6 +3178,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         pinnedEvidence={node.pinnedEvidence}
                         onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence}
                         zoom={zoom} />
+                    ) : node.kind === "flight" ? (
+                      <FlightBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
                     ) : (
                       <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
@@ -3851,6 +3919,156 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubl
 }
 
 
+/* ─── Flight Board Card ──────────────────────────────────────────────────── */
+
+function FlightBoardCard({
+  data,
+  isSelected,
+  zoom = 1,
+}: {
+  data: BoardFlightNodeData;
+  isSelected: boolean;
+  zoom?: number;
+}) {
+  const depLabel = data.departureCode ?? data.departureCity ?? data.departure ?? "?";
+  const arrLabel = data.arrivalCode ?? data.arrivalCity ?? data.arrival ?? "?";
+
+  // Mini card at low zoom
+  if (zoom < 0.6) {
+    return (
+      <div
+        className="flex items-center gap-1 rounded bg-[#141414] border border-[#2a2a2a] border-l-2 border-l-[#9d8555] px-1.5 py-1 cursor-grab active:cursor-grabbing"
+        style={{ width: 150 }}
+      >
+        <span className="text-[10px] shrink-0">✈️</span>
+        <span className="text-[9px] text-white truncate">
+          {depLabel} → {arrLabel}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`w-[210px] rounded-xl bg-[#111] border overflow-hidden cursor-grab active:cursor-grabbing ${
+        isSelected ? "shadow-xl shadow-[#9d8555]/20 border-[#9d8555]/50" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
+      }`}
+    >
+      {/* Header strip with ✈️ + type */}
+      <div className="relative bg-gradient-to-b from-[#1c1812] to-[#111] border-b border-[#2a2a2a] px-3 pt-2.5 pb-2 border-l-4 border-l-[#9d8555]">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[12px]">✈️</span>
+          <span className="text-[8px] font-black uppercase tracking-[0.15em] text-[#9d8555]">Flight</span>
+          {data.date && (
+            <span className="ml-auto text-[9px] text-[#777] tabular-nums">{data.date}</span>
+          )}
+        </div>
+        <h3 className="text-[15px] font-black text-white leading-tight tracking-tight">
+          {depLabel} <span className="text-[#666]">→</span> {arrLabel}
+        </h3>
+        {(data.departureCity || data.arrivalCity) && (
+          <p className="text-[10px] text-[#888] truncate mt-0.5">
+            {data.departureCity ?? "?"} to {data.arrivalCity ?? "?"}
+          </p>
+        )}
+      </div>
+
+      {/* Metadata rows */}
+      <div className="px-3 py-2 space-y-1 text-[10px]">
+        {data.aircraft && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[#555] w-12 flex-shrink-0">Aircraft</span>
+            <span className="text-white font-bold font-[family-name:var(--font-mono)] truncate">{data.aircraft}</span>
+          </div>
+        )}
+        {data.pilot && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[#555] w-12 flex-shrink-0">Pilot</span>
+            <span className="text-[#ccc] truncate">{data.pilot}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[#555] w-12 flex-shrink-0">Pax</span>
+          <span className="text-[#9d8555] font-bold tabular-nums">{data.passengerCount}</span>
+          {data.passengers.length > 0 && (
+            <span className="text-[#666] truncate text-[9px] ml-1">
+              · {data.passengers.slice(0, 2).join(", ")}
+              {data.passengers.length > 2 ? `, +${data.passengers.length - 2}` : ""}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Flight Passenger Panel (rendered inside NodeDetailCard) ────────────── */
+
+function FlightPassengerPanel({
+  passengers,
+  peopleOnBoardNames,
+}: {
+  passengers: string[];
+  peopleOnBoardNames: Set<string>;
+}) {
+  if (passengers.length === 0) {
+    return (
+      <div className="rounded border border-[#222] bg-[#111] px-3 py-2.5">
+        <p className="text-[11px] text-[#666] italic">
+          The flight log records no passengers for this flight.
+        </p>
+      </div>
+    );
+  }
+
+  const isAnonymous = (name: string) =>
+    /^\s*\[.*\]\s*$/.test(name) || /^unknown$/i.test(name) || /redacted/i.test(name);
+
+  return (
+    <div className="rounded border border-[#222] bg-[#0f0e0b] px-3 py-2.5">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-[11px]">✈️</span>
+        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-[#9d8555]">
+          Flight log states these passengers
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {passengers.map((name, i) => {
+          const anon = isAnonymous(name);
+          const onBoard = !anon && peopleOnBoardNames.has(name);
+          return (
+            <li
+              key={`${i}-${name}`}
+              className="flex items-center gap-2 py-0.5"
+            >
+              <span
+                className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                  anon ? "bg-[#333] border border-[#444]" : onBoard ? "bg-[#9d8555]" : "border border-[#555]"
+                }`}
+              />
+              <span
+                className={`flex-1 text-[12px] truncate ${
+                  anon ? "italic text-[#666]" : onBoard ? "text-white font-bold" : "text-[#bbb]"
+                }`}
+              >
+                {name}
+              </span>
+              {onBoard ? (
+                <span className="text-[8px] uppercase tracking-widest text-[#9d8555] font-bold">on board</span>
+              ) : anon ? null : (
+                <span className="text-[8px] uppercase tracking-widest text-[#555]">not on board</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-[9px] text-[#555] italic">
+        Passenger connections are not drawn automatically. Drag people from the right panel onto the board, then connect them to this flight yourself.
+      </p>
+    </div>
+  );
+}
+
 /* ─── Entity Board Card ──────────────────────────────────────────────────── */
 
 function EntityBoardCard({ data, isSelected, pinnedEvidence, onPinnedEvidenceDoubleClick, zoom = 1 }: {
@@ -3992,7 +4210,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
       return {
         title: d.name,
         subtitle: null as string | null,
-        photoUrl: d.imageUrl,
+        photoUrl: d.imageUrl as string | null,
         nameForSearch: d.name,
         aliasesForSearch: d.aliases,
         extraRows: (
@@ -4004,6 +4222,25 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
               </div>
             )}
           </>
+        ),
+      };
+    }
+    if (node.kind === "flight") {
+      const d = node.data;
+      const depLabel = d.departureCode ?? d.departureCity ?? d.departure ?? "?";
+      const arrLabel = d.arrivalCode ?? d.arrivalCity ?? d.arrival ?? "?";
+      const subtitleBits = [d.date, d.aircraft, d.pilot ? `pilot: ${d.pilot}` : null].filter(Boolean) as string[];
+      return {
+        title: `${depLabel} → ${arrLabel}`,
+        subtitle: subtitleBits.join(" · ") || null,
+        photoUrl: null as string | null,  // replaced by route map in header row
+        nameForSearch: d.passengers.join(" ") || d.name,
+        aliasesForSearch: [] as string[],
+        extraRows: (
+          <FlightPassengerPanel
+            passengers={d.passengers}
+            peopleOnBoardNames={new Set(nodes.filter((n) => n.kind === "person").map((n) => n.data.name))}
+          />
         ),
       };
     }

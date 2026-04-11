@@ -5,6 +5,7 @@ import type { Person, SearchResult, ArchiveStats, EmailEvidence, EvidenceFolderI
 import type {
   BoardNode,
   BoardConnection,
+  BoardFlightNodeData,
   RightPanelTab,
   FocusState,
   PinnedEvidence,
@@ -325,6 +326,34 @@ export function BoardWorkspace({
           entityType: entity.type,
           data: entity,
           position: { x, y },
+        },
+      ]);
+    },
+    [isOnBoard, findClearPosition]
+  );
+
+  const addFlightToBoard = useCallback(
+    (
+      data: BoardFlightNodeData,
+      autoPinnedEvidence: PinnedEvidence,
+      dropX?: number,
+      dropY?: number,
+    ) => {
+      // The flight entity id is the same as its source flight_log id (1:1).
+      if (isOnBoard(autoPinnedEvidence.id)) return;
+
+      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
+      const { x, y } = findClearPosition(raw.x, raw.y, 210, 160);
+
+      setBoardNodes((prev) => [
+        ...prev,
+        {
+          kind: "flight",
+          id: autoPinnedEvidence.id,
+          data,
+          position: { x, y },
+          // Auto-pin the flight log as the flight entity's starting evidence.
+          pinnedEvidence: [autoPinnedEvidence],
         },
       ]);
     },
@@ -922,6 +951,7 @@ export function BoardWorkspace({
             onBatchMoveNodes={batchMoveNodes}
             onAddPerson={addPersonToBoard}
             onAddEntity={addEntityToBoard}
+            onAddFlight={addFlightToBoard}
             onPinEvidenceToCard={pinEvidenceToCard}
             onPinEvidenceToConnection={pinEvidenceToConnection}
             onStartConnection={startConnection}

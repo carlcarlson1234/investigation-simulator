@@ -6,6 +6,8 @@ import type { InvestigationStep } from "@/lib/investigation-types";
 import type {
   BoardNode,
   BoardConnection,
+  BoardFlightNodeData,
+  PinnedEvidence,
   RightPanelTab,
   TimelineEvent,
   FocusState,
@@ -38,6 +40,7 @@ const TABS: { key: RightPanelTab; label: string }[] = [
   { key: "places", label: "Places" },
   { key: "orgs", label: "Orgs" },
   { key: "events", label: "Events" },
+  { key: "flights", label: "Flights" },
 ];
 
 export function ContextPanel({
@@ -146,6 +149,9 @@ export function ContextPanel({
             onSearchChange={setEntitySearch} isOnBoard={isOnBoard} onAddEntity={onAddEntity}
             onSpotlightEntity={onSpotlightEntity} boardNodes={boardNodes}
             spotlightPersonIds={spotlightPersonIds} people={people} isWideMode={isWideMode} />
+        )}
+        {activeTab === "flights" && (
+          <FlightsTab isOnBoard={isOnBoard} isWideMode={isWideMode} />
         )}
       </div>
     </aside>
@@ -820,6 +826,181 @@ function TimelineTab({ events, focusState, onSelectNode }: {
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Flights Tab ──────────────────────────────────────────────────────────
+
+interface FlightListItem {
+  id: string;
+  date: string | null;
+  title: string;
+  snippet: string;
+  departureCode: string | null;
+  arrivalCode: string | null;
+  departureCity: string | null;
+  arrivalCity: string | null;
+  passengerCount: number;
+  passengers: string[];
+  aircraft: string | null;
+  pilot: string | null;
+}
+
+function FlightsTab({
+  isOnBoard,
+  isWideMode,
+}: {
+  isOnBoard: (id: string) => boolean;
+  isWideMode?: boolean;
+}) {
+  const [flights, setFlights] = useState<FlightListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [search, setSearch] = useState("");
+  const didInit = useRef(false);
+
+  const fetchFlights = async (q: string, off: number, append: boolean) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "30", offset: String(off) });
+      if (q.trim()) params.set("q", q.trim());
+      const res = await fetch(`/api/flights?${params}`);
+      if (!res.ok) throw new Error("fetch failed");
+      const data: { flights: FlightListItem[]; total: number; hasMore: boolean } = await res.json();
+      setFlights((prev) => (append ? [...prev, ...data.flights] : data.flights));
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setOffset(off);
+    } catch (err) {
+      console.error("Flights tab fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!didInit.current) {
+      didInit.current = true;
+      fetchFlights("", 0, false);
+    }
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (!didInit.current) return;
+    const t = setTimeout(() => fetchFlights(search, 0, false), 220);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const loadMore = () => {
+    if (hasMore && !loading) fetchFlights(search, offset + 30, true);
+  };
+
+  return (
+    <div className="p-2">
+      {/* Search */}
+      <div className="mb-2 relative">
+        <svg
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search flights by passenger, city, aircraft…"
+          className="w-full rounded border border-[#2a2a2a] bg-[#111] py-1.5 pl-8 pr-2 text-[11px] text-white placeholder:text-[#555] focus:border-red-500/40 focus:outline-none transition"
+        />
+      </div>
+
+      {/* Status */}
+      <div className="mb-1 flex items-center justify-between px-1 text-[9px] font-bold text-[#555]">
+        <span>
+          {loading && flights.length === 0 ? (
+            <span className="flex items-center gap-1 text-red-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+              Loading…
+            </span>
+          ) : (
+            <span>{total.toLocaleString()} flights</span>
+          )}
+        </span>
+        <span className="text-[#444] tabular-nums">{flights.length} loaded</span>
+      </div>
+
+      {/* Flight list */}
+      <div className="space-y-1">
+        {flights.map((f) => {
+          const onBoard = isOnBoard(f.id);
+          return (
+            <div
+              key={f.id}
+              draggable={!onBoard}
+              onDragStart={(e) => {
+                const payload = {
+                  id: f.id,
+                  kind: "flight",
+                  data: f,
+                };
+                e.dataTransfer.setData("application/board-item", JSON.stringify(payload));
+                e.dataTransfer.effectAllowed = "move";
+                e.currentTarget.classList.add("dragging-source");
+              }}
+              onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
+              className={`group rounded border border-[#222] bg-[#0e0e0e] hover:border-[#9d8555]/60 hover:bg-[#151515] transition ${
+                isWideMode ? "px-3 py-2.5" : "px-2 py-1.5"
+              } ${onBoard ? "opacity-50" : "cursor-grab active:cursor-grabbing"}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px]">✈️</span>
+                <span className={`flex-1 font-bold text-white truncate ${isWideMode ? "text-[12px]" : "text-[10px]"}`}>
+                  {f.departureCode ?? f.departureCity ?? "?"} → {f.arrivalCode ?? f.arrivalCity ?? "?"}
+                </span>
+                {f.date && (
+                  <span className={`text-[#555] tabular-nums flex-shrink-0 ${isWideMode ? "text-[10px]" : "text-[9px]"}`}>
+                    {f.date}
+                  </span>
+                )}
+              </div>
+              <p className={`text-[#777] pl-[18px] truncate ${isWideMode ? "text-[10px] mt-0.5" : "text-[9px]"}`}>
+                {f.snippet || "(no passengers recorded)"}
+              </p>
+              <div className="pl-[18px] mt-0.5 flex items-center gap-2 text-[8px] text-[#555]">
+                {f.aircraft && (
+                  <span className="font-[family-name:var(--font-mono)] uppercase tracking-wider">{f.aircraft}</span>
+                )}
+                {f.passengerCount > 0 && <span>{f.passengerCount} pax</span>}
+                {onBoard && (
+                  <span className="ml-auto font-bold uppercase tracking-wider text-green-500/60">✓ On Board</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loading}
+            className="w-full py-2 text-center font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:bg-[#161616] transition rounded border border-[#1a1a1a]"
+          >
+            {loading ? "Loading…" : "Load More ↓"}
+          </button>
+        )}
+        {flights.length === 0 && !loading && (
+          <div className="py-8 text-center text-[10px] text-[#555]">No flights found.</div>
+        )}
       </div>
     </div>
   );
