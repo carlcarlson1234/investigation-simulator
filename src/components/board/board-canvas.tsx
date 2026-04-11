@@ -12,6 +12,7 @@ import {
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
 import { useBoardSounds } from "@/hooks/use-board-sounds";
+import { FlightRouteMap } from "./flight-route-map";
 import cytoscape from "cytoscape";
 import fcose from "cytoscape-fcose";
 
@@ -45,6 +46,7 @@ type NodePinPartition = {
   emails: PinnedEvidence[];
   documents: PinnedEvidence[];
   imessages: PinnedEvidence[];
+  flightLogs: PinnedEvidence[];
 };
 
 function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPartition {
@@ -54,6 +56,7 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
     emails: [],
     documents: [],
     imessages: [],
+    flightLogs: [],
   };
   if (!pinned) return out;
   for (const ev of pinned) {
@@ -63,6 +66,7 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
     } else if (ev.type === "email") out.emails.push(ev);
     else if (ev.type === "document") out.documents.push(ev);
     else if (ev.type === "imessage") out.imessages.push(ev);
+    else if (ev.type === "flight_log") out.flightLogs.push(ev);
   }
   return out;
 }
@@ -3152,6 +3156,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       if (part.emails.length > 0) badges.push({ key: "emails", icon: "✉️", count: part.emails.length, border: "border-[#4A6D8C]", bg: "bg-[#1a2530]" });
                       if (part.documents.length > 0) badges.push({ key: "documents", icon: "📄", count: part.documents.length, border: "border-[#888]", bg: "bg-[#1a1a1a]" });
                       if (part.imessages.length > 0) badges.push({ key: "imessages", icon: "💬", count: part.imessages.length, border: "border-[#6B5B95]", bg: "bg-[#1f1b30]" });
+                      if (part.flightLogs.length > 0) badges.push({ key: "flight_logs", icon: "✈️", count: part.flightLogs.length, border: "border-[#9d8555]", bg: "bg-[#1c1812]" });
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
@@ -3763,14 +3768,17 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubl
   const typeBg = evidence.type === "email" ? "bg-[#1a2530]"
     : evidence.type === "imessage" ? "bg-[#1f1b30]"
     : evidence.type === "document" ? "bg-[#1a1a1a]"
+    : evidence.type === "flight_log" ? "bg-[#1c1812]"
     : "bg-[#0a0a0a]";
   const typeBorder = evidence.type === "email" ? "border-[#4A6D8C]"
     : evidence.type === "imessage" ? "border-[#6B5B95]"
     : evidence.type === "document" ? "border-[#888]"
+    : evidence.type === "flight_log" ? "border-[#9d8555]"
     : "border-[#c86464]";
   const accentLeft = evidence.type === "email" ? "border-l-[#4A6D8C]"
     : evidence.type === "imessage" ? "border-l-[#6B5B95]"
     : evidence.type === "document" ? "border-l-[#888]"
+    : evidence.type === "flight_log" ? "border-l-[#9d8555]"
     : "border-l-[#c86464]";
 
   return (
@@ -3971,8 +3979,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   const allEmails = part.emails;
   const allDocs = part.documents;
   const allIms = part.imessages;
+  const allFlights = part.flightLogs;
   const hasPhotos = allPhotos.length > 0;
-  const otherCount = allEmails.length + allDocs.length + allIms.length;
+  const otherCount = allEmails.length + allDocs.length + allIms.length + allFlights.length;
   const hasOther = otherCount > 0;
   const totalRawCount = ownEvidenceCount;
 
@@ -4232,6 +4241,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                   { key: "email" as const, label: "Emails", icon: "✉️" },
                   { key: "document" as const, label: "Docs", icon: "📄" },
                   { key: "imessage" as const, label: "iMessages", icon: "💬" },
+                  { key: "flight_log" as const, label: "Flights", icon: "✈️" },
                 ]).map((t) => {
                   const active = searchTab === t.key;
                   return (
@@ -4335,6 +4345,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
               )}
               {allIms.length > 0 && (
                 <DetailEvidenceBucket label="iMessages" icon="💬" accent="border-l-[#6B5B95]" items={allIms} onOpen={openSplit} />
+              )}
+              {allFlights.length > 0 && (
+                <DetailEvidenceBucket label="Flights" icon="✈️" accent="border-l-[#9d8555]" items={allFlights} onOpen={openSplit} />
               )}
             </div>
           )}
@@ -4917,6 +4930,130 @@ function FullScreenEvidenceViewer({ evidence, onClose, variant = "fullscreen" }:
             )}
             {full.type === "photo" && full.imageDescription && (
               <p className="text-[12px] text-[#aaa] leading-relaxed">{full.imageDescription}</p>
+            )}
+            {full.type === "flight_log" && (
+              <div className="space-y-4">
+                {/* Route map */}
+                <FlightRouteMap
+                  fromLat={full.departureLat}
+                  fromLon={full.departureLon}
+                  toLat={full.arrivalLat}
+                  toLon={full.arrivalLon}
+                  fromLabel={full.departureCode ?? full.departureCity ?? null}
+                  toLabel={full.arrivalCode ?? full.arrivalCity ?? null}
+                />
+
+                {/* Route summary */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded border border-[#222] bg-[#0a0a0a] p-3">
+                    <div className="text-[8px] font-bold uppercase tracking-widest text-[#555] mb-1">Departure</div>
+                    <div className="text-[14px] font-bold text-white">
+                      {full.departureCode ?? full.departureCity ?? full.departure ?? "Unknown"}
+                    </div>
+                    {full.departureName && full.departureName !== full.departureCode && (
+                      <div className="text-[11px] text-[#999] mt-0.5">{full.departureName}</div>
+                    )}
+                    {(full.departureCity || full.departureCountry) && (
+                      <div className="text-[10px] text-[#666] mt-0.5">
+                        {[full.departureCity, full.departureCountry].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rounded border border-[#222] bg-[#0a0a0a] p-3">
+                    <div className="text-[8px] font-bold uppercase tracking-widest text-[#555] mb-1">Arrival</div>
+                    <div className="text-[14px] font-bold text-white">
+                      {full.arrivalCode ?? full.arrivalCity ?? full.arrival ?? "Unknown"}
+                    </div>
+                    {full.arrivalName && full.arrivalName !== full.arrivalCode && (
+                      <div className="text-[11px] text-[#999] mt-0.5">{full.arrivalName}</div>
+                    )}
+                    {(full.arrivalCity || full.arrivalCountry) && (
+                      <div className="text-[10px] text-[#666] mt-0.5">
+                        {[full.arrivalCity, full.arrivalCountry].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Flight stats */}
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  {full.date && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Date: </span>
+                      <span className="text-white font-bold tabular-nums">{full.date}</span>
+                    </div>
+                  )}
+                  {full.aircraft && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Aircraft: </span>
+                      <span className="text-white font-bold">{full.aircraft}</span>
+                    </div>
+                  )}
+                  {full.pilot && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Pilot: </span>
+                      <span className="text-white font-bold">{full.pilot}</span>
+                    </div>
+                  )}
+                  {full.flightNumber && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Flight #: </span>
+                      <span className="text-white font-bold tabular-nums">{full.flightNumber}</span>
+                    </div>
+                  )}
+                  {full.distanceNm != null && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Distance: </span>
+                      <span className="text-white font-bold tabular-nums">{full.distanceNm.toLocaleString()} nm</span>
+                    </div>
+                  )}
+                  {full.durationMinutes != null && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Duration: </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {Math.floor(full.durationMinutes / 60)}h {full.durationMinutes % 60}m
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Passengers */}
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-[#666] mb-2">
+                    Passengers ({full.passengerCount})
+                  </div>
+                  {full.passengers.length > 0 ? (
+                    <ul className="space-y-1">
+                      {full.passengers.map((name, i) => (
+                        <li
+                          key={`${i}-${name}`}
+                          className="flex items-center gap-2 rounded border border-[#222] bg-[#0a0a0a] px-3 py-1.5"
+                        >
+                          <span className="text-[#555] tabular-nums text-[10px] w-5">{i + 1}.</span>
+                          <span className="text-[12px] text-white/90">{name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[11px] text-[#555] italic">No passengers recorded.</p>
+                  )}
+                </div>
+
+                {/* Notes */}
+                {full.notes && (
+                  <div className="rounded border border-[#222] bg-[#111] p-3">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-[#555] mb-1">Notes</div>
+                    <p className="text-[12px] text-[#ccc] whitespace-pre-wrap">{full.notes}</p>
+                  </div>
+                )}
+
+                {/* Source doc reference */}
+                {full.sourceDoc && (
+                  <div className="text-[10px] text-[#555]">
+                    Source: <span className="text-[#888] font-mono">{full.sourceDoc}</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         ) : (
