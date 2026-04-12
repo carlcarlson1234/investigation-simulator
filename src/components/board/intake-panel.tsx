@@ -47,26 +47,6 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
     <aside className={`intake-panel flex h-full w-full flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
-      {/* Mission banner — shows when a mission is active */}
-      {activeMission && (
-        <div className="flex-shrink-0 border-b border-[#E24B4A]/20 bg-[#E24B4A]/5 px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <span className="text-[14px]">🗂️</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#E24B4A]">
-                Mission Active
-              </p>
-              <p className="text-[12px] font-bold text-white truncate">
-                {activeMission.title}
-              </p>
-              <p className="text-[9px] text-[#888] mt-0.5 font-[family-name:var(--font-mono)] uppercase tracking-wider">
-                {activeMission.subtitle} · {activeMission.allEvidenceIds.length} items
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Tab bar */}
       <div className={`flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""

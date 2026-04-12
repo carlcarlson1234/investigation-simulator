@@ -956,6 +956,29 @@ export function BoardWorkspace({
           />
         )}
 
+        {/* Mission start prompt — glowing arrow pointing to right panel */}
+        {activeMissionId && boardNodes.length === 0 && (
+          <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-end pr-[280px]">
+            <div className="flex flex-col items-center gap-4 animate-pulse">
+              <div className="text-center">
+                <p className="text-[14px] font-black uppercase tracking-[0.15em] text-[#E24B4A] mb-2">
+                  Begin Investigation
+                </p>
+                <p className="text-[13px] text-[#888] max-w-[240px]">
+                  Drag the event from the right panel onto the board to start
+                </p>
+              </div>
+              {/* Glowing arrow pointing right */}
+              <div className="flex items-center gap-2">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 12px rgba(226,75,74,0.6))" }}>
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* LEADS FAB — bottom-right floating action button */}
         {(!investigation.isStartMode || investigation.step === "open-investigation") && !evidenceFocusMode && (
           <div className="absolute bottom-6 right-6 z-50">
@@ -1170,7 +1193,17 @@ export function BoardWorkspace({
         <LeadsModal
           onClose={() => setLeadsModalOpen(false)}
           onStartMission={(mission: Mission) => {
+            // Clear the board for a fresh investigation
+            setBoardNodes([]);
+            setBoardConnections([]);
+            setSelectedNodeId(null);
+            setFocusedNodeId(null);
+            // Set the active mission
             setActiveMissionId(mission.id);
+            // Switch the right panel to the Events tab so the Africa Trip
+            // entity is visible and ready to drag onto the board
+            setRightTab("events");
+            // Close the modal
             setLeadsModalOpen(false);
           }}
         />

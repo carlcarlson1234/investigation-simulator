@@ -150,13 +150,13 @@ function InvestigationCard({
                     <img
                       src={person.src}
                       alt={person.name}
-                      className="w-16 h-16 rounded-full border-2 border-[#333] object-cover grayscale group-hover:grayscale-0 transition-all duration-500 shadow-lg shadow-black/50"
+                      className="w-24 h-24 rounded-full border-2 border-[#333] object-cover grayscale group-hover:grayscale-0 transition-all duration-500 shadow-lg shadow-black/50"
                       onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                     />
                     {/* Red ring on hover */}
                     <div className="absolute inset-0 rounded-full border-2 border-[#E24B4A]/0 group-hover:border-[#E24B4A]/60 transition-all duration-500" />
                   </div>
-                  <span className="text-[9px] text-[#555] group-hover:text-[#999] transition-colors font-[family-name:var(--font-mono)] uppercase tracking-wider whitespace-nowrap">
+                  <span className="text-[10px] text-[#555] group-hover:text-[#999] transition-colors font-[family-name:var(--font-mono)] uppercase tracking-wider whitespace-nowrap">
                     {person.name.split(" ").pop()}
                   </span>
                 </div>
