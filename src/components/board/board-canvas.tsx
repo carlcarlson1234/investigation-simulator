@@ -3045,22 +3045,17 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         px = ax + perpX * OFFSET * side;
                         py = ay + perpY * OFFSET * side;
                       } else {
-                        // Tight: stack all chips perpendicular to the line at
-                        // the midpoint. Each chip gets its own slot in the
-                        // stack so nothing overlaps. The stack is centered
-                        // on the midpoint.
+                        // Tight: stack all chips in a clean single column
+                        // perpendicular to the line at the midpoint. No
+                        // alternating sides — just fan outward from the line
+                        // so each chip is clearly separated.
                         const midT = (tStart + tEnd) / 2;
                         ax = from.cx + dx * midT;
                         ay = from.cy + dy * midT;
-                        const STACK_STEP = CHIP + 14;
-                        const stackOffset = (i - (pinned.length - 1) / 2) * STACK_STEP;
-                        // Perpendicular direction: pick the side that trends
-                        // "outward" (positive perpendicular for even, negative
-                        // for odd, then add the stack offset).
-                        const baseSide = i % 2 === 0 ? 1 : -1;
-                        const totalOffset = OFFSET * baseSide + stackOffset;
-                        px = ax + perpX * totalOffset;
-                        py = ay + perpY * totalOffset;
+                        const STACK_STEP = CHIP + 10;
+                        const totalPerp = OFFSET + i * STACK_STEP;
+                        px = ax + perpX * totalPerp;
+                        py = ay + perpY * totalPerp;
                       }
                       return (
                         <div key={`${conn.id}-${ev.id}`} className="contents">
@@ -3301,9 +3296,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
-                          {/* Orbital photo chips — hidden by default, revealed on card hover */}
+                          {/* Orbital photo chips — hidden by default, revealed on card hover.
+                              pointer-events-none when hidden so the invisible chips don't
+                              extend the hover zone past the card edge. */}
                           {orbital.length > 0 && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <div className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200">
                               {orbital.map((ev, i) => {
                                 const { x, y } = orbitalPos(i);
                                 return (
