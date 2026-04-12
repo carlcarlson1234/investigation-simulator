@@ -3026,19 +3026,46 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 const MIN_GAP = 6; // minimum pixels between chip edges
                 const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen - MIN_GAP));
                 const OFFSET = Math.max(16, CHIP * 0.7);
+
+                // Check if there's enough along-line space to distribute
+                // chips without overlap. If not, switch to a perpendicular
+                // stack at the midpoint so every chip remains visible.
+                const availPerChip = (tEnd - tStart) * len / Math.max(1, pinned.length);
+                const canDistribute = pinned.length <= 1 || availPerChip >= CHIP * 0.9;
+
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
-                      // Distribute within the valid [tStart, tEnd] gap
-                      // between the two cards so chips aren't covered.
-                      const t = pinned.length === 1
-                        ? (tStart + tEnd) / 2
-                        : tStart + ((i) / (pinned.length - 1)) * (tEnd - tStart);
-                      const ax = from.cx + dx * t;
-                      const ay = from.cy + dy * t;
-                      const side = i % 2 === 0 ? 1 : -1;
-                      const px = ax + perpX * OFFSET * side;
-                      const py = ay + perpY * OFFSET * side;
+                      let ax: number, ay: number, px: number, py: number;
+
+                      if (canDistribute) {
+                        // Normal: distribute along the line, alternating above/below
+                        const t = pinned.length === 1
+                          ? (tStart + tEnd) / 2
+                          : tStart + ((i) / (pinned.length - 1)) * (tEnd - tStart);
+                        ax = from.cx + dx * t;
+                        ay = from.cy + dy * t;
+                        const side = i % 2 === 0 ? 1 : -1;
+                        px = ax + perpX * OFFSET * side;
+                        py = ay + perpY * OFFSET * side;
+                      } else {
+                        // Tight: stack all chips perpendicular to the line at
+                        // the midpoint. Each chip gets its own slot in the
+                        // stack so nothing overlaps. The stack is centered
+                        // on the midpoint.
+                        const midT = (tStart + tEnd) / 2;
+                        ax = from.cx + dx * midT;
+                        ay = from.cy + dy * midT;
+                        const STACK_STEP = CHIP + 4;
+                        const stackOffset = (i - (pinned.length - 1) / 2) * STACK_STEP;
+                        // Perpendicular direction: pick the side that trends
+                        // "outward" (positive perpendicular for even, negative
+                        // for odd, then add the stack offset).
+                        const baseSide = i % 2 === 0 ? 1 : -1;
+                        const totalOffset = OFFSET * baseSide + stackOffset;
+                        px = ax + perpX * totalOffset;
+                        py = ay + perpY * totalOffset;
+                      }
                       return (
                         <div key={`${conn.id}-${ev.id}`} className="contents">
                           {/* Connector line from anchor on the main line to the chip */}
