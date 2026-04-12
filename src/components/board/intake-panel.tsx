@@ -1430,65 +1430,68 @@ function VideosTab({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      {videos.map((v) => (
-        <div
-          key={v.id}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData(
-              "application/board-item",
-              JSON.stringify({ id: v.id, kind: "evidence", data: videoToSearchResult(v) })
-            );
-            e.dataTransfer.effectAllowed = "move";
-            e.currentTarget.classList.add("dragging-source");
-          }}
-          onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
-          className={`group border-b border-[#1a1a1a] cursor-grab active:cursor-grabbing transition flex gap-2.5 ${
-            isWideMode ? "px-4 py-3" : "px-2.5 py-2"
-          } hover:bg-[#161616]`}
-        >
-          {/* Thumbnail */}
+    <div className="flex-1 overflow-y-auto p-2">
+      {/* Grid — single column narrow, 2-3 columns wide, same pattern as PhotoGallery */}
+      <div className={`grid gap-2 ${isWideMode ? "grid-cols-2 lg:grid-cols-3" : "grid-cols-1"}`}>
+        {videos.map((v) => (
           <div
-            className={`relative flex-shrink-0 rounded overflow-hidden bg-[#0a0a0a] border border-[#222] ${
-              isWideMode ? "w-32 h-20" : "w-24 h-14"
-            }`}
+            key={v.id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                "application/board-item",
+                JSON.stringify({ id: v.id, kind: "evidence", data: videoToSearchResult(v) })
+              );
+              e.dataTransfer.effectAllowed = "move";
+              e.currentTarget.classList.add("dragging-source");
+            }}
+            onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
+            className="group relative rounded-lg overflow-hidden border border-[#2a2a2a] hover:border-red-500/30 transition cursor-grab active:cursor-grabbing"
           >
-            {v.thumbnailUrl ? (
-              <img
-                src={v.thumbnailUrl}
-                alt=""
-                loading="lazy"
-                className="w-full h-full object-cover"
-                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-[#333] text-2xl">🎬</div>
-            )}
-            {v.isShorts && (
-              <div className="absolute top-0.5 left-0.5 rounded bg-[#c45a3c]/90 px-1 text-[7px] font-bold text-white uppercase tracking-wider">
-                SHORTS
+            {/* Thumbnail — 16:9, fills the card width */}
+            <div className="relative aspect-video bg-[#0e0e0e]">
+              {v.thumbnailUrl ? (
+                <img
+                  src={v.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[#333] text-4xl">🎬</div>
+              )}
+              {/* Play-arrow overlay on hover */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                <div className="rounded-full bg-black/60 backdrop-blur-sm border border-white/40 w-10 h-10 flex items-center justify-center">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
               </div>
-            )}
-            {v.isNsfw && (
-              <div className="absolute top-0.5 right-0.5 rounded bg-red-600/90 px-1 text-[7px] font-bold text-white uppercase tracking-wider">
-                NSFW
-              </div>
-            )}
+              {v.isShorts && (
+                <div className="absolute top-1 left-1 rounded bg-[#c45a3c]/90 px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider">
+                  SHORTS
+                </div>
+              )}
+              {v.isNsfw && (
+                <div className="absolute top-1 right-1 rounded bg-red-600/90 px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider">
+                  NSFW
+                </div>
+              )}
+            </div>
+            {/* Title underneath */}
+            <div className="px-2 py-1.5 bg-[#0e0e0e] border-t border-[#1a1a1a]">
+              <p className="text-[10px] text-[#bbb] leading-tight line-clamp-2">{v.title}</p>
+            </div>
           </div>
-          {/* Title only */}
-          <div className="flex-1 min-w-0 flex items-center">
-            <p className={`font-bold text-white line-clamp-2 ${isWideMode ? "text-[12px]" : "text-[11px]"}`}>
-              {v.title}
-            </p>
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
       {hasMore && (
         <button
           onClick={loadMore}
           disabled={loading}
-          className="w-full py-3 text-center font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:bg-[#161616] transition border-b border-[#1a1a1a]"
+          className="mt-2 w-full py-3 text-center font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:bg-[#161616] transition rounded border border-[#1a1a1a]"
         >
           {loading ? "Loading…" : "Load More ↓"}
         </button>
