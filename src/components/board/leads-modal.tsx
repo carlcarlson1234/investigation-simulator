@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import type { LeadDefinition } from "@/lib/lead-types";
 import type { Person } from "@/lib/types";
+import { MISSIONS } from "@/lib/missions";
+import type { Mission } from "@/lib/missions";
 
 interface LeadsModalProps {
   leads: LeadDefinition[];
@@ -10,6 +12,7 @@ interface LeadsModalProps {
   onClose: () => void;
   onEvidencePack: () => void;
   onFocusedInvestigation: (personId: string) => void;
+  onStartMission?: (mission: Mission) => void;
 }
 
 export function LeadsModal({
@@ -18,6 +21,7 @@ export function LeadsModal({
   onClose,
   onEvidencePack,
   onFocusedInvestigation,
+  onStartMission,
 }: LeadsModalProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -53,6 +57,71 @@ export function LeadsModal({
 
         {/* Vertical stack */}
         <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col gap-6 px-8 pb-10">
+          {/* Missions — curated investigation scenarios */}
+          {MISSIONS.length > 0 && (
+            <div className="leads-card-enter rounded-2xl border border-[#2a2a2a] bg-[#111] p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <span className="text-4xl">🗂️</span>
+                <div>
+                  <h2 className="font-[family-name:var(--font-display)] text-[32px] leading-tight tracking-wide text-white">
+                    Missions
+                  </h2>
+                  <p className="mt-1 text-[15px] leading-relaxed text-[#666]">
+                    Curated investigations with real evidence packs. Start here.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {MISSIONS.map((mission) => (
+                  <button
+                    key={mission.id}
+                    onClick={() => onStartMission?.(mission)}
+                    className="group text-left rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] p-5 transition hover:border-[#E24B4A]/40 hover:bg-[#E24B4A]/5"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl mt-0.5">✈️</span>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-[family-name:var(--font-display)] text-[18px] font-bold tracking-wide text-white group-hover:text-[#E24B4A] transition">
+                          {mission.title}
+                        </h3>
+                        <p className="mt-0.5 text-[12px] text-[#777] font-[family-name:var(--font-mono)] uppercase tracking-wider">
+                          {mission.subtitle}
+                        </p>
+                        <p className="mt-2 text-[13px] text-[#555] leading-relaxed line-clamp-3">
+                          {mission.description}
+                        </p>
+                        <div className="mt-3 flex items-center gap-3 text-[10px] text-[#444] font-[family-name:var(--font-mono)] uppercase tracking-wider">
+                          <span className={`rounded-full px-2 py-0.5 border ${
+                            mission.difficulty === "introductory"
+                              ? "border-green-500/30 text-green-400/80"
+                              : mission.difficulty === "intermediate"
+                              ? "border-amber-500/30 text-amber-400/80"
+                              : "border-red-500/30 text-red-400/80"
+                          }`}>
+                            {mission.difficulty}
+                          </span>
+                          <span>~{mission.estimatedMinutes} min</span>
+                          <span>{mission.allEvidenceIds.length} evidence items</span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+
+                {/* Coming Soon placeholder */}
+                <div className="rounded-xl border border-dashed border-[#222] bg-[#0a0a0a]/50 p-5 flex items-center justify-center">
+                  <div className="text-center">
+                    <span className="text-2xl opacity-30">🔒</span>
+                    <p className="mt-2 text-[12px] text-[#333] font-[family-name:var(--font-mono)] uppercase tracking-wider">
+                      More missions coming soon
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Focused Investigation — takes up most of the space */}
           {focusLead && (
             <div className="leads-card-enter flex-1 rounded-2xl border border-[#2a2a2a] bg-[#111] p-8">

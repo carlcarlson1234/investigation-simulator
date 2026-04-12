@@ -26,6 +26,7 @@ import { LeadsModal } from "./leads-modal";
 import { FocusedInvestigation } from "./focused-investigation";
 import type { InvestigationResult } from "./focused-investigation";
 import type { SeedEntity } from "@/lib/entity-seed-data";
+import type { Mission } from "@/lib/missions";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -63,6 +64,9 @@ export function BoardWorkspace({
     const saved_seen = saved?.seenEvidenceIds;
     return saved_seen ? new Set(saved_seen) : new Set();
   });
+
+  // ─── Mission System ──────────────────────────────────────────────────────
+  const [activeMissionId, setActiveMissionId] = useState<string | null>(null);
 
   // ─── Leads System ────────────────────────────────────────────────────────
   const [leadsModalOpen, setLeadsModalOpen] = useState(false);
@@ -850,6 +854,7 @@ export function BoardWorkspace({
             starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
             investigationStep={investigation.isStartMode ? investigation.step : null}
             isWideMode={evidenceFocusMode}
+            activeMissionId={activeMissionId ?? undefined}
           />
         )}
       </div>
@@ -1168,6 +1173,10 @@ export function BoardWorkspace({
           onClose={() => setLeadsModalOpen(false)}
           onEvidencePack={handleEvidencePack}
           onFocusedInvestigation={handleFocusedInvestigation}
+          onStartMission={(mission: Mission) => {
+            setActiveMissionId(mission.id);
+            setLeadsModalOpen(false);
+          }}
         />
       )}
 
