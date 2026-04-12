@@ -3921,7 +3921,7 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, iconOnl
           </div>
         ) : iconOnly ? (
           <div className={`w-full h-full rounded border ${typeBorder} ${typeBg} shadow-md shadow-black/60 flex items-center justify-center backdrop-blur-sm`}>
-            <span className="text-[14px] leading-none">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+            <span className="text-[20px] leading-none">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
           </div>
         ) : (
           <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex flex-col items-center justify-center p-1 backdrop-blur-sm`}>
