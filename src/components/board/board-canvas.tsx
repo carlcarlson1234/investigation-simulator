@@ -2998,30 +2998,34 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const tY = Math.abs(dirY) > 0.001 ? halfH / Math.abs(dirY) : Infinity;
                   return Math.min(tX, tY);
                 };
-                const srcExit = exitDist(srcSize.w / 2, srcSize.h / 2);
-                const tgtEnter = exitDist(tgtSize.w / 2, tgtSize.h / 2);
+                // Use the effective footprint (including orbital photos + stack
+                // badges) to keep chips clear of the nodes' visual extent, not
+                // just the base card rectangle.
+                const srcFoot = getEffectiveCardFootprint(srcSize.w, srcSize.h, srcNode?.pinnedEvidence);
+                const tgtFoot = getEffectiveCardFootprint(tgtSize.w, tgtSize.h, tgtNode?.pinnedEvidence);
+                const srcExit = exitDist(srcFoot.w / 2, srcFoot.h / 2);
+                const tgtEnter = exitDist(tgtFoot.w / 2, tgtFoot.h / 2);
                 const effLen = Math.max(40, len - srcExit - tgtEnter);
-                // Add a small buffer past each card edge so chips don't kiss the cards
-                const BUFFER = 12;
+                // Generous buffer past each node's effective edge — keeps chips
+                // well clear of orbital photos, stack badges, and connect handles.
+                const BUFFER = 30;
                 let tStart = (srcExit + BUFFER) / len;
                 let tEnd = 1 - (tgtEnter + BUFFER) / len;
                 if (tEnd <= tStart) {
-                  // Cards touch / overlap — fall back to midpoint
                   tStart = 0.5;
                   tEnd = 0.5;
                 }
 
-                // Dynamic chip sizing: chips alternate sides, so the
-                // constraint is the along-line spacing between two SAME-side
-                // chips (every other index). Shrink chip down to CHIP_MIN
-                // when that spacing is tight.
+                // Dynamic chip sizing. Chips alternate sides (above/below), so
+                // same-side chips are every-other-index. Size so they don't
+                // touch, with a mandatory gap between chip centers.
                 const sameSideCount = Math.max(1, Math.ceil(pinned.length / 2));
                 const slotLen = effLen / sameSideCount;
-                // Icon-only chips are compact — just an emoji in a tight square.
-                const CHIP_MAX = 34;
-                const CHIP_MIN = 22;
-                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen * 0.65));
-                const OFFSET = Math.max(18, CHIP * 0.75);
+                const CHIP_MAX = 30;
+                const CHIP_MIN = 20;
+                const MIN_GAP = 6; // minimum pixels between chip edges
+                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen - MIN_GAP));
+                const OFFSET = Math.max(16, CHIP * 0.7);
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
