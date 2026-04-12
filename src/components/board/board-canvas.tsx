@@ -141,7 +141,7 @@ interface BoardCanvasProps {
   ) => void;
   onAddMedia?: (
     data: BoardMediaNodeData,
-    autoPinnedEvidence: PinnedEvidence,
+    sourceId: string,
     x?: number,
     y?: number,
   ) => void;
@@ -343,8 +343,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   // Card dimensions accounting for importance scaling
   const getScaledCardSize = useCallback((node: BoardNode): { w: number; h: number } => {
-    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 180 : 190;
-    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : node.kind === "media" ? 160 : 160;
+    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 280 : 190;
+    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : node.kind === "media" ? 240 : 160;
     const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
     return { w: baseW * scale, h: baseH * scale };
   }, [getNodeScale]);
@@ -388,8 +388,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const vp = viewportRef.current;
     if (!node || !vp) return;
 
-    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 180 : 190;
-    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : node.kind === "media" ? 160 : 140;
+    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 280 : 190;
+    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : node.kind === "media" ? 240 : 140;
 
     // The centre of the card in world-space, then scaled
     const scaledX = (node.position.x + cardW / 2) * zoom;
@@ -2525,18 +2525,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             onAddMedia
           ) {
             // Dropped on empty board — promote the photo/video to a standalone
-            // investigation target (BoardMediaNode) with the source evidence
-            // auto-pinned. The player uses this when they can't identify
-            // who/what is in the media and wants it as its own subject.
-            const pinned: PinnedEvidence = {
-              id: evidence.id,
-              type: evidence.type,
-              title: evidence.title,
-              snippet: evidence.snippet,
-              date: evidence.date,
-              sender: evidence.sender,
-              starCount: evidence.starCount,
-            };
+            // investigation target (BoardMediaNode). The card IS the media, so
+            // we do NOT auto-pin the source as "self-evidence" on the node —
+            // it would just be a chip of itself. Any evidence on the media
+            // node is stuff the player manually attaches to it.
             const thumbnailUrl =
               evidence.type === "photo"
                 ? `https://assets.getkino.com/cdn-cgi/image/width=400,quality=80,format=auto/photos-deboned/${evidence.id}`
@@ -2553,7 +2545,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 streamUrl,
                 name: evidence.title,
               },
-              pinned,
+              evidence.id,
               x,
               y,
             );
@@ -4061,7 +4053,6 @@ function FlightBoardCard({
 function MediaBoardCard({
   data,
   isSelected,
-  zoom = 1,
 }: {
   data: BoardMediaNodeData;
   isSelected: boolean;
@@ -4073,21 +4064,11 @@ function MediaBoardCard({
   const label = data.mediaType === "video" ? "VIDEO" : "PHOTO";
   const icon = data.mediaType === "video" ? "🎬" : "📸";
 
-  if (zoom < 0.6) {
-    return (
-      <div
-        className={`flex items-center gap-1 rounded bg-[#141414] border border-[#2a2a2a] border-l-2 ${accent} px-1.5 py-1 cursor-grab active:cursor-grabbing`}
-        style={{ width: 140 }}
-      >
-        <span className="text-[10px] shrink-0">{icon}</span>
-        <span className="text-[9px] text-white truncate">{data.title}</span>
-      </div>
-    );
-  }
-
+  // NOTE: no low-zoom mini branch — media cards must stay visible when
+  // the board is zoomed out, since they're primary investigation targets.
   return (
     <div
-      className={`w-[180px] rounded-xl bg-[#0f0f0f] border overflow-hidden cursor-grab active:cursor-grabbing ${
+      className={`w-[280px] rounded-xl bg-[#0f0f0f] border overflow-hidden cursor-grab active:cursor-grabbing ${
         isSelected ? "shadow-xl shadow-black/60 border-red-500/40" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
       } border-l-4 ${accent}`}
     >
@@ -4105,26 +4086,26 @@ function MediaBoardCard({
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-[#444] text-4xl">{icon}</div>
+          <div className="w-full h-full flex items-center justify-center text-[#444] text-5xl">{icon}</div>
         )}
         {data.mediaType === "video" && hasImg && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="rounded-full bg-black/60 backdrop-blur-sm border border-white/30 w-10 h-10 flex items-center justify-center">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+            <div className="rounded-full bg-black/60 backdrop-blur-sm border border-white/30 w-14 h-14 flex items-center justify-center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
           </div>
         )}
-        <div className="absolute top-1.5 left-1.5 rounded bg-[#0a0a0a]/80 border border-[#333]/60 px-1.5 py-0.5 backdrop-blur-sm">
-          <span className="text-[7px] font-black uppercase tracking-[0.15em] text-[#aaa]">
+        <div className="absolute top-2 left-2 rounded bg-[#0a0a0a]/80 border border-[#333]/60 px-2 py-0.5 backdrop-blur-sm">
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#bbb]">
             {icon} {label}
           </span>
         </div>
       </div>
       {/* Title */}
-      <div className="px-2.5 py-2">
-        <p className="text-[11px] font-bold text-white leading-tight line-clamp-2">
+      <div className="px-3 py-2.5">
+        <p className="text-[13px] font-bold text-white leading-tight line-clamp-2">
           {data.title}
         </p>
       </div>
@@ -4377,6 +4358,20 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
     }
     if (node.kind === "media") {
       const d = node.data;
+      // Button that opens the split-screen viewer for the underlying source.
+      // openSplit is defined above in this component's scope and takes a
+      // PinnedEvidence; we synthesize one from the media node's id + type.
+      const openUnderlying = () => {
+        openSplit({
+          id: node.id,
+          type: d.mediaType,
+          title: d.title,
+          snippet: "",
+          date: null,
+          sender: null,
+          starCount: 0,
+        });
+      };
       return {
         title: d.title,
         subtitle: d.mediaType === "video" ? "Video · investigation target" : "Photo · investigation target",
@@ -4384,11 +4379,23 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
         nameForSearch: d.title,
         aliasesForSearch: [] as string[],
         extraRows: (
-          <div className="rounded border border-[#222] bg-[#0f0e0b] px-3 py-2.5 text-[11px] text-[#888]">
-            Standalone investigation target. Drag people, places, or other
-            entities onto the board and connect them here yourself if you
-            think they appear in or relate to this {d.mediaType}.
-          </div>
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openUnderlying(); }}
+              className="w-full flex items-center justify-center gap-2 rounded-md border border-[#2a2a2a] bg-[#111] hover:border-red-500/60 hover:bg-[#151515] transition px-4 py-2.5 text-[13px] font-bold uppercase tracking-wider text-white/90"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              {d.mediaType === "video" ? "Play video" : "View photo"}
+            </button>
+            <div className="rounded border border-[#222] bg-[#0f0e0b] px-3 py-2.5 text-[11px] text-[#888]">
+              Standalone investigation target. Drag people, places, or other
+              entities onto the board and connect them here yourself if you
+              think they appear in or relate to this {d.mediaType}.
+            </div>
+          </>
         ),
       };
     }

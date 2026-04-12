@@ -367,7 +367,7 @@ export function BoardWorkspace({
   const addMediaToBoard = useCallback(
     (
       data: BoardMediaNodeData,
-      autoPinnedEvidence: PinnedEvidence,
+      sourceId: string,
       dropX?: number,
       dropY?: number,
     ) => {
@@ -375,19 +375,21 @@ export function BoardWorkspace({
       // existence guard to media nodes only — photo/video id may also be
       // pinned as evidence elsewhere, and that should not block creating
       // the standalone investigation card.
-      if (boardNodes.some((n) => n.kind === "media" && n.id === autoPinnedEvidence.id)) return;
+      if (boardNodes.some((n) => n.kind === "media" && n.id === sourceId)) return;
 
       const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
-      const { x, y } = findClearPosition(raw.x, raw.y, 180, 160);
+      const { x, y } = findClearPosition(raw.x, raw.y, 280, 240);
 
       setBoardNodes((prev) => [
         ...prev,
         {
           kind: "media",
-          id: autoPinnedEvidence.id,
+          id: sourceId,
           data,
           position: { x, y },
-          pinnedEvidence: [autoPinnedEvidence],
+          // The card IS the media; no self-pinned evidence. Any evidence
+          // the player attaches later is additive context.
+          pinnedEvidence: [],
         },
       ]);
     },
