@@ -28,6 +28,8 @@ import type { InvestigationResult } from "./focused-investigation";
 import type { SeedEntity } from "@/lib/entity-seed-data";
 import type { Mission } from "@/lib/missions";
 import { getMissionById } from "@/lib/missions";
+import { MissionOverlay } from "./mission-overlay";
+import type { MissionPhase } from "./mission-overlay";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -68,6 +70,7 @@ export function BoardWorkspace({
 
   // ─── Mission System ──────────────────────────────────────────────────────
   const [activeMissionId, setActiveMissionId] = useState<string | null>(null);
+  const [missionPhase, setMissionPhase] = useState<MissionPhase>("drag-event");
   const activeMission = activeMissionId ? getMissionById(activeMissionId) : undefined;
 
   // ─── Leads System ────────────────────────────────────────────────────────
@@ -958,14 +961,21 @@ export function BoardWorkspace({
           />
         )}
 
+        {/* Detect event placement → transition to context cards */}
+        {activeMissionId && missionPhase === "drag-event" && boardNodes.length > 0 && (() => {
+          // Event was just placed — advance to context cards
+          setTimeout(() => setMissionPhase("context-cards"), 600);
+          return null;
+        })()}
+
         {/* Investigation banner — spans the top of the board area */}
-        {activeMissionId && activeMission && boardNodes.length > 0 && (
+        {activeMissionId && activeMission && boardNodes.length > 0 && missionPhase !== "context-cards" && missionPhase !== "evidence-pack" && (
           <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
-            <div className="flex items-center justify-center py-3 bg-gradient-to-b from-[#0a0505]/95 to-transparent">
+            <div className="flex items-center justify-center py-2 bg-gradient-to-b from-[#0a0505]/90 to-transparent" style={{ marginTop: 48 }}>
               <h1
-                className="font-[family-name:var(--font-display)] text-[28px] tracking-[0.2em] uppercase text-[#E24B4A]"
+                className="font-[family-name:var(--font-display)] text-[24px] tracking-[0.2em] uppercase text-[#E24B4A]/80"
                 style={{
-                  textShadow: "0 0 20px rgba(226,75,74,0.5), 0 0 40px rgba(226,75,74,0.2)",
+                  textShadow: "0 0 20px rgba(226,75,74,0.4), 0 0 40px rgba(226,75,74,0.15)",
                 }}
               >
                 {activeMission.title}
@@ -974,25 +984,27 @@ export function BoardWorkspace({
           </div>
         )}
 
-        {/* Mission start prompt — glowing arrow pointing to right panel */}
-        {activeMissionId && boardNodes.length === 0 && (
-          <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-end pr-[280px]">
-            <div className="flex flex-col items-center gap-4 animate-pulse">
-              <div className="text-center">
-                <p className="text-[14px] font-black uppercase tracking-[0.15em] text-[#E24B4A] mb-2">
+        {/* Mission start prompt — glowing arrow pointing at the right panel */}
+        {activeMissionId && missionPhase === "drag-event" && boardNodes.length === 0 && (
+          <div className="absolute top-1/2 right-4 z-40 pointer-events-none -translate-y-1/2" style={{ right: 240 }}>
+            <div className="flex items-center gap-5">
+              <div className="text-right">
+                <p className="text-[16px] font-black uppercase tracking-[0.15em] text-[#E24B4A] mb-1">
                   Begin Investigation
                 </p>
-                <p className="text-[13px] text-[#888] max-w-[240px]">
-                  Drag the event from the right panel onto the board to start
+                <p className="text-[13px] text-[#888]">
+                  Drag the event onto the board
                 </p>
               </div>
-              {/* Glowing arrow pointing right */}
-              <div className="flex items-center gap-2">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 12px rgba(226,75,74,0.6))" }}>
-                  <path d="M5 12h14" />
-                  <path d="m12 5 7 7-7 7" />
-                </svg>
-              </div>
+              {/* Glowing arrow pointing right at the panel edge */}
+              <svg
+                width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className="animate-pulse"
+                style={{ filter: "drop-shadow(0 0 16px rgba(226,75,74,0.7))" }}
+              >
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
             </div>
           </div>
         )}
@@ -1224,6 +1236,22 @@ export function BoardWorkspace({
         />
       )}
 
+      {/* Mission Overlay — context cards + evidence pack phases */}
+      {activeMissionId && activeMission && (missionPhase === "context-cards" || missionPhase === "evidence-pack") && (
+        <MissionOverlay
+          mission={activeMission}
+          phase={missionPhase}
+          onPhaseComplete={(nextPhase) => setMissionPhase(nextPhase)}
+          onAddEvidence={(result) => {
+            // Pin the evidence to the first entity on the board (the event card)
+            const targetNode = boardNodes[0];
+            if (targetNode) {
+              pinEvidenceToCard(targetNode.id, result);
+            }
+          }}
+        />
+      )}
+
       {/* Leads Modal overlay */}
       {leadsModalOpen && (
         <LeadsModal
@@ -1234,11 +1262,14 @@ export function BoardWorkspace({
             setBoardConnections([]);
             setSelectedNodeId(null);
             setFocusedNodeId(null);
-            // Set the active mission
+            // Set the active mission + reset phase
             setActiveMissionId(mission.id);
+            setMissionPhase("drag-event");
             // Switch the right panel to the Events tab so the Africa Trip
             // entity is visible and ready to drag onto the board
             setRightTab("events");
+            // Reset zoom to 100%
+            canvasRef.current?.resetZoom();
             // Close the modal
             setLeadsModalOpen(false);
           }}

@@ -115,6 +115,7 @@ function getEffectiveCardFootprint(
 export interface BoardCanvasHandle {
   centerOnNode: (nodeId: string) => void;
   zoomFit: () => void;
+  resetZoom: () => void;
   arrangeEgoWide: () => void;
   expandAllGroups: () => void;
 }
@@ -1563,7 +1564,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     setTimeout(() => { setIsArranging(false); zoomFit(); }, 350);
   }, [nodes, connections, selectedNodeId, onBatchMoveNodes, getCardSize, zoomFit]);
 
-  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, arrangeEgoWide, expandAllGroups }), [centerOnNode, zoomFit, arrangeEgoWide, expandAllGroups]);
+  const resetZoom = useCallback(() => { setZoom(DEFAULT_ZOOM); }, []);
+  useImperativeHandle(ref, () => ({ centerOnNode, zoomFit, resetZoom, arrangeEgoWide, expandAllGroups }), [centerOnNode, zoomFit, resetZoom, arrangeEgoWide, expandAllGroups]);
 
   const arrangePath = useCallback((nodeAId: string, nodeBId: string) => {
     if (!onBatchMoveNodes || nodes.length < 2) return;
