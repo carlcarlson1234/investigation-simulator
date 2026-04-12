@@ -1168,11 +1168,7 @@ export function BoardWorkspace({
       {/* Leads Modal overlay */}
       {leadsModalOpen && (
         <LeadsModal
-          leads={LEAD_CATALOG}
-          boardPeople={boardPeople}
           onClose={() => setLeadsModalOpen(false)}
-          onEvidencePack={handleEvidencePack}
-          onFocusedInvestigation={handleFocusedInvestigation}
           onStartMission={(mission: Mission) => {
             setActiveMissionId(mission.id);
             setLeadsModalOpen(false);
