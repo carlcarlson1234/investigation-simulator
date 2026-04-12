@@ -2,7 +2,7 @@
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
 import { createPortal } from "react-dom";
-import type { BoardNode, BoardConnection, BoardFlightNodeData, FocusState, PinnedEvidence } from "@/lib/board-types";
+import type { BoardNode, BoardConnection, BoardFlightNodeData, BoardMediaNodeData, FocusState, PinnedEvidence } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
 import type { SeedEntity } from "@/lib/entity-seed-data";
@@ -139,6 +139,12 @@ interface BoardCanvasProps {
     x?: number,
     y?: number,
   ) => void;
+  onAddMedia?: (
+    data: BoardMediaNodeData,
+    autoPinnedEvidence: PinnedEvidence,
+    x?: number,
+    y?: number,
+  ) => void;
   onPinEvidenceToCard?: (cardId: string, result: SearchResult) => void;
   onPinEvidenceToConnection?: (connId: string, result: SearchResult) => void;
   onStartConnection: (fromId: string) => void;
@@ -175,6 +181,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onAddPerson,
     onAddEntity,
     onAddFlight,
+    onAddMedia,
     onPinEvidenceToCard,
     onPinEvidenceToConnection,
     onStartConnection,
@@ -336,8 +343,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   // Card dimensions accounting for importance scaling
   const getScaledCardSize = useCallback((node: BoardNode): { w: number; h: number } => {
-    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
-    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : 160;
+    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 180 : 190;
+    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : node.kind === "media" ? 160 : 160;
     const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
     return { w: baseW * scale, h: baseH * scale };
   }, [getNodeScale]);
@@ -381,8 +388,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const vp = viewportRef.current;
     if (!node || !vp) return;
 
-    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
-    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : 140;
+    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 180 : 190;
+    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : node.kind === "media" ? 160 : 140;
 
     // The centre of the card in world-space, then scaled
     const scaledX = (node.position.x + cardW / 2) * zoom;
@@ -2513,6 +2520,44 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           } else if (currentTarget?.kind === "connection" && onPinEvidenceToConnection) {
             onPinEvidenceToConnection(currentTarget.id, evidence);
             droppedId = evidence.id;
+          } else if (
+            (evidence.type === "photo" || evidence.type === "video") &&
+            onAddMedia
+          ) {
+            // Dropped on empty board — promote the photo/video to a standalone
+            // investigation target (BoardMediaNode) with the source evidence
+            // auto-pinned. The player uses this when they can't identify
+            // who/what is in the media and wants it as its own subject.
+            const pinned: PinnedEvidence = {
+              id: evidence.id,
+              type: evidence.type,
+              title: evidence.title,
+              snippet: evidence.snippet,
+              date: evidence.date,
+              sender: evidence.sender,
+              starCount: evidence.starCount,
+            };
+            const thumbnailUrl =
+              evidence.type === "photo"
+                ? `https://assets.getkino.com/cdn-cgi/image/width=400,quality=80,format=auto/photos-deboned/${evidence.id}`
+                : evidence.thumbnailUrl ?? null;
+            const streamUrl =
+              evidence.type === "video" && evidence.filename
+                ? `https://cdn.jmailarchive.org/${evidence.filename}`
+                : null;
+            onAddMedia(
+              {
+                mediaType: evidence.type,
+                title: evidence.title,
+                thumbnailUrl,
+                streamUrl,
+                name: evidence.title,
+              },
+              pinned,
+              x,
+              y,
+            );
+            droppedId = evidence.id;
           }
         }
 
@@ -2526,7 +2571,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       } catch { /* ignore */ }
     },
-    [zoom, onAddPerson, onAddEntity, onAddFlight, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
+    [zoom, onAddPerson, onAddEntity, onAddFlight, onAddMedia, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
   );
 
   // Returns the bottom-edge center of the card (where the handle is)
@@ -3183,6 +3228,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         zoom={zoom} />
                     ) : node.kind === "flight" ? (
                       <FlightBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
+                    ) : node.kind === "media" ? (
+                      <MediaBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
                     ) : (
                       <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
@@ -4009,6 +4056,82 @@ function FlightBoardCard({
   );
 }
 
+/* ─── Media Board Card (standalone photo / video investigation target) ──── */
+
+function MediaBoardCard({
+  data,
+  isSelected,
+  zoom = 1,
+}: {
+  data: BoardMediaNodeData;
+  isSelected: boolean;
+  zoom?: number;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const hasImg = !!data.thumbnailUrl && !imgError;
+  const accent = data.mediaType === "video" ? "border-l-[#c45a3c]" : "border-l-[#c86464]";
+  const label = data.mediaType === "video" ? "VIDEO" : "PHOTO";
+  const icon = data.mediaType === "video" ? "🎬" : "📸";
+
+  if (zoom < 0.6) {
+    return (
+      <div
+        className={`flex items-center gap-1 rounded bg-[#141414] border border-[#2a2a2a] border-l-2 ${accent} px-1.5 py-1 cursor-grab active:cursor-grabbing`}
+        style={{ width: 140 }}
+      >
+        <span className="text-[10px] shrink-0">{icon}</span>
+        <span className="text-[9px] text-white truncate">{data.title}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`w-[180px] rounded-xl bg-[#0f0f0f] border overflow-hidden cursor-grab active:cursor-grabbing ${
+        isSelected ? "shadow-xl shadow-black/60 border-red-500/40" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
+      } border-l-4 ${accent}`}
+    >
+      {/* Thumbnail — 16:9 for video, 4:3 for photo */}
+      <div
+        className={`relative w-full bg-black overflow-hidden ${
+          data.mediaType === "video" ? "aspect-video" : "aspect-[4/3]"
+        }`}
+      >
+        {hasImg ? (
+          <img
+            src={data.thumbnailUrl ?? undefined}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[#444] text-4xl">{icon}</div>
+        )}
+        {data.mediaType === "video" && hasImg && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="rounded-full bg-black/60 backdrop-blur-sm border border-white/30 w-10 h-10 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        )}
+        <div className="absolute top-1.5 left-1.5 rounded bg-[#0a0a0a]/80 border border-[#333]/60 px-1.5 py-0.5 backdrop-blur-sm">
+          <span className="text-[7px] font-black uppercase tracking-[0.15em] text-[#aaa]">
+            {icon} {label}
+          </span>
+        </div>
+      </div>
+      {/* Title */}
+      <div className="px-2.5 py-2">
+        <p className="text-[11px] font-bold text-white leading-tight line-clamp-2">
+          {data.title}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Flight Passenger Panel (rendered inside NodeDetailCard) ────────────── */
 
 function FlightPassengerPanel({
@@ -4249,6 +4372,23 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
             passengers={d.passengers}
             peopleOnBoardNames={new Set(nodes.filter((n) => n.kind === "person").map((n) => n.data.name))}
           />
+        ),
+      };
+    }
+    if (node.kind === "media") {
+      const d = node.data;
+      return {
+        title: d.title,
+        subtitle: d.mediaType === "video" ? "Video · investigation target" : "Photo · investigation target",
+        photoUrl: d.thumbnailUrl,
+        nameForSearch: d.title,
+        aliasesForSearch: [] as string[],
+        extraRows: (
+          <div className="rounded border border-[#222] bg-[#0f0e0b] px-3 py-2.5 text-[11px] text-[#888]">
+            Standalone investigation target. Drag people, places, or other
+            entities onto the board and connect them here yourself if you
+            think they appear in or relate to this {d.mediaType}.
+          </div>
         ),
       };
     }

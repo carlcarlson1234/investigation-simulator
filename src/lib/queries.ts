@@ -514,7 +514,8 @@ export async function searchEvidence(
       OFFSET ${type === "video" ? offset : 0}
     `;
     for (const r of vRows) {
-      const displayTitle = videoDisplayTitle(r.title as string | null, r.filename as string | null);
+      const filename = (r.filename as string) ?? "";
+      const displayTitle = videoDisplayTitle(r.title as string | null, filename);
       const lengthSec = r.length_sec as number | null;
       const mm = lengthSec != null ? Math.floor(lengthSec / 60) : null;
       const ss = lengthSec != null ? lengthSec % 60 : null;
@@ -529,6 +530,8 @@ export async function searchEvidence(
         sender: null,
         score: Number(r.score),
         starCount: 0,
+        filename,
+        thumbnailUrl: videoThumbnailUrl(filename, Boolean(r.has_thumbnail)) ?? undefined,
       });
     }
   }

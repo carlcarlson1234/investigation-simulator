@@ -6,6 +6,7 @@ import type {
   BoardNode,
   BoardConnection,
   BoardFlightNodeData,
+  BoardMediaNodeData,
   RightPanelTab,
   FocusState,
   PinnedEvidence,
@@ -356,6 +357,36 @@ export function BoardWorkspace({
           data,
           position: { x, y },
           // Auto-pin the flight log as the flight entity's starting evidence.
+          pinnedEvidence: [autoPinnedEvidence],
+        },
+      ]);
+    },
+    [boardNodes, findClearPosition]
+  );
+
+  const addMediaToBoard = useCallback(
+    (
+      data: BoardMediaNodeData,
+      autoPinnedEvidence: PinnedEvidence,
+      dropX?: number,
+      dropY?: number,
+    ) => {
+      // Media node id === the source photo/video id (1:1). Scope the
+      // existence guard to media nodes only — photo/video id may also be
+      // pinned as evidence elsewhere, and that should not block creating
+      // the standalone investigation card.
+      if (boardNodes.some((n) => n.kind === "media" && n.id === autoPinnedEvidence.id)) return;
+
+      const raw = { x: dropX ?? 200 + Math.random() * 400, y: dropY ?? 100 + Math.random() * 300 };
+      const { x, y } = findClearPosition(raw.x, raw.y, 180, 160);
+
+      setBoardNodes((prev) => [
+        ...prev,
+        {
+          kind: "media",
+          id: autoPinnedEvidence.id,
+          data,
+          position: { x, y },
           pinnedEvidence: [autoPinnedEvidence],
         },
       ]);
@@ -955,6 +986,7 @@ export function BoardWorkspace({
             onAddPerson={addPersonToBoard}
             onAddEntity={addEntityToBoard}
             onAddFlight={addFlightToBoard}
+            onAddMedia={addMediaToBoard}
             onPinEvidenceToCard={pinEvidenceToCard}
             onPinEvidenceToConnection={pinEvidenceToConnection}
             onStartConnection={startConnection}

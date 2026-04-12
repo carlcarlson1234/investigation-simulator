@@ -134,6 +134,10 @@ export interface SearchResult {
   sender: string | null;
   score: number;
   starCount: number;
+  // Optional media hints for type === "video" — carries the exact filename
+  // (may not match id) and thumbnail URL for the board media card.
+  filename?: string;
+  thumbnailUrl?: string | null;
 }
 
 // ─── Email List Item (for inbox-style browsing) ─────────────────────────────
