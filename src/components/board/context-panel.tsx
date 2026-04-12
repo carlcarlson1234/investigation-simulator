@@ -33,6 +33,8 @@ interface ContextPanelProps {
   onAddEntity?: (entity: SeedEntity) => void;
   onSpotlightEntity?: (entity: SeedEntity) => void;
   isWideMode?: boolean;
+  // When set, filter entity tabs to show only these entity IDs
+  missionEntityFilter?: string[];
 }
 
 const TABS: { key: RightPanelTab; label: string }[] = [
@@ -61,6 +63,7 @@ export function ContextPanel({
   onAddEntity,
   onSpotlightEntity,
   isWideMode,
+  missionEntityFilter,
 }: ContextPanelProps) {
   const [personSearch, setPersonSearch] = useState("");
   const [entitySearch, setEntitySearch] = useState("");
@@ -145,7 +148,9 @@ export function ContextPanel({
             spotlightPersonIds={spotlightPersonIds} people={people} isWideMode={isWideMode} />
         )}
         {activeTab === "events" && (
-          <EntityListTab entities={EVENTS} entityType="event" search={entitySearch}
+          <EntityListTab
+            entities={missionEntityFilter ? EVENTS.filter(e => missionEntityFilter.includes(e.id)) : EVENTS}
+            entityType="event" search={entitySearch}
             onSearchChange={setEntitySearch} isOnBoard={isOnBoard} onAddEntity={onAddEntity}
             onSpotlightEntity={onSpotlightEntity} boardNodes={boardNodes}
             spotlightPersonIds={spotlightPersonIds} people={people} isWideMode={isWideMode} />
