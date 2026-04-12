@@ -2998,17 +2998,14 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const tY = Math.abs(dirY) > 0.001 ? halfH / Math.abs(dirY) : Infinity;
                   return Math.min(tX, tY);
                 };
-                // Use the effective footprint (including orbital photos + stack
-                // badges) to keep chips clear of the nodes' visual extent, not
-                // just the base card rectangle.
-                const srcFoot = getEffectiveCardFootprint(srcSize.w, srcSize.h, srcNode?.pinnedEvidence);
-                const tgtFoot = getEffectiveCardFootprint(tgtSize.w, tgtSize.h, tgtNode?.pinnedEvidence);
-                const srcExit = exitDist(srcFoot.w / 2, srcFoot.h / 2);
-                const tgtEnter = exitDist(tgtFoot.w / 2, tgtFoot.h / 2);
+                // Use the base card size for exit distance. The effective footprint
+                // (orbital photos + badges) is too aggressive here — orbital photos
+                // are hidden by default, so chips don't need to avoid that space.
+                const srcExit = exitDist(srcSize.w / 2, srcSize.h / 2);
+                const tgtEnter = exitDist(tgtSize.w / 2, tgtSize.h / 2);
                 const effLen = Math.max(40, len - srcExit - tgtEnter);
-                // Generous buffer past each node's effective edge — keeps chips
-                // well clear of orbital photos, stack badges, and connect handles.
-                const BUFFER = 30;
+                // Modest buffer past each card edge.
+                const BUFFER = 16;
                 let tStart = (srcExit + BUFFER) / len;
                 let tEnd = 1 - (tgtEnter + BUFFER) / len;
                 if (tEnd <= tStart) {
@@ -3027,11 +3024,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen - MIN_GAP));
                 const OFFSET = Math.max(16, CHIP * 0.7);
 
-                // Check if there's enough along-line space to distribute
-                // chips without overlap. If not, switch to a perpendicular
-                // stack at the midpoint so every chip remains visible.
+                // Only switch to perpendicular stacking when space is truly
+                // cramped — the distributed layout handles most cases fine.
                 const availPerChip = (tEnd - tStart) * len / Math.max(1, pinned.length);
-                const canDistribute = pinned.length <= 1 || availPerChip >= CHIP * 0.9;
+                const canDistribute = pinned.length <= 1 || availPerChip >= CHIP * 0.5;
 
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
@@ -3056,7 +3052,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         const midT = (tStart + tEnd) / 2;
                         ax = from.cx + dx * midT;
                         ay = from.cy + dy * midT;
-                        const STACK_STEP = CHIP + 4;
+                        const STACK_STEP = CHIP + 14;
                         const stackOffset = (i - (pinned.length - 1) / 2) * STACK_STEP;
                         // Perpendicular direction: pick the side that trends
                         // "outward" (positive perpendicular for even, negative
