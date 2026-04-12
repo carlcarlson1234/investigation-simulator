@@ -3017,10 +3017,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                 // when that spacing is tight.
                 const sameSideCount = Math.max(1, Math.ceil(pinned.length / 2));
                 const slotLen = effLen / sameSideCount;
-                const CHIP_MAX = 56;
-                const CHIP_MIN = 26;
-                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen * 0.75));
-                const OFFSET = Math.max(22, CHIP * 0.82);
+                // Icon-only chips are compact — just an emoji in a tight square.
+                const CHIP_MAX = 34;
+                const CHIP_MIN = 22;
+                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen * 0.65));
+                const OFFSET = Math.max(18, CHIP * 0.75);
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
@@ -3919,8 +3920,8 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, iconOnl
             <img src={thumbUrl} alt={evidence.title} className="h-full w-full object-cover" />
           </div>
         ) : iconOnly ? (
-          <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex items-center justify-center backdrop-blur-sm`}>
-            <span className="text-[20px] leading-none">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
+          <div className={`w-full h-full rounded border ${typeBorder} ${typeBg} shadow-md shadow-black/60 flex items-center justify-center backdrop-blur-sm`}>
+            <span className="text-[14px] leading-none">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
           </div>
         ) : (
           <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex flex-col items-center justify-center p-1 backdrop-blur-sm`}>
