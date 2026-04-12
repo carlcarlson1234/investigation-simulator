@@ -31,7 +31,7 @@ type ActivePanel =
 interface CompareItem {
   id: string;
   title: string;
-  type: "email" | "document" | "photo" | "imessage" | "flight_log" | "external";
+  type: "email" | "document" | "photo" | "imessage" | "flight_log" | "video" | "external";
   date: string | null;
   sender: string | null;
   snippet: string;

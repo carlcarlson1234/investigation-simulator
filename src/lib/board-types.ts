@@ -5,7 +5,7 @@ import type { SeedEntity, EntityType } from "./entity-seed-data";
 
 // ─── Evidence Categories ────────────────────────────────────────────────────
 
-export type EvidenceCategory = "Emails" | "Documents" | "Photos" | "iMessages" | "FlightLogs";
+export type EvidenceCategory = "Emails" | "Documents" | "Photos" | "iMessages" | "FlightLogs" | "Videos";
 
 export const EVIDENCE_CATEGORIES: EvidenceCategory[] = [
   "Emails",
@@ -13,6 +13,7 @@ export const EVIDENCE_CATEGORIES: EvidenceCategory[] = [
   "Photos",
   "iMessages",
   "FlightLogs",
+  "Videos",
 ];
 
 export function getEvidenceCategory(type: EvidenceType): EvidenceCategory {
@@ -22,6 +23,7 @@ export function getEvidenceCategory(type: EvidenceType): EvidenceCategory {
     case "photo": return "Photos";
     case "imessage": return "iMessages";
     case "flight_log": return "FlightLogs";
+    case "video": return "Videos";
     default: return "Emails";
   }
 }
@@ -145,6 +147,7 @@ export const EVIDENCE_TYPE_ICON: Record<EvidenceType, string> = {
   photo: "📸",
   imessage: "💬",
   flight_log: "✈️",
+  video: "🎬",
 };
 
 export const EVIDENCE_TYPE_LABEL: Record<EvidenceType, string> = {
@@ -153,6 +156,7 @@ export const EVIDENCE_TYPE_LABEL: Record<EvidenceType, string> = {
   photo: "Photo",
   imessage: "iMessage",
   flight_log: "Flight Log",
+  video: "Video",
 };
 
 export const CONNECTION_TYPE_COLOR: Record<ConnectionType, string> = {

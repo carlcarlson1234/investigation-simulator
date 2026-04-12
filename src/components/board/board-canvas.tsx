@@ -47,6 +47,7 @@ type NodePinPartition = {
   documents: PinnedEvidence[];
   imessages: PinnedEvidence[];
   flightLogs: PinnedEvidence[];
+  videos: PinnedEvidence[];
 };
 
 function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPartition {
@@ -57,6 +58,7 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
     documents: [],
     imessages: [],
     flightLogs: [],
+    videos: [],
   };
   if (!pinned) return out;
   for (const ev of pinned) {
@@ -67,6 +69,7 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
     else if (ev.type === "document") out.documents.push(ev);
     else if (ev.type === "imessage") out.imessages.push(ev);
     else if (ev.type === "flight_log") out.flightLogs.push(ev);
+    else if (ev.type === "video") out.videos.push(ev);
   }
   return out;
 }
@@ -3225,6 +3228,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       if (part.documents.length > 0) badges.push({ key: "documents", icon: "📄", count: part.documents.length, border: "border-[#888]", bg: "bg-[#1a1a1a]" });
                       if (part.imessages.length > 0) badges.push({ key: "imessages", icon: "💬", count: part.imessages.length, border: "border-[#6B5B95]", bg: "bg-[#1f1b30]" });
                       if (part.flightLogs.length > 0) badges.push({ key: "flight_logs", icon: "✈️", count: part.flightLogs.length, border: "border-[#9d8555]", bg: "bg-[#1c1812]" });
+                      if (part.videos.length > 0) badges.push({ key: "videos", icon: "🎬", count: part.videos.length, border: "border-[#c45a3c]", bg: "bg-[#1f1410]" });
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
@@ -3837,16 +3841,19 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubl
     : evidence.type === "imessage" ? "bg-[#1f1b30]"
     : evidence.type === "document" ? "bg-[#1a1a1a]"
     : evidence.type === "flight_log" ? "bg-[#1c1812]"
+    : evidence.type === "video" ? "bg-[#1f1410]"
     : "bg-[#0a0a0a]";
   const typeBorder = evidence.type === "email" ? "border-[#4A6D8C]"
     : evidence.type === "imessage" ? "border-[#6B5B95]"
     : evidence.type === "document" ? "border-[#888]"
     : evidence.type === "flight_log" ? "border-[#9d8555]"
+    : evidence.type === "video" ? "border-[#c45a3c]"
     : "border-[#c86464]";
   const accentLeft = evidence.type === "email" ? "border-l-[#4A6D8C]"
     : evidence.type === "imessage" ? "border-l-[#6B5B95]"
     : evidence.type === "document" ? "border-l-[#888]"
     : evidence.type === "flight_log" ? "border-l-[#9d8555]"
+    : evidence.type === "video" ? "border-l-[#c45a3c]"
     : "border-l-[#c86464]";
 
   return (
@@ -4198,8 +4205,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   const allDocs = part.documents;
   const allIms = part.imessages;
   const allFlights = part.flightLogs;
+  const allVideos = part.videos;
   const hasPhotos = allPhotos.length > 0;
-  const otherCount = allEmails.length + allDocs.length + allIms.length + allFlights.length;
+  const otherCount = allEmails.length + allDocs.length + allIms.length + allFlights.length + allVideos.length;
   const hasOther = otherCount > 0;
   const totalRawCount = ownEvidenceCount;
 
@@ -4479,6 +4487,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                   { key: "document" as const, label: "Docs", icon: "📄" },
                   { key: "imessage" as const, label: "iMessages", icon: "💬" },
                   { key: "flight_log" as const, label: "Flights", icon: "✈️" },
+                  { key: "video" as const, label: "Videos", icon: "🎬" },
                 ]).map((t) => {
                   const active = searchTab === t.key;
                   return (
@@ -4585,6 +4594,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
               )}
               {allFlights.length > 0 && (
                 <DetailEvidenceBucket label="Flights" icon="✈️" accent="border-l-[#9d8555]" items={allFlights} onOpen={openSplit} />
+              )}
+              {allVideos.length > 0 && (
+                <DetailEvidenceBucket label="Videos" icon="🎬" accent="border-l-[#c45a3c]" items={allVideos} onOpen={openSplit} />
               )}
             </div>
           )}
@@ -5290,6 +5302,68 @@ function FullScreenEvidenceViewer({ evidence, onClose, variant = "fullscreen" }:
                     Source: <span className="text-[#888] font-mono">{full.sourceDoc}</span>
                   </div>
                 )}
+              </div>
+            )}
+            {full.type === "video" && (
+              <div className="space-y-3">
+                {/* Player */}
+                <div className="rounded-lg overflow-hidden border border-[#222] bg-black">
+                  <video
+                    key={full.id}
+                    src={full.streamUrl}
+                    poster={full.thumbnailUrl ?? undefined}
+                    controls
+                    preload="metadata"
+                    className="w-full max-h-[60vh] bg-black"
+                  />
+                </div>
+
+                {/* Metadata pills */}
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  {full.lengthSec != null && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Duration: </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {Math.floor(full.lengthSec / 60)}:{String(full.lengthSec % 60).padStart(2, "0")}
+                      </span>
+                    </div>
+                  )}
+                  <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                    <span className="text-[#555]">Views: </span>
+                    <span className="text-white font-bold tabular-nums">{full.views.toLocaleString()}</span>
+                  </div>
+                  <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                    <span className="text-[#555]">Likes: </span>
+                    <span className="text-white font-bold tabular-nums">{full.likes.toLocaleString()}</span>
+                  </div>
+                  {full.commentCount > 0 && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Comments: </span>
+                      <span className="text-white font-bold tabular-nums">{full.commentCount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {full.isShorts && (
+                    <div className="rounded border border-[#c45a3c]/60 bg-[#1f1410] px-3 py-1.5 text-[#c45a3c] font-bold uppercase tracking-wider text-[10px]">
+                      Shorts
+                    </div>
+                  )}
+                  {full.isNsfw && (
+                    <div className="rounded border border-red-500/60 bg-red-950/30 px-3 py-1.5 text-red-400 font-bold uppercase tracking-wider text-[10px]">
+                      NSFW
+                    </div>
+                  )}
+                  {full.dataSet != null && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Set: </span>
+                      <span className="text-white font-bold tabular-nums">{full.dataSet}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filename reference */}
+                <div className="text-[10px] text-[#555]">
+                  File: <span className="text-[#888] font-mono">{full.filename}</span>
+                </div>
               </div>
             )}
           </div>

@@ -8,7 +8,7 @@ import {
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
 
-type PanelTab = "photos" | "emails" | "files" | "flights";
+type PanelTab = "photos" | "emails" | "files" | "flights" | "videos";
 
 interface IntakePanelProps {
   isOnBoard: (id: string) => boolean;
@@ -36,6 +36,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
     if (activeTab === "emails") return lead.type === "email";
     if (activeTab === "files") return lead.type === "document" || lead.type === "imessage";
     if (activeTab === "flights") return lead.type === "flight_log";
+    if (activeTab === "videos") return lead.type === "video";
     return false;
   });
 
@@ -47,12 +48,13 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
       <div className={`flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""
       }`}>
-        <div className="grid grid-cols-2">
+        <div className="grid grid-cols-3">
           {([
             { key: "photos" as const, label: "📷 Photos" },
             { key: "emails" as const, label: "✉️ Emails" },
             { key: "files" as const, label: "📄 Files" },
             { key: "flights" as const, label: "✈️ Flight Logs" },
+            { key: "videos" as const, label: "🎬 Videos" },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -210,6 +212,8 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
               />
             ) : activeTab === "flights" ? (
               <FlightsTab onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
+            ) : activeTab === "videos" ? (
+              <VideosTab onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             ) : (
               <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             )}
@@ -1334,6 +1338,225 @@ function FlightsTab({
           >
             {loading ? "Loading…" : "Load More ↓"}
           </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── VIDEOS TAB ─────────────────────────────────────────────────────────────
+
+interface VideoListItem {
+  id: string;
+  title: string;
+  filename: string;
+  lengthSec: number | null;
+  views: number;
+  likes: number;
+  hasThumbnail: boolean;
+  isShorts: boolean;
+  isNsfw: boolean;
+  commentCount: number;
+  thumbnailUrl: string | null;
+}
+
+function formatDuration(sec: number | null): string {
+  if (sec == null) return "?";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
+
+function VideosTab({
+  onAddEvidence,
+  isWideMode,
+}: {
+  onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
+  isWideMode?: boolean;
+}) {
+  const [videos, setVideos] = useState<VideoListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [search, setSearch] = useState("");
+  const didInit = useRef(false);
+
+  const fetchVideos = useCallback(async (q: string, off: number, append: boolean) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "30", offset: String(off) });
+      if (q.trim()) params.set("q", q.trim());
+      const res = await fetch(`/api/videos?${params}`);
+      if (!res.ok) throw new Error("fetch failed");
+      const data: { videos: VideoListItem[]; total: number; hasMore: boolean } = await res.json();
+      setVideos((prev) => (append ? [...prev, ...data.videos] : data.videos));
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setOffset(off);
+    } catch (err) {
+      console.error("Videos fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!didInit.current) {
+      didInit.current = true;
+      fetchVideos("", 0, false);
+    }
+  }, [fetchVideos]);
+
+  // Debounced search
+  useEffect(() => {
+    if (!didInit.current) return;
+    const t = setTimeout(() => fetchVideos(search, 0, false), 220);
+    return () => clearTimeout(t);
+  }, [search, fetchVideos]);
+
+  const loadMore = () => {
+    if (hasMore && !loading) fetchVideos(search, offset + 30, true);
+  };
+
+  function videoToSearchResult(v: VideoListItem): SearchResult {
+    return {
+      id: v.id,
+      type: "video",
+      title: v.title,
+      snippet: `${formatDuration(v.lengthSec)} · ${formatCount(v.views)} views${v.isShorts ? " · shorts" : ""}${v.isNsfw ? " · NSFW" : ""}`,
+      date: null,
+      sender: null,
+      score: 0,
+      starCount: 0,
+    };
+  }
+
+  return (
+    <>
+      {/* Search */}
+      <div className="flex-shrink-0 px-3 pt-2 pb-1 border-b border-[#1a1a1a]">
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search video titles…"
+            className="w-full rounded border border-[#2a2a2a] bg-[#111] py-1.5 pl-8 pr-2 text-[11px] text-white placeholder:text-[#555] focus:border-red-500/40 focus:outline-none transition"
+          />
+        </div>
+      </div>
+
+      {/* Status */}
+      <div className="flex-shrink-0 px-3 py-1.5 text-[10px] font-bold text-[#555] border-b border-[#1a1a1a] flex items-center justify-between">
+        {loading && videos.length === 0 ? (
+          <span className="flex items-center gap-1.5 text-red-400">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            Loading…
+          </span>
+        ) : (
+          <span>{total.toLocaleString()} videos</span>
+        )}
+        <span className="text-[#444] tabular-nums">{videos.length} loaded</span>
+      </div>
+
+      {/* Video list */}
+      <div className="flex-1 overflow-y-auto">
+        {videos.map((v) => (
+          <div
+            key={v.id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                "application/board-item",
+                JSON.stringify({ id: v.id, kind: "evidence", data: videoToSearchResult(v) })
+              );
+              e.dataTransfer.effectAllowed = "move";
+              e.currentTarget.classList.add("dragging-source");
+            }}
+            onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
+            className={`group border-b border-[#1a1a1a] cursor-grab active:cursor-grabbing transition flex gap-2.5 ${
+              isWideMode ? "px-4 py-3" : "px-2.5 py-2"
+            } hover:bg-[#161616]`}
+          >
+            {/* Thumbnail */}
+            <div
+              className={`relative flex-shrink-0 rounded overflow-hidden bg-[#0a0a0a] border border-[#222] ${
+                isWideMode ? "w-32 h-20" : "w-24 h-14"
+              }`}
+            >
+              {v.thumbnailUrl ? (
+                <img
+                  src={v.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[#333] text-2xl">🎬</div>
+              )}
+              <div className="absolute bottom-0.5 right-0.5 rounded bg-black/80 px-1 text-[8px] font-bold text-white tabular-nums">
+                {formatDuration(v.lengthSec)}
+              </div>
+              {v.isShorts && (
+                <div className="absolute top-0.5 left-0.5 rounded bg-[#c45a3c]/90 px-1 text-[7px] font-bold text-white uppercase tracking-wider">
+                  SHORTS
+                </div>
+              )}
+              {v.isNsfw && (
+                <div className="absolute top-0.5 right-0.5 rounded bg-red-600/90 px-1 text-[7px] font-bold text-white uppercase tracking-wider">
+                  NSFW
+                </div>
+              )}
+            </div>
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <p className={`font-bold text-white line-clamp-2 ${isWideMode ? "text-[12px]" : "text-[11px]"}`}>
+                {v.title}
+              </p>
+              <p className="mt-0.5 text-[9px] text-[#666]">
+                {formatCount(v.views)} views · {formatCount(v.likes)} likes
+                {v.commentCount > 0 ? ` · ${formatCount(v.commentCount)} comments` : ""}
+              </p>
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddEvidence(videoToSearchResult(v)); }}
+                className="mt-1 font-[family-name:var(--font-mono)] text-[8px] font-bold text-red-500/60 hover:text-red-400 uppercase tracking-wider transition opacity-0 group-hover:opacity-100"
+              >
+                + Add
+              </button>
+            </div>
+          </div>
+        ))}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loading}
+            className="w-full py-3 text-center font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.15em] text-[#555] hover:text-white hover:bg-[#161616] transition border-b border-[#1a1a1a]"
+          >
+            {loading ? "Loading…" : "Load More ↓"}
+          </button>
+        )}
+        {videos.length === 0 && !loading && (
+          <div className="py-8 text-center text-[10px] text-[#555]">No videos found.</div>
         )}
       </div>
     </>
