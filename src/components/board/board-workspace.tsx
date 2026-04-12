@@ -26,6 +26,10 @@ import { LeadsModal } from "./leads-modal";
 import { FocusedInvestigation } from "./focused-investigation";
 import type { InvestigationResult } from "./focused-investigation";
 import type { SeedEntity } from "@/lib/entity-seed-data";
+import type { Mission } from "@/lib/missions";
+import { getMissionById } from "@/lib/missions";
+import { MissionOverlay } from "./mission-overlay";
+import type { MissionPhase } from "./mission-overlay";
 
 interface BoardWorkspaceProps {
   archiveTitle: string;
@@ -63,6 +67,11 @@ export function BoardWorkspace({
     const saved_seen = saved?.seenEvidenceIds;
     return saved_seen ? new Set(saved_seen) : new Set();
   });
+
+  // ─── Mission System ──────────────────────────────────────────────────────
+  const [activeMissionId, setActiveMissionId] = useState<string | null>(null);
+  const [missionPhase, setMissionPhase] = useState<MissionPhase>("drag-event");
+  const activeMission = activeMissionId ? getMissionById(activeMissionId) : undefined;
 
   // ─── Leads System ────────────────────────────────────────────────────────
   const [leadsModalOpen, setLeadsModalOpen] = useState(false);
@@ -850,6 +859,7 @@ export function BoardWorkspace({
             starterLeads={investigation.starterEvidence.length > 0 ? investigation.starterEvidence : undefined}
             investigationStep={investigation.isStartMode ? investigation.step : null}
             isWideMode={evidenceFocusMode}
+            activeMissionId={activeMissionId ?? undefined}
           />
         )}
       </div>
@@ -951,23 +961,88 @@ export function BoardWorkspace({
           />
         )}
 
-        {/* LEADS FAB — bottom-right floating action button */}
+        {/* Detect event placement → transition to context cards */}
+        {activeMissionId && missionPhase === "drag-event" && boardNodes.length > 0 && (() => {
+          // Event was just placed — advance to context cards
+          setTimeout(() => setMissionPhase("context-cards"), 600);
+          return null;
+        })()}
+
+        {/* Investigation banner — spans the top of the board area */}
+        {activeMissionId && activeMission && boardNodes.length > 0 && missionPhase !== "context-cards" && missionPhase !== "evidence-pack" && (
+          <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
+            <div className="flex items-center justify-center py-2 bg-gradient-to-b from-[#0a0505]/90 to-transparent" style={{ marginTop: 48 }}>
+              <h1
+                className="font-[family-name:var(--font-display)] text-[24px] tracking-[0.2em] uppercase text-[#E24B4A]/80"
+                style={{
+                  textShadow: "0 0 20px rgba(226,75,74,0.4), 0 0 40px rgba(226,75,74,0.15)",
+                }}
+              >
+                {activeMission.title}
+              </h1>
+            </div>
+          </div>
+        )}
+
+        {/* Mission start prompt — glowing arrow pointing at the right panel */}
+        {activeMissionId && missionPhase === "drag-event" && boardNodes.length === 0 && (
+          <div className="absolute top-1/2 right-4 z-40 pointer-events-none -translate-y-1/2" style={{ right: 240 }}>
+            <div className="flex items-center gap-5">
+              <div className="text-right">
+                <p className="text-[16px] font-black uppercase tracking-[0.15em] text-[#E24B4A] mb-1">
+                  Begin Investigation
+                </p>
+                <p className="text-[13px] text-[#888]">
+                  Drag the event onto the board
+                </p>
+              </div>
+              {/* Glowing arrow pointing right at the panel edge */}
+              <svg
+                width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className="animate-pulse"
+                style={{ filter: "drop-shadow(0 0 16px rgba(226,75,74,0.7))" }}
+              >
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {/* FAB — "Complete Investigation" during mission, "New Leads" otherwise */}
         {(!investigation.isStartMode || investigation.step === "open-investigation") && !evidenceFocusMode && (
           <div className="absolute bottom-6 right-6 z-50">
-            <button
-              onClick={() => setLeadsModalOpen(true)}
-              className="leads-fab group relative flex h-24 w-24 flex-col items-center justify-center rounded-2xl border-2 border-[#E24B4A]/50 bg-[#111]/95 shadow-[0_0_30px_8px_rgba(226,75,74,0.2)] backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:border-[#E24B4A]/80 hover:shadow-[0_0_40px_12px_rgba(226,75,74,0.3)]"
-            >
-              {newLeadIndicator && (
-                <span className="absolute -top-2 -right-2 z-10 animate-pulse rounded-full bg-[#E24B4A] px-2 py-0.5 text-[8px] font-bold text-white shadow-lg">
-                  NEW
+            {activeMissionId ? (
+              <button
+                onClick={() => {
+                  // TODO: show mission complete screen
+                  setActiveMissionId(null);
+                }}
+                className="group relative flex h-24 w-24 flex-col items-center justify-center rounded-2xl border-2 border-green-500/50 bg-[#111]/95 shadow-[0_0_30px_8px_rgba(34,197,94,0.15)] backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:border-green-400/80 hover:shadow-[0_0_40px_12px_rgba(34,197,94,0.25)]"
+              >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span className="mt-1 font-[family-name:var(--font-mono)] text-[9px] font-black uppercase tracking-[0.08em] text-green-400 text-center leading-tight">
+                  Complete
                 </span>
-              )}
-              <span className="leads-exclamation text-3xl font-black leading-none text-[#E24B4A]">!</span>
-              <span className="mt-1 font-[family-name:var(--font-mono)] text-[11px] font-black uppercase tracking-[0.08em] text-[#E24B4A]">
-                New Leads
-              </span>
-            </button>
+              </button>
+            ) : (
+              <button
+                onClick={() => setLeadsModalOpen(true)}
+                className="leads-fab group relative flex h-24 w-24 flex-col items-center justify-center rounded-2xl border-2 border-[#E24B4A]/50 bg-[#111]/95 shadow-[0_0_30px_8px_rgba(226,75,74,0.2)] backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:border-[#E24B4A]/80 hover:shadow-[0_0_40px_12px_rgba(226,75,74,0.3)]"
+              >
+                {newLeadIndicator && (
+                  <span className="absolute -top-2 -right-2 z-10 animate-pulse rounded-full bg-[#E24B4A] px-2 py-0.5 text-[8px] font-bold text-white shadow-lg">
+                    NEW
+                  </span>
+                )}
+                <span className="leads-exclamation text-3xl font-black leading-none text-[#E24B4A]">!</span>
+                <span className="mt-1 font-[family-name:var(--font-mono)] text-[11px] font-black uppercase tracking-[0.08em] text-[#E24B4A]">
+                  New Leads
+                </span>
+              </button>
+            )}
           </div>
         )}
 
@@ -1097,6 +1172,7 @@ export function BoardWorkspace({
             onAddEntity={addEntityToBoard}
             onSpotlightEntity={spotlightEntity}
             isWideMode={entitiesWideMode}
+            missionEntityFilter={activeMission?.id === "africa-trip-2002" ? ["event-09"] : undefined}
           />
         )}
       </div>
@@ -1160,14 +1236,43 @@ export function BoardWorkspace({
         />
       )}
 
+      {/* Mission Overlay — context cards + evidence pack phases */}
+      {activeMissionId && activeMission && (missionPhase === "context-cards" || missionPhase === "evidence-pack") && (
+        <MissionOverlay
+          mission={activeMission}
+          phase={missionPhase}
+          onPhaseComplete={(nextPhase) => setMissionPhase(nextPhase)}
+          onAddEvidence={(result) => {
+            // Pin the evidence to the first entity on the board (the event card)
+            const targetNode = boardNodes[0];
+            if (targetNode) {
+              pinEvidenceToCard(targetNode.id, result);
+            }
+          }}
+        />
+      )}
+
       {/* Leads Modal overlay */}
       {leadsModalOpen && (
         <LeadsModal
-          leads={LEAD_CATALOG}
-          boardPeople={boardPeople}
           onClose={() => setLeadsModalOpen(false)}
-          onEvidencePack={handleEvidencePack}
-          onFocusedInvestigation={handleFocusedInvestigation}
+          onStartMission={(mission: Mission) => {
+            // Clear the board for a fresh investigation
+            setBoardNodes([]);
+            setBoardConnections([]);
+            setSelectedNodeId(null);
+            setFocusedNodeId(null);
+            // Set the active mission + reset phase
+            setActiveMissionId(mission.id);
+            setMissionPhase("drag-event");
+            // Switch the right panel to the Events tab so the Africa Trip
+            // entity is visible and ready to drag onto the board
+            setRightTab("events");
+            // Reset zoom to 100%
+            canvasRef.current?.resetZoom();
+            // Close the modal
+            setLeadsModalOpen(false);
+          }}
         />
       )}
 

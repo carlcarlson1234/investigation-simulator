@@ -7,6 +7,7 @@ import {
   EVIDENCE_TYPE_ICON,
   EVIDENCE_TYPE_LABEL,
 } from "@/lib/board-types";
+import { getMissionById } from "@/lib/missions";
 
 type PanelTab = "photos" | "emails" | "files" | "flights" | "videos";
 
@@ -18,14 +19,16 @@ interface IntakePanelProps {
   starterLeads?: SearchResult[];
   investigationStep?: InvestigationStep | null;
   isWideMode?: boolean;
+  activeMissionId?: string;
 }
 
-export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep, isWideMode }: IntakePanelProps) {
+export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedEmailId, starterLeads, investigationStep, isWideMode, activeMissionId }: IntakePanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>("photos");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const isOnboarding = investigationStep != null;
+  const activeMission = activeMissionId ? getMissionById(activeMissionId) : undefined;
 
   const handleOpenSearch = () => setSearchOpen(true);
   const handleCloseSearch = () => { setSearchOpen(false); setSearchQuery(""); };
@@ -44,7 +47,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
     <aside className={`intake-panel flex h-full w-full flex-shrink-0 flex-col border-r border-[#1a1a1a] overflow-hidden transition-opacity duration-300 ${
       isOnboarding ? "bg-[#080808]" : ""
     }`}>
-      {/* Tab bar — 2x2 grid */}
+      {/* Tab bar */}
       <div className={`flex-shrink-0 border-b border-[#1a1a1a] transition-opacity duration-300 ${
         isOnboarding ? "opacity-40" : ""
       }`}>
