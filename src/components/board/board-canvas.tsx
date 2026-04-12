@@ -2998,42 +2998,65 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   const tY = Math.abs(dirY) > 0.001 ? halfH / Math.abs(dirY) : Infinity;
                   return Math.min(tX, tY);
                 };
+                // Use the base card size for exit distance. The effective footprint
+                // (orbital photos + badges) is too aggressive here — orbital photos
+                // are hidden by default, so chips don't need to avoid that space.
                 const srcExit = exitDist(srcSize.w / 2, srcSize.h / 2);
                 const tgtEnter = exitDist(tgtSize.w / 2, tgtSize.h / 2);
                 const effLen = Math.max(40, len - srcExit - tgtEnter);
-                // Add a small buffer past each card edge so chips don't kiss the cards
-                const BUFFER = 12;
+                // Modest buffer past each card edge.
+                const BUFFER = 16;
                 let tStart = (srcExit + BUFFER) / len;
                 let tEnd = 1 - (tgtEnter + BUFFER) / len;
                 if (tEnd <= tStart) {
-                  // Cards touch / overlap — fall back to midpoint
                   tStart = 0.5;
                   tEnd = 0.5;
                 }
 
-                // Dynamic chip sizing: chips alternate sides, so the
-                // constraint is the along-line spacing between two SAME-side
-                // chips (every other index). Shrink chip down to CHIP_MIN
-                // when that spacing is tight.
+                // Dynamic chip sizing. Chips alternate sides (above/below), so
+                // same-side chips are every-other-index. Size so they don't
+                // touch, with a mandatory gap between chip centers.
                 const sameSideCount = Math.max(1, Math.ceil(pinned.length / 2));
                 const slotLen = effLen / sameSideCount;
-                const CHIP_MAX = 56;
-                const CHIP_MIN = 26;
-                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen * 0.75));
-                const OFFSET = Math.max(22, CHIP * 0.82);
+                const CHIP_MAX = 30;
+                const CHIP_MIN = 20;
+                const MIN_GAP = 6; // minimum pixels between chip edges
+                const CHIP = Math.max(CHIP_MIN, Math.min(CHIP_MAX, slotLen - MIN_GAP));
+                const OFFSET = Math.max(16, CHIP * 0.7);
+
+                // Only switch to perpendicular stacking when space is truly
+                // cramped — the distributed layout handles most cases fine.
+                const availPerChip = (tEnd - tStart) * len / Math.max(1, pinned.length);
+                const canDistribute = pinned.length <= 1 || availPerChip >= CHIP * 0.5;
+
                 return (
                   <div key={`pinned-${conn.id}`} className="contents">
                     {pinned.map((ev, i) => {
-                      // Distribute within the valid [tStart, tEnd] gap
-                      // between the two cards so chips aren't covered.
-                      const t = pinned.length === 1
-                        ? (tStart + tEnd) / 2
-                        : tStart + ((i) / (pinned.length - 1)) * (tEnd - tStart);
-                      const ax = from.cx + dx * t;
-                      const ay = from.cy + dy * t;
-                      const side = i % 2 === 0 ? 1 : -1;
-                      const px = ax + perpX * OFFSET * side;
-                      const py = ay + perpY * OFFSET * side;
+                      let ax: number, ay: number, px: number, py: number;
+
+                      if (canDistribute) {
+                        // Normal: distribute along the line, alternating above/below
+                        const t = pinned.length === 1
+                          ? (tStart + tEnd) / 2
+                          : tStart + ((i) / (pinned.length - 1)) * (tEnd - tStart);
+                        ax = from.cx + dx * t;
+                        ay = from.cy + dy * t;
+                        const side = i % 2 === 0 ? 1 : -1;
+                        px = ax + perpX * OFFSET * side;
+                        py = ay + perpY * OFFSET * side;
+                      } else {
+                        // Tight: stack all chips in a clean single column
+                        // perpendicular to the line at the midpoint. No
+                        // alternating sides — just fan outward from the line
+                        // so each chip is clearly separated.
+                        const midT = (tStart + tEnd) / 2;
+                        ax = from.cx + dx * midT;
+                        ay = from.cy + dy * midT;
+                        const STACK_STEP = CHIP + 10;
+                        const totalPerp = OFFSET + i * STACK_STEP;
+                        px = ax + perpX * totalPerp;
+                        py = ay + perpY * totalPerp;
+                      }
                       return (
                         <div key={`${conn.id}-${ev.id}`} className="contents">
                           {/* Connector line from anchor on the main line to the chip */}
@@ -3068,7 +3091,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                             className="absolute z-[15]"
                             style={{ left: px - CHIP / 2, top: py - CHIP / 2, width: CHIP, height: CHIP }}
                           >
-                            <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                            <PinnedEvidenceChip evidence={ev} square iconOnly onDoubleClick={setFocusedPinnedEvidence} />
                           </div>
                         </div>
                       );
@@ -3134,7 +3157,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   <div
                     key={node.id}
                     data-node-id={node.id}
-                    className={`board-node absolute select-none ${opc} ${
+                    className={`board-node absolute select-none group ${opc} ${
                       dragState?.nodeId === node.id ? "board-node--dragging" : droppingNodeId === node.id ? "board-node--dropping" : justDroppedNodeId === node.id ? "board-node--just-dropped" : isArranging ? "board-node--arranging" : ""
                     } ${nearbyTargetId === node.id ? "board-node--connect-glow" : ""
                     } ${selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
@@ -3260,9 +3283,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         return { x, y };
                       };
 
-                      // Category stack badges shown below the card. Photo overflow gets a badge too.
+                      // Category stack badges shown below the card. Photos always get a badge
+                      // (orbital photos are hidden until hover, so the badge is the primary indicator).
+                      const totalPhotos = part.orbitalPhotos.length + part.overflowPhotos.length;
                       const badges: { key: string; icon: string; count: number; border: string; bg: string }[] = [];
-                      if (part.overflowPhotos.length > 0) badges.push({ key: "photos", icon: "📸", count: part.overflowPhotos.length, border: "border-[#c86464]", bg: "bg-[#1f1512]" });
+                      if (totalPhotos > 0) badges.push({ key: "photos", icon: "📸", count: totalPhotos, border: "border-[#c86464]", bg: "bg-[#1f1512]" });
                       if (part.emails.length > 0) badges.push({ key: "emails", icon: "✉️", count: part.emails.length, border: "border-[#4A6D8C]", bg: "bg-[#1a2530]" });
                       if (part.documents.length > 0) badges.push({ key: "documents", icon: "📄", count: part.documents.length, border: "border-[#888]", bg: "bg-[#1a1a1a]" });
                       if (part.imessages.length > 0) badges.push({ key: "imessages", icon: "💬", count: part.imessages.length, border: "border-[#6B5B95]", bg: "bg-[#1f1b30]" });
@@ -3271,19 +3296,25 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
-                          {/* Orbital photo chips */}
-                          {orbital.map((ev, i) => {
-                            const { x, y } = orbitalPos(i);
-                            return (
-                              <div
-                                key={`orb-${ev.id}`}
-                                className="absolute pointer-events-auto"
-                                style={{ left: x, top: y, width: ORBITAL_CHIP, height: ORBITAL_CHIP, zIndex: 30 }}
-                              >
-                                <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
-                              </div>
-                            );
-                          })}
+                          {/* Orbital photo chips — hidden by default, revealed on card hover.
+                              pointer-events-none when hidden so the invisible chips don't
+                              extend the hover zone past the card edge. */}
+                          {orbital.length > 0 && (
+                            <div className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-200">
+                              {orbital.map((ev, i) => {
+                                const { x, y } = orbitalPos(i);
+                                return (
+                                  <div
+                                    key={`orb-${ev.id}`}
+                                    className="absolute pointer-events-auto"
+                                    style={{ left: x, top: y, width: ORBITAL_CHIP, height: ORBITAL_CHIP, zIndex: 30 }}
+                                  >
+                                    <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
                           {/* Category stack badges attached below the card — wraps to multiple rows if needed */}
                           {badges.length > 0 && (
@@ -3870,7 +3901,7 @@ function PinnedEvidenceStack({ pinned, direction = "row", onDoubleClick }: {
 
 const PHOTO_CDN_URL = "https://assets.getkino.com";
 
-function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubleClick }: { evidence: PinnedEvidence; compact?: boolean; square?: boolean; onDoubleClick?: (ev: PinnedEvidence) => void }) {
+function PinnedEvidenceChip({ evidence, compact = false, square = false, iconOnly = false, onDoubleClick }: { evidence: PinnedEvidence; compact?: boolean; square?: boolean; iconOnly?: boolean; onDoubleClick?: (ev: PinnedEvidence) => void }) {
   const [hovered, setHovered] = useState(false);
   const isPhoto = evidence.type === "photo";
   const thumbUrl = isPhoto
@@ -3908,9 +3939,13 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubl
     >
       {/* Square chip (standardized layout for connection pins) */}
       {square ? (
-        isPhoto && thumbUrl ? (
+        isPhoto && thumbUrl && !iconOnly ? (
           <div className="w-full h-full rounded-md overflow-hidden border-2 border-[#1a1a1a] shadow-lg shadow-black/70 bg-[#0a0a0a]">
             <img src={thumbUrl} alt={evidence.title} className="h-full w-full object-cover" />
+          </div>
+        ) : iconOnly ? (
+          <div className={`w-full h-full rounded border ${typeBorder} ${typeBg} shadow-md shadow-black/60 flex items-center justify-center backdrop-blur-sm`}>
+            <span className="text-[20px] leading-none">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
           </div>
         ) : (
           <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex flex-col items-center justify-center p-1 backdrop-blur-sm`}>
