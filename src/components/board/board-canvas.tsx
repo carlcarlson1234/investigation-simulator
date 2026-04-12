@@ -3068,7 +3068,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                             className="absolute z-[15]"
                             style={{ left: px - CHIP / 2, top: py - CHIP / 2, width: CHIP, height: CHIP }}
                           >
-                            <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                            <PinnedEvidenceChip evidence={ev} square iconOnly onDoubleClick={setFocusedPinnedEvidence} />
                           </div>
                         </div>
                       );
@@ -3134,7 +3134,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                   <div
                     key={node.id}
                     data-node-id={node.id}
-                    className={`board-node absolute select-none ${opc} ${
+                    className={`board-node absolute select-none group ${opc} ${
                       dragState?.nodeId === node.id ? "board-node--dragging" : droppingNodeId === node.id ? "board-node--dropping" : justDroppedNodeId === node.id ? "board-node--just-dropped" : isArranging ? "board-node--arranging" : ""
                     } ${nearbyTargetId === node.id ? "board-node--connect-glow" : ""
                     } ${selectedNodeId === node.id ? "ring-2 ring-red-500/50 rounded-xl" : ""
@@ -3260,9 +3260,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         return { x, y };
                       };
 
-                      // Category stack badges shown below the card. Photo overflow gets a badge too.
+                      // Category stack badges shown below the card. Photos always get a badge
+                      // (orbital photos are hidden until hover, so the badge is the primary indicator).
+                      const totalPhotos = part.orbitalPhotos.length + part.overflowPhotos.length;
                       const badges: { key: string; icon: string; count: number; border: string; bg: string }[] = [];
-                      if (part.overflowPhotos.length > 0) badges.push({ key: "photos", icon: "📸", count: part.overflowPhotos.length, border: "border-[#c86464]", bg: "bg-[#1f1512]" });
+                      if (totalPhotos > 0) badges.push({ key: "photos", icon: "📸", count: totalPhotos, border: "border-[#c86464]", bg: "bg-[#1f1512]" });
                       if (part.emails.length > 0) badges.push({ key: "emails", icon: "✉️", count: part.emails.length, border: "border-[#4A6D8C]", bg: "bg-[#1a2530]" });
                       if (part.documents.length > 0) badges.push({ key: "documents", icon: "📄", count: part.documents.length, border: "border-[#888]", bg: "bg-[#1a1a1a]" });
                       if (part.imessages.length > 0) badges.push({ key: "imessages", icon: "💬", count: part.imessages.length, border: "border-[#6B5B95]", bg: "bg-[#1f1b30]" });
@@ -3271,19 +3273,23 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
-                          {/* Orbital photo chips */}
-                          {orbital.map((ev, i) => {
-                            const { x, y } = orbitalPos(i);
-                            return (
-                              <div
-                                key={`orb-${ev.id}`}
-                                className="absolute pointer-events-auto"
-                                style={{ left: x, top: y, width: ORBITAL_CHIP, height: ORBITAL_CHIP, zIndex: 30 }}
-                              >
-                                <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
-                              </div>
-                            );
-                          })}
+                          {/* Orbital photo chips — hidden by default, revealed on card hover */}
+                          {orbital.length > 0 && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              {orbital.map((ev, i) => {
+                                const { x, y } = orbitalPos(i);
+                                return (
+                                  <div
+                                    key={`orb-${ev.id}`}
+                                    className="absolute pointer-events-auto"
+                                    style={{ left: x, top: y, width: ORBITAL_CHIP, height: ORBITAL_CHIP, zIndex: 30 }}
+                                  >
+                                    <PinnedEvidenceChip evidence={ev} square onDoubleClick={setFocusedPinnedEvidence} />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
                           {/* Category stack badges attached below the card — wraps to multiple rows if needed */}
                           {badges.length > 0 && (
@@ -3870,7 +3876,7 @@ function PinnedEvidenceStack({ pinned, direction = "row", onDoubleClick }: {
 
 const PHOTO_CDN_URL = "https://assets.getkino.com";
 
-function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubleClick }: { evidence: PinnedEvidence; compact?: boolean; square?: boolean; onDoubleClick?: (ev: PinnedEvidence) => void }) {
+function PinnedEvidenceChip({ evidence, compact = false, square = false, iconOnly = false, onDoubleClick }: { evidence: PinnedEvidence; compact?: boolean; square?: boolean; iconOnly?: boolean; onDoubleClick?: (ev: PinnedEvidence) => void }) {
   const [hovered, setHovered] = useState(false);
   const isPhoto = evidence.type === "photo";
   const thumbUrl = isPhoto
@@ -3908,9 +3914,13 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubl
     >
       {/* Square chip (standardized layout for connection pins) */}
       {square ? (
-        isPhoto && thumbUrl ? (
+        isPhoto && thumbUrl && !iconOnly ? (
           <div className="w-full h-full rounded-md overflow-hidden border-2 border-[#1a1a1a] shadow-lg shadow-black/70 bg-[#0a0a0a]">
             <img src={thumbUrl} alt={evidence.title} className="h-full w-full object-cover" />
+          </div>
+        ) : iconOnly ? (
+          <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex items-center justify-center backdrop-blur-sm`}>
+            <span className="text-[20px] leading-none">{EVIDENCE_TYPE_ICON[evidence.type]}</span>
           </div>
         ) : (
           <div className={`w-full h-full rounded-md border-2 ${typeBorder} ${typeBg} shadow-lg shadow-black/70 flex flex-col items-center justify-center p-1 backdrop-blur-sm`}>
