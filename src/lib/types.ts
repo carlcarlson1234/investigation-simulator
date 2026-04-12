@@ -2,7 +2,7 @@
 
 // ─── Evidence Types ─────────────────────────────────────────────────────────
 
-export type EvidenceType = "email" | "document" | "photo" | "imessage" | "flight_log";
+export type EvidenceType = "email" | "document" | "photo" | "imessage" | "flight_log" | "video";
 
 export type ConnectionType = "manual" | "email_thread" | "photo_coappearance";
 
@@ -76,6 +76,22 @@ export interface IMessageEvidence extends EvidenceBase {
   timestamp: string | null;  // from raw_json
 }
 
+export interface VideoEvidence extends EvidenceBase {
+  type: "video";
+  filename: string;
+  lengthSec: number | null;
+  views: number;
+  likes: number;
+  hasThumbnail: boolean;
+  isShorts: boolean;
+  isNsfw: boolean;
+  dataSet: number | null;
+  commentCount: number;
+  // Computed CDN URLs
+  streamUrl: string;      // https://cdn.jmailarchive.org/{filename}
+  thumbnailUrl: string | null;  // https://cdn.jmailarchive.org/thumbnails/{basename}.jpg
+}
+
 export interface FlightLogEvidence extends EvidenceBase {
   type: "flight_log";
   // Route
@@ -105,7 +121,7 @@ export interface FlightLogEvidence extends EvidenceBase {
   sourceDoc: string | null;
 }
 
-export type Evidence = EmailEvidence | DocumentEvidence | PhotoEvidence | IMessageEvidence | FlightLogEvidence;
+export type Evidence = EmailEvidence | DocumentEvidence | PhotoEvidence | IMessageEvidence | FlightLogEvidence | VideoEvidence;
 
 // ─── Search Result (lightweight, for listing) ───────────────────────────────
 
@@ -118,6 +134,10 @@ export interface SearchResult {
   sender: string | null;
   score: number;
   starCount: number;
+  // Optional media hints for type === "video" — carries the exact filename
+  // (may not match id) and thumbnail URL for the board media card.
+  filename?: string;
+  thumbnailUrl?: string | null;
 }
 
 // ─── Email List Item (for inbox-style browsing) ─────────────────────────────

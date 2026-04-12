@@ -11,11 +11,32 @@ import type {
   PhotoListItem,
   IMessageEvidence,
   FlightLogEvidence,
+  VideoEvidence,
   Evidence,
   ArchiveStats,
   ReleaseBatch,
   EvidenceType,
 } from "./types";
+
+// ─── JeffTube CDN ───────────────────────────────────────────────────────────
+
+const JEFFTUBE_CDN = "https://cdn.jmailarchive.org";
+
+function videoStreamUrl(filename: string): string {
+  return `${JEFFTUBE_CDN}/${filename}`;
+}
+
+function videoThumbnailUrl(filename: string | null, hasThumbnail: boolean): string | null {
+  if (!filename || !hasThumbnail) return null;
+  const base = filename.replace(/\.(mp4|mov|m4v|m4a|mp3|webm)$/i, "");
+  return `${JEFFTUBE_CDN}/thumbnails/${base}.jpg`;
+}
+
+// Pick a display title — normalize "title === filename" to a nicer label.
+function videoDisplayTitle(title: string | null, filename: string | null): string {
+  if (title && filename && title !== filename) return title;
+  return (filename ?? "Untitled video").replace(/\.[a-z0-9]+$/i, "");
+}
 
 // ─── Photo CDN ──────────────────────────────────────────────────────────────
 
@@ -480,6 +501,41 @@ export async function searchEvidence(
     }
   }
 
+  // Search videos (JeffTube catalog — title + filename tsvector)
+  if (type === "all" || type === "video") {
+    const vRows = await jmail`
+      SELECT id, title, filename, length_sec, views, likes,
+             has_thumbnail, is_shorts, is_nsfw,
+             ts_rank(search_vector, to_tsquery('english', ${tsQuery})) AS score
+      FROM videos
+      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+      ORDER BY score DESC, views DESC NULLS LAST
+      LIMIT ${type === "all" ? Math.ceil(limit / 6) : limit}
+      OFFSET ${type === "video" ? offset : 0}
+    `;
+    for (const r of vRows) {
+      const filename = (r.filename as string) ?? "";
+      const displayTitle = videoDisplayTitle(r.title as string | null, filename);
+      const lengthSec = r.length_sec as number | null;
+      const mm = lengthSec != null ? Math.floor(lengthSec / 60) : null;
+      const ss = lengthSec != null ? lengthSec % 60 : null;
+      const duration = lengthSec != null ? `${mm}:${String(ss).padStart(2, "0")}` : "?";
+      const views = Number(r.views ?? 0);
+      results.push({
+        id: r.id as string,
+        type: "video",
+        title: displayTitle,
+        snippet: `${duration} · ${views.toLocaleString()} views${r.is_shorts ? " · shorts" : ""}${r.is_nsfw ? " · NSFW" : ""}`,
+        date: null,
+        sender: null,
+        score: Number(r.score),
+        starCount: 0,
+        filename,
+        thumbnailUrl: videoThumbnailUrl(filename, Boolean(r.has_thumbnail)) ?? undefined,
+      });
+    }
+  }
+
   // Sort all results by score
   results.sort((a, b) => b.score - a.score);
   total = results.length;
@@ -501,6 +557,8 @@ export async function getEvidenceById(id: string, type: EvidenceType): Promise<E
       return getIMessageById(id);
     case "flight_log":
       return getFlightById(id);
+    case "video":
+      return getVideoById(id);
     default:
       return null;
   }
@@ -780,6 +838,137 @@ export async function listFlights(opts: {
   });
 
   return { flights, total, hasMore: offset + flights.length < total };
+}
+
+// ─── Video (JeffTube) ───────────────────────────────────────────────────────
+
+async function getVideoById(id: string): Promise<VideoEvidence | null> {
+  const rows = await jmail`
+    SELECT id, title, filename, length_sec, views, likes,
+           has_thumbnail, is_shorts, is_nsfw, data_set, comment_count
+    FROM videos WHERE id = ${id} LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const filename = (r.filename as string) ?? "";
+  const hasThumbnail = Boolean(r.has_thumbnail);
+  const displayTitle = videoDisplayTitle(r.title as string | null, filename);
+  const lengthSec = r.length_sec as number | null;
+  return {
+    id: r.id as string,
+    type: "video",
+    title: displayTitle,
+    snippet: `${Number(r.views ?? 0).toLocaleString()} views · ${Number(r.likes ?? 0).toLocaleString()} likes`,
+    date: null,
+    source: "JeffTube",
+    releaseBatch: null,
+    starCount: 0,
+    filename,
+    lengthSec,
+    views: Number(r.views ?? 0),
+    likes: Number(r.likes ?? 0),
+    hasThumbnail,
+    isShorts: Boolean(r.is_shorts),
+    isNsfw: Boolean(r.is_nsfw),
+    dataSet: (r.data_set as number) ?? null,
+    commentCount: Number(r.comment_count ?? 0),
+    streamUrl: videoStreamUrl(filename),
+    thumbnailUrl: videoThumbnailUrl(filename, hasThumbnail),
+  };
+}
+
+export interface VideoListItem {
+  id: string;
+  title: string;
+  filename: string;
+  lengthSec: number | null;
+  views: number;
+  likes: number;
+  hasThumbnail: boolean;
+  isShorts: boolean;
+  isNsfw: boolean;
+  commentCount: number;
+  thumbnailUrl: string | null;
+}
+
+export async function listVideos(opts: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  sort?: "popular" | "recent";
+}): Promise<{ videos: VideoListItem[]; total: number; hasMore: boolean }> {
+  const limit = Math.min(opts.limit ?? 30, 100);
+  const offset = opts.offset ?? 0;
+  const sort = opts.sort ?? "popular";
+  const q = (opts.q ?? "").trim();
+
+  const tsQuery = q
+    ? q
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w.replace(/[^a-zA-Z0-9]/g, ""))
+        .filter(Boolean)
+        .join(" & ")
+    : "";
+
+  let rows: Record<string, unknown>[];
+  let totalRows: Record<string, unknown>[];
+
+  if (tsQuery) {
+    rows = await jmail`
+      SELECT id, title, filename, length_sec, views, likes,
+             has_thumbnail, is_shorts, is_nsfw, comment_count,
+             ts_rank(search_vector, to_tsquery('english', ${tsQuery})) AS score
+      FROM videos
+      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+      ORDER BY score DESC, views DESC NULLS LAST
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    totalRows = await jmail`
+      SELECT COUNT(*)::int AS n FROM videos
+      WHERE search_vector @@ to_tsquery('english', ${tsQuery})
+    `;
+  } else if (sort === "popular") {
+    rows = await jmail`
+      SELECT id, title, filename, length_sec, views, likes,
+             has_thumbnail, is_shorts, is_nsfw, comment_count
+      FROM videos
+      ORDER BY views DESC NULLS LAST, id
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    totalRows = await jmail`SELECT COUNT(*)::int AS n FROM videos`;
+  } else {
+    rows = await jmail`
+      SELECT id, title, filename, length_sec, views, likes,
+             has_thumbnail, is_shorts, is_nsfw, comment_count
+      FROM videos
+      ORDER BY id DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    totalRows = await jmail`SELECT COUNT(*)::int AS n FROM videos`;
+  }
+
+  const total = Number((totalRows[0] as { n?: number } | undefined)?.n ?? 0);
+
+  const videos: VideoListItem[] = rows.map((r) => {
+    const filename = (r.filename as string) ?? "";
+    const hasThumbnail = Boolean(r.has_thumbnail);
+    return {
+      id: r.id as string,
+      title: videoDisplayTitle(r.title as string | null, filename),
+      filename,
+      lengthSec: (r.length_sec as number) ?? null,
+      views: Number(r.views ?? 0),
+      likes: Number(r.likes ?? 0),
+      hasThumbnail,
+      isShorts: Boolean(r.is_shorts),
+      isNsfw: Boolean(r.is_nsfw),
+      commentCount: Number(r.comment_count ?? 0),
+      thumbnailUrl: videoThumbnailUrl(filename, hasThumbnail),
+    };
+  });
+
+  return { videos, total, hasMore: offset + videos.length < total };
 }
 
 // ─── Files & Messages Browsing ──────────────────────────────────────────────

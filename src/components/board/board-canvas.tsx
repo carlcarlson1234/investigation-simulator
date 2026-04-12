@@ -2,7 +2,7 @@
 
 import { forwardRef, useRef, useCallback, useState, useEffect, useImperativeHandle, useMemo } from "react";
 import { createPortal } from "react-dom";
-import type { BoardNode, BoardConnection, BoardFlightNodeData, FocusState, PinnedEvidence } from "@/lib/board-types";
+import type { BoardNode, BoardConnection, BoardFlightNodeData, BoardMediaNodeData, FocusState, PinnedEvidence } from "@/lib/board-types";
 import type { Person, SearchResult, ArchiveStats, EvidenceType, Evidence } from "@/lib/types";
 import { SEED_ENTITIES } from "@/lib/entity-seed-data";
 import type { SeedEntity } from "@/lib/entity-seed-data";
@@ -47,6 +47,7 @@ type NodePinPartition = {
   documents: PinnedEvidence[];
   imessages: PinnedEvidence[];
   flightLogs: PinnedEvidence[];
+  videos: PinnedEvidence[];
 };
 
 function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPartition {
@@ -57,6 +58,7 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
     documents: [],
     imessages: [],
     flightLogs: [],
+    videos: [],
   };
   if (!pinned) return out;
   for (const ev of pinned) {
@@ -67,6 +69,7 @@ function partitionNodeEvidence(pinned: PinnedEvidence[] | undefined): NodePinPar
     else if (ev.type === "document") out.documents.push(ev);
     else if (ev.type === "imessage") out.imessages.push(ev);
     else if (ev.type === "flight_log") out.flightLogs.push(ev);
+    else if (ev.type === "video") out.videos.push(ev);
   }
   return out;
 }
@@ -136,6 +139,12 @@ interface BoardCanvasProps {
     x?: number,
     y?: number,
   ) => void;
+  onAddMedia?: (
+    data: BoardMediaNodeData,
+    sourceId: string,
+    x?: number,
+    y?: number,
+  ) => void;
   onPinEvidenceToCard?: (cardId: string, result: SearchResult) => void;
   onPinEvidenceToConnection?: (connId: string, result: SearchResult) => void;
   onStartConnection: (fromId: string) => void;
@@ -172,6 +181,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     onAddPerson,
     onAddEntity,
     onAddFlight,
+    onAddMedia,
     onPinEvidenceToCard,
     onPinEvidenceToConnection,
     onStartConnection,
@@ -333,8 +343,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
   // Card dimensions accounting for importance scaling
   const getScaledCardSize = useCallback((node: BoardNode): { w: number; h: number } => {
-    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
-    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : 160;
+    const baseW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 280 : 190;
+    const baseH = node.kind === "person" ? 300 : node.kind === "entity" ? 180 : node.kind === "flight" ? 170 : node.kind === "media" ? 240 : 160;
     const scale = node.kind === "person" ? getNodeScale(node.id) : 1;
     return { w: baseW * scale, h: baseH * scale };
   }, [getNodeScale]);
@@ -378,8 +388,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     const vp = viewportRef.current;
     if (!node || !vp) return;
 
-    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : 190;
-    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : 140;
+    const cardW = node.kind === "person" ? 260 : node.kind === "entity" ? 220 : node.kind === "flight" ? 210 : node.kind === "media" ? 280 : 190;
+    const cardH = node.kind === "person" ? 260 : node.kind === "entity" ? 160 : node.kind === "flight" ? 160 : node.kind === "media" ? 240 : 140;
 
     // The centre of the card in world-space, then scaled
     const scaledX = (node.position.x + cardW / 2) * zoom;
@@ -2510,6 +2520,36 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           } else if (currentTarget?.kind === "connection" && onPinEvidenceToConnection) {
             onPinEvidenceToConnection(currentTarget.id, evidence);
             droppedId = evidence.id;
+          } else if (
+            (evidence.type === "photo" || evidence.type === "video") &&
+            onAddMedia
+          ) {
+            // Dropped on empty board — promote the photo/video to a standalone
+            // investigation target (BoardMediaNode). The card IS the media, so
+            // we do NOT auto-pin the source as "self-evidence" on the node —
+            // it would just be a chip of itself. Any evidence on the media
+            // node is stuff the player manually attaches to it.
+            const thumbnailUrl =
+              evidence.type === "photo"
+                ? `https://assets.getkino.com/cdn-cgi/image/width=400,quality=80,format=auto/photos-deboned/${evidence.id}`
+                : evidence.thumbnailUrl ?? null;
+            const streamUrl =
+              evidence.type === "video" && evidence.filename
+                ? `https://cdn.jmailarchive.org/${evidence.filename}`
+                : null;
+            onAddMedia(
+              {
+                mediaType: evidence.type,
+                title: evidence.title,
+                thumbnailUrl,
+                streamUrl,
+                name: evidence.title,
+              },
+              evidence.id,
+              x,
+              y,
+            );
+            droppedId = evidence.id;
           }
         }
 
@@ -2523,7 +2563,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         }
       } catch { /* ignore */ }
     },
-    [zoom, onAddPerson, onAddEntity, onAddFlight, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
+    [zoom, onAddPerson, onAddEntity, onAddFlight, onAddMedia, onPinEvidenceToCard, onPinEvidenceToConnection, firstPlacementMode, onFirstPlacement, playSound, activeDropTarget]
   );
 
   // Returns the bottom-edge center of the card (where the handle is)
@@ -3180,6 +3220,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                         zoom={zoom} />
                     ) : node.kind === "flight" ? (
                       <FlightBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
+                    ) : node.kind === "media" ? (
+                      <MediaBoardCard data={node.data} isSelected={selectedNodeId === node.id} zoom={zoom} />
                     ) : (
                       <EntityBoardCard data={node.data} isSelected={selectedNodeId === node.id} pinnedEvidence={node.pinnedEvidence} onPinnedEvidenceDoubleClick={setFocusedPinnedEvidence} zoom={zoom} />
                     )}
@@ -3225,6 +3267,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
                       if (part.documents.length > 0) badges.push({ key: "documents", icon: "📄", count: part.documents.length, border: "border-[#888]", bg: "bg-[#1a1a1a]" });
                       if (part.imessages.length > 0) badges.push({ key: "imessages", icon: "💬", count: part.imessages.length, border: "border-[#6B5B95]", bg: "bg-[#1f1b30]" });
                       if (part.flightLogs.length > 0) badges.push({ key: "flight_logs", icon: "✈️", count: part.flightLogs.length, border: "border-[#9d8555]", bg: "bg-[#1c1812]" });
+                      if (part.videos.length > 0) badges.push({ key: "videos", icon: "🎬", count: part.videos.length, border: "border-[#c45a3c]", bg: "bg-[#1f1410]" });
 
                       return (
                         <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
@@ -3837,16 +3880,19 @@ function PinnedEvidenceChip({ evidence, compact = false, square = false, onDoubl
     : evidence.type === "imessage" ? "bg-[#1f1b30]"
     : evidence.type === "document" ? "bg-[#1a1a1a]"
     : evidence.type === "flight_log" ? "bg-[#1c1812]"
+    : evidence.type === "video" ? "bg-[#1f1410]"
     : "bg-[#0a0a0a]";
   const typeBorder = evidence.type === "email" ? "border-[#4A6D8C]"
     : evidence.type === "imessage" ? "border-[#6B5B95]"
     : evidence.type === "document" ? "border-[#888]"
     : evidence.type === "flight_log" ? "border-[#9d8555]"
+    : evidence.type === "video" ? "border-[#c45a3c]"
     : "border-[#c86464]";
   const accentLeft = evidence.type === "email" ? "border-l-[#4A6D8C]"
     : evidence.type === "imessage" ? "border-l-[#6B5B95]"
     : evidence.type === "document" ? "border-l-[#888]"
     : evidence.type === "flight_log" ? "border-l-[#9d8555]"
+    : evidence.type === "video" ? "border-l-[#c45a3c]"
     : "border-l-[#c86464]";
 
   return (
@@ -3997,6 +4043,71 @@ function FlightBoardCard({
             </span>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Media Board Card (standalone photo / video investigation target) ──── */
+
+function MediaBoardCard({
+  data,
+  isSelected,
+}: {
+  data: BoardMediaNodeData;
+  isSelected: boolean;
+  zoom?: number;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const hasImg = !!data.thumbnailUrl && !imgError;
+  const accent = data.mediaType === "video" ? "border-l-[#c45a3c]" : "border-l-[#c86464]";
+  const label = data.mediaType === "video" ? "VIDEO" : "PHOTO";
+  const icon = data.mediaType === "video" ? "🎬" : "📸";
+
+  // NOTE: no low-zoom mini branch — media cards must stay visible when
+  // the board is zoomed out, since they're primary investigation targets.
+  return (
+    <div
+      className={`w-[280px] rounded-xl bg-[#0f0f0f] border overflow-hidden cursor-grab active:cursor-grabbing ${
+        isSelected ? "shadow-xl shadow-black/60 border-red-500/40" : "shadow-lg shadow-black/50 border-[#2a2a2a]"
+      } border-l-4 ${accent}`}
+    >
+      {/* Thumbnail — 16:9 for video, 4:3 for photo */}
+      <div
+        className={`relative w-full bg-black overflow-hidden ${
+          data.mediaType === "video" ? "aspect-video" : "aspect-[4/3]"
+        }`}
+      >
+        {hasImg ? (
+          <img
+            src={data.thumbnailUrl ?? undefined}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[#444] text-5xl">{icon}</div>
+        )}
+        {data.mediaType === "video" && hasImg && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="rounded-full bg-black/60 backdrop-blur-sm border border-white/30 w-14 h-14 flex items-center justify-center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        )}
+        <div className="absolute top-2 left-2 rounded bg-[#0a0a0a]/80 border border-[#333]/60 px-2 py-0.5 backdrop-blur-sm">
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#bbb]">
+            {icon} {label}
+          </span>
+        </div>
+      </div>
+      {/* Title */}
+      <div className="px-3 py-2.5">
+        <p className="text-[13px] font-bold text-white leading-tight line-clamp-2">
+          {data.title}
+        </p>
       </div>
     </div>
   );
@@ -4198,8 +4309,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   const allDocs = part.documents;
   const allIms = part.imessages;
   const allFlights = part.flightLogs;
+  const allVideos = part.videos;
   const hasPhotos = allPhotos.length > 0;
-  const otherCount = allEmails.length + allDocs.length + allIms.length + allFlights.length;
+  const otherCount = allEmails.length + allDocs.length + allIms.length + allFlights.length + allVideos.length;
   const hasOther = otherCount > 0;
   const totalRawCount = ownEvidenceCount;
 
@@ -4241,6 +4353,49 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
             passengers={d.passengers}
             peopleOnBoardNames={new Set(nodes.filter((n) => n.kind === "person").map((n) => n.data.name))}
           />
+        ),
+      };
+    }
+    if (node.kind === "media") {
+      const d = node.data;
+      // Button that opens the split-screen viewer for the underlying source.
+      // openSplit is defined above in this component's scope and takes a
+      // PinnedEvidence; we synthesize one from the media node's id + type.
+      const openUnderlying = () => {
+        openSplit({
+          id: node.id,
+          type: d.mediaType,
+          title: d.title,
+          snippet: "",
+          date: null,
+          sender: null,
+          starCount: 0,
+        });
+      };
+      return {
+        title: d.title,
+        subtitle: d.mediaType === "video" ? "Video · investigation target" : "Photo · investigation target",
+        photoUrl: d.thumbnailUrl,
+        nameForSearch: d.title,
+        aliasesForSearch: [] as string[],
+        extraRows: (
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openUnderlying(); }}
+              className="w-full flex items-center justify-center gap-2 rounded-md border border-[#2a2a2a] bg-[#111] hover:border-red-500/60 hover:bg-[#151515] transition px-4 py-2.5 text-[13px] font-bold uppercase tracking-wider text-white/90"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              {d.mediaType === "video" ? "Play video" : "View photo"}
+            </button>
+            <div className="rounded border border-[#222] bg-[#0f0e0b] px-3 py-2.5 text-[11px] text-[#888]">
+              Standalone investigation target. Drag people, places, or other
+              entities onto the board and connect them here yourself if you
+              think they appear in or relate to this {d.mediaType}.
+            </div>
+          </>
         ),
       };
     }
@@ -4479,6 +4634,7 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
                   { key: "document" as const, label: "Docs", icon: "📄" },
                   { key: "imessage" as const, label: "iMessages", icon: "💬" },
                   { key: "flight_log" as const, label: "Flights", icon: "✈️" },
+                  { key: "video" as const, label: "Videos", icon: "🎬" },
                 ]).map((t) => {
                   const active = searchTab === t.key;
                   return (
@@ -4585,6 +4741,9 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
               )}
               {allFlights.length > 0 && (
                 <DetailEvidenceBucket label="Flights" icon="✈️" accent="border-l-[#9d8555]" items={allFlights} onOpen={openSplit} />
+              )}
+              {allVideos.length > 0 && (
+                <DetailEvidenceBucket label="Videos" icon="🎬" accent="border-l-[#c45a3c]" items={allVideos} onOpen={openSplit} />
               )}
             </div>
           )}
@@ -5290,6 +5449,68 @@ function FullScreenEvidenceViewer({ evidence, onClose, variant = "fullscreen" }:
                     Source: <span className="text-[#888] font-mono">{full.sourceDoc}</span>
                   </div>
                 )}
+              </div>
+            )}
+            {full.type === "video" && (
+              <div className="space-y-3">
+                {/* Player */}
+                <div className="rounded-lg overflow-hidden border border-[#222] bg-black">
+                  <video
+                    key={full.id}
+                    src={full.streamUrl}
+                    poster={full.thumbnailUrl ?? undefined}
+                    controls
+                    preload="metadata"
+                    className="w-full max-h-[60vh] bg-black"
+                  />
+                </div>
+
+                {/* Metadata pills */}
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  {full.lengthSec != null && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Duration: </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {Math.floor(full.lengthSec / 60)}:{String(full.lengthSec % 60).padStart(2, "0")}
+                      </span>
+                    </div>
+                  )}
+                  <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                    <span className="text-[#555]">Views: </span>
+                    <span className="text-white font-bold tabular-nums">{full.views.toLocaleString()}</span>
+                  </div>
+                  <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                    <span className="text-[#555]">Likes: </span>
+                    <span className="text-white font-bold tabular-nums">{full.likes.toLocaleString()}</span>
+                  </div>
+                  {full.commentCount > 0 && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Comments: </span>
+                      <span className="text-white font-bold tabular-nums">{full.commentCount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {full.isShorts && (
+                    <div className="rounded border border-[#c45a3c]/60 bg-[#1f1410] px-3 py-1.5 text-[#c45a3c] font-bold uppercase tracking-wider text-[10px]">
+                      Shorts
+                    </div>
+                  )}
+                  {full.isNsfw && (
+                    <div className="rounded border border-red-500/60 bg-red-950/30 px-3 py-1.5 text-red-400 font-bold uppercase tracking-wider text-[10px]">
+                      NSFW
+                    </div>
+                  )}
+                  {full.dataSet != null && (
+                    <div className="rounded border border-[#222] bg-[#111] px-3 py-1.5">
+                      <span className="text-[#555]">Set: </span>
+                      <span className="text-white font-bold tabular-nums">{full.dataSet}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filename reference */}
+                <div className="text-[10px] text-[#555]">
+                  File: <span className="text-[#888] font-mono">{full.filename}</span>
+                </div>
               </div>
             )}
           </div>

@@ -25,7 +25,7 @@ export function loadBoardState(): PersistedBoardState | null {
     const filtered: BoardNode[] = [];
     for (const n of parsed.nodes as unknown[]) {
       const node = n as { kind?: string };
-      if (node.kind === "person" || node.kind === "entity" || node.kind === "flight") {
+      if (node.kind === "person" || node.kind === "entity" || node.kind === "flight" || node.kind === "media") {
         filtered.push(n as BoardNode);
       }
     }
