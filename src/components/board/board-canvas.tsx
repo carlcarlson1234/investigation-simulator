@@ -4292,6 +4292,25 @@ function NodeDetailCard({ node, connections, nodes, onClose, onSelectNode, onOpe
   const openSplit = useCallback((ev: PinnedEvidence) => setSplitEvidence(ev), []);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
+  // For media nodes (standalone photo/video investigation targets), auto-open
+  // the split-screen viewer as soon as the detail card mounts. Clicking a
+  // media card on the board should play the underlying video / show the photo
+  // alongside the detail panel — no "Play" button click needed.
+  useEffect(() => {
+    if (node.kind === "media") {
+      const d = node.data;
+      setSplitEvidence({
+        id: node.id,
+        type: d.mediaType,
+        title: d.title,
+        snippet: "",
+        date: null,
+        sender: null,
+        starCount: 0,
+      });
+    }
+  }, [node.id, node.kind]);
+
   const relatedConns = connections.filter(
     (c) => c.sourceId === node.id || c.targetId === node.id
   );
