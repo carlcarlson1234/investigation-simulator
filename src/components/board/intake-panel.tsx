@@ -213,7 +213,7 @@ export function IntakePanel({ isOnBoard, onAddEvidence, onSelectEmail, selectedE
             ) : activeTab === "flights" ? (
               <FlightsTab onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             ) : activeTab === "videos" ? (
-              <VideosTab onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
+              <VideosTab isWideMode={isWideMode} />
             ) : (
               <FilesTab isOnBoard={isOnBoard} onAddEvidence={onAddEvidence} isWideMode={isWideMode} />
             )}
@@ -1374,16 +1374,15 @@ function formatCount(n: number): string {
 }
 
 function VideosTab({
-  onAddEvidence,
   isWideMode,
 }: {
-  onAddEvidence: (result: SearchResult, x?: number, y?: number) => void;
   isWideMode?: boolean;
 }) {
   const [videos, setVideos] = useState<VideoListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [lightbox, setLightbox] = useState<VideoListItem | null>(null);
   const didInit = useRef(false);
 
   const fetchVideos = useCallback(async (off: number, append: boolean) => {
@@ -1446,7 +1445,8 @@ function VideosTab({
               e.currentTarget.classList.add("dragging-source");
             }}
             onDragEnd={(e) => e.currentTarget.classList.remove("dragging-source")}
-            className="group relative rounded-lg overflow-hidden border border-[#2a2a2a] hover:border-red-500/30 transition cursor-grab active:cursor-grabbing"
+            onClick={() => setLightbox(v)}
+            className="group relative rounded-lg overflow-hidden border border-[#2a2a2a] hover:border-red-500/30 transition cursor-pointer"
           >
             {/* Thumbnail — 16:9, fills the card width */}
             <div className="relative aspect-video bg-[#0e0e0e]">
@@ -1499,6 +1499,76 @@ function VideosTab({
       {videos.length === 0 && !loading && (
         <div className="py-8 text-center text-[10px] text-[#555]">No videos found.</div>
       )}
+
+      {/* Fullscreen video lightbox */}
+      {lightbox && (
+        <VideoLightbox video={lightbox} onClose={() => setLightbox(null)} />
+      )}
+    </div>
+  );
+}
+
+function VideoLightbox({
+  video,
+  onClose,
+}: {
+  video: VideoListItem;
+  onClose: () => void;
+}) {
+  // Escape closes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const streamUrl = `https://cdn.jmailarchive.org/${video.filename}`;
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm p-6"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-5xl rounded-xl border border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl shadow-black/80 overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex-shrink-0 border-b border-[#1a1a1a] px-5 py-3 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-[13px]">🎬</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.15em] text-[#666]">Video</span>
+              {video.isShorts && (
+                <span className="text-[8px] font-black uppercase tracking-wider text-[#c45a3c] border border-[#c45a3c]/50 rounded px-1.5 py-0.5">SHORTS</span>
+              )}
+              {video.isNsfw && (
+                <span className="text-[8px] font-black uppercase tracking-wider text-red-400 border border-red-500/50 rounded px-1.5 py-0.5">NSFW</span>
+              )}
+            </div>
+            <h2 className="text-[15px] font-black text-white leading-tight truncate">{video.title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 rounded bg-[#222] px-3 py-1.5 text-[10px] font-bold text-white hover:bg-[#333] transition"
+          >
+            ESC ×
+          </button>
+        </div>
+
+        {/* Video player */}
+        <div className="bg-black flex items-center justify-center">
+          <video
+            key={video.id}
+            src={streamUrl}
+            poster={video.thumbnailUrl ?? undefined}
+            controls
+            autoPlay
+            preload="metadata"
+            className="w-full max-h-[75vh] bg-black"
+          />
+        </div>
+      </div>
     </div>
   );
 }
